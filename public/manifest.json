@@ -1,0 +1,18 @@
+{
+  "name": "Smart Home Kiosk",
+  "short_name": "SmartHome",
+  "description": "Continuous 24/7 Smart Home Tablet Kiosk Dashboard",
+  "start_url": "/?token=your_secret_token",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

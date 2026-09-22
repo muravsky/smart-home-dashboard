@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-neutral-950">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Home Admin Console</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+</head>
+<body class="h-full bg-neutral-950 text-neutral-100 font-sans antialiased overflow-y-auto">
+  <div id="app" class="max-w-6xl mx-auto px-4 py-8">
+
+    <!-- TOP HEADER -->
+    <header class="flex flex-wrap items-center justify-between border-b border-neutral-800 pb-5 mb-8 gap-4">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
+          <h1 class="text-2xl font-bold tracking-tight text-white font-mono">SMART HOME ADMIN</h1>
+        </div>
+        <p class="text-xs text-neutral-400 font-mono mt-1">
+          Google Compute Engine VM • Express + better-sqlite3 + Socket.IO + Gemini
+        </p>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button 
+          @click="loadData" 
+          class="text-xs font-mono bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 px-3 py-1.5 rounded transition"
+        >
+          🔄 REFRESH
+        </button>
+        <a 
+          href="/?token=your_secret_token" 
+          target="_blank"
+          class="text-xs font-mono bg-white hover:bg-neutral-200 text-black px-3 py-1.5 rounded font-semibold transition"
+        >
+          OPEN KIOSK DASHBOARD ↗
+        </a>
+      </div>
+    </header>
+
+    <!-- STATUS BANNER / ALERT -->
+    <div v-if="alertMessage" :class="alertSuccess ? 'bg-emerald-950/60 border-emerald-800 text-emerald-300' : 'bg-red-950/60 border-red-800 text-red-300'" class="border px-4 py-3 rounded-lg text-sm mb-6 flex items-center justify-between">
+      <span>{{ alertMessage }}</span>
+      <button @click="alertMessage = ''" class="text-xs font-mono opacity-70 hover:opacity-100">DISMISS</button>
+    </div>
+
+    <!-- MAIN GRID -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+      <!-- LEFT COLUMN: AI SIMULATOR & QUICK ADD (Col 1) -->
+      <div class="space-y-6 lg:col-span-1">
+        
+        <!-- AI TELEGRAM SIMULATOR -->
+        <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg">
+          <div class="flex items-center justify-between mb-3 border-b border-neutral-800 pb-2">
+            <h2 class="font-mono text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-2">
+              <span>✨</span> GEMINI 1.5 FLASH SIMULATOR
+            </h2>
+          </div>
+          <p class="text-xs text-neutral-400 mb-3 leading-relaxed">
+            Test natural language parsing just like an incoming Telegram message. Gemini will extract notes and tasks into raw JSON and update the tablet in real-time.
+          </p>
+
+          <form @submit.prevent="simulateMessage" class="space-y-3">
+            <textarea 
+              v-model="simText" 
+              placeholder="e.g.: Note: bought bread and milk. Task for Alex: clean the kitchen reward 25."
+              rows="3"
+              class="w-full bg-neutral-950 border border-neutral-800 focus:border-purple-500 rounded-lg p-2.5 text-xs text-neutral-200 font-mono outline-none resize-none"
+              required
+            ></textarea>
+            
+            <button 
+              type="submit" 
+              :disabled="simLoading"
+              class="w-full font-mono text-xs bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white py-2 rounded-lg font-medium transition flex items-center justify-center gap-2"
+            >
+              <span v-if="simLoading">Processing with Gemini...</span>
+              <span v-else>Parse & Broadcast →</span>
+            </button>
+          </form>
+
+          <div v-if="simResult" class="mt-4 pt-3 border-t border-neutral-800">
+            <span class="text-[11px] font-mono text-neutral-400 block mb-1">Parsed JSON Output:</span>
+            <pre class="bg-neutral-950 p-2.5 rounded text-[11px] text-emerald-400 font-mono overflow-x-auto">{{ JSON.stringify(simResult, null, 2) }}</pre>
+          </div>
+        </div>
+
+        <!-- QUICK ADD NOTE -->
+        <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg">
+          <h2 class="font-mono text-xs font-bold uppercase tracking-wider text-neutral-300 mb-3 border-b border-neutral-800 pb-2">
+            ADD NOTE DIRECTLY
+          </h2>
+          <form @submit.prevent="addNote" class="space-y-3">
+            <input 
+              v-model="newNoteContent" 
+              type="text" 
+              placeholder="Enter note text..." 
+              class="w-full bg-neutral-950 border border-neutral-800 focus:border-neutral-600 rounded-lg p-2 text-xs text-neutral-200 outline-none"
+              required
+            />
+            <button type="submit" class="w-full font-mono text-xs bg-neutral-800 hover:bg-neutral-700 text-white py-1.5 rounded-lg transition">
+              + Save Note
+            </button>
+          </form>
+        </div>
+
+        <!-- QUICK ADD TASK -->
+        <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg">
+          <h2 class="font-mono text-xs font-bold uppercase tracking-wider text-neutral-300 mb-3 border-b border-neutral-800 pb-2">
+            ADD TASK DIRECTLY
+          </h2>
+          <form @submit.prevent="addTask" class="space-y-3">
+            <input 
+              v-model="newTask.title" 
+              type="text" 
+              placeholder="Task title (e.g. Wash dishes)" 
+              class="w-full bg-neutral-950 border border-neutral-800 focus:border-neutral-600 rounded-lg p-2 text-xs text-neutral-200 outline-none"
+              required
+            />
+            <div class="grid grid-cols-2 gap-2">
+              <input 
+                v-model="newTask.assignee" 
+                type="text" 
+                placeholder="Assignee (e.g. Alex)" 
+                class="bg-neutral-950 border border-neutral-800 focus:border-neutral-600 rounded-lg p-2 text-xs text-neutral-200 outline-none"
+              />
+              <input 
+                v-model.number="newTask.reward" 
+                type="number" 
+                placeholder="Reward (e.g. 50)" 
+                class="bg-neutral-950 border border-neutral-800 focus:border-neutral-600 rounded-lg p-2 text-xs text-neutral-200 outline-none"
+              />
+            </div>
+            <button type="submit" class="w-full font-mono text-xs bg-neutral-800 hover:bg-neutral-700 text-white py-1.5 rounded-lg transition">
+              + Create Task
+            </button>
+          </form>
+        </div>
+
+      </div>
+
+      <!-- RIGHT COLUMNS: NOTES & TASKS TABLE (Col 2 & 3) -->
+      <div class="space-y-6 lg:col-span-2">
+
+        <!-- TASKS LIST -->
+        <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg">
+          <div class="flex items-center justify-between mb-4 border-b border-neutral-800 pb-3">
+            <div>
+              <h2 class="font-mono text-sm font-bold uppercase tracking-wider text-white">ACTIVE TASKS</h2>
+              <span class="text-xs text-neutral-500 font-mono">{{ tasks.length }} total recorded</span>
+            </div>
+          </div>
+
+          <div v-if="tasks.length === 0" class="text-neutral-500 text-xs font-mono py-6 text-center border border-dashed border-neutral-800 rounded-lg">
+            No tasks in database. Add one above or send via Telegram.
+          </div>
+
+          <div v-else class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-neutral-950 font-mono text-neutral-400 uppercase text-[10px] border-b border-neutral-800">
+                <tr>
+                  <th class="py-2.5 px-3">Status</th>
+                  <th class="py-2.5 px-3">Title</th>
+                  <th class="py-2.5 px-3">Assignee</th>
+                  <th class="py-2.5 px-3">Reward</th>
+                  <th class="py-2.5 px-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-neutral-800/60 font-sans">
+                <tr v-for="task in tasks" :key="task.id" class="hover:bg-neutral-800/30 transition">
+                  <td class="py-2.5 px-3">
+                    <button 
+                      @click="toggleTaskStatus(task)" 
+                      :class="task.status === 'completed' ? 'bg-emerald-950 text-emerald-400 border-emerald-800' : 'bg-neutral-800 text-neutral-300 border-neutral-700'"
+                      class="px-2 py-0.5 rounded text-[10px] font-mono border uppercase tracking-wider transition"
+                    >
+                      {{ task.status }}
+                    </button>
+                  </td>
+                  <td class="py-2.5 px-3 font-medium text-neutral-200" :class="{ 'line-through text-neutral-500': task.status === 'completed' }">
+                    {{ task.title }}
+                  </td>
+                  <td class="py-2.5 px-3 font-mono text-neutral-400">
+                    {{ task.assignee ? '@' + task.assignee : '—' }}
+                  </td>
+                  <td class="py-2.5 px-3 font-mono text-neutral-300">
+                    {{ task.reward ? '+' + task.reward : '0' }}
+                  </td>
+                  <td class="py-2.5 px-3 text-right">
+                    <button 
+                      @click="deleteTask(task.id)" 
+                      class="text-neutral-500 hover:text-red-400 font-mono text-xs px-2 py-1 transition"
+                      title="Delete task"
+                    >
+                      ✕
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- NOTES LIST -->
+        <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg">
+          <div class="flex items-center justify-between mb-4 border-b border-neutral-800 pb-3">
+            <div>
+              <h2 class="font-mono text-sm font-bold uppercase tracking-wider text-white">STORED NOTES</h2>
+              <span class="text-xs text-neutral-500 font-mono">{{ notes.length }} total recorded</span>
+            </div>
+          </div>
+
+          <div v-if="notes.length === 0" class="text-neutral-500 text-xs font-mono py-6 text-center border border-dashed border-neutral-800 rounded-lg">
+            No notes in database. Add one above or send via Telegram.
+          </div>
+
+          <div v-else class="space-y-2 max-h-96 overflow-y-auto pr-1">
+            <div 
+              v-for="note in notes" 
+              :key="note.id" 
+              class="bg-neutral-950 border border-neutral-800/80 rounded-lg p-3 flex items-start justify-between gap-3 hover:border-neutral-700 transition"
+            >
+              <div>
+                <p class="text-xs text-neutral-200 font-sans leading-relaxed">{{ note.content }}</p>
+                <span class="text-[10px] font-mono text-neutral-500 mt-1 block">{{ note.timestamp }}</span>
+              </div>
+              <button 
+                @click="deleteNote(note.id)" 
+                class="text-neutral-600 hover:text-red-400 text-xs font-mono px-2 py-1 transition"
+                title="Delete note"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    const { createApp, ref, onMounted } = Vue;
+
+    createApp({
+      setup() {
+        const notes = ref([]);
+        const tasks = ref([]);
+        const alertMessage = ref('');
+        const alertSuccess = ref(true);
+
+        // Simulator
+        const simText = ref('');
+        const simLoading = ref(false);
+        const simResult = ref(null);
+
+        // New Note & Task
+        const newNoteContent = ref('');
+        const newTask = ref({ title: '', assignee: '', reward: 0 });
+
+        async function loadData() {
+          try {
+            const res = await fetch('/api/admin/data');
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            notes.value = data.notes || [];
+            tasks.value = data.tasks || [];
+          } catch (err) {
+            showAlert('Failed to load data: ' + err.message, false);
+          }
+        }
+
+        function showAlert(msg, success = true) {
+          alertMessage.value = msg;
+          alertSuccess.value = success;
+          setTimeout(() => { if (alertMessage.value === msg) alertMessage.value = ''; }, 4000);
+        }
+
+        async function addNote() {
+          try {
+            const res = await fetch('/api/admin/notes', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ content: newNoteContent.value })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            newNoteContent.value = '';
+            showAlert('Note created & pushed to dashboard');
+            loadData();
+          } catch (err) {
+            showAlert('Error: ' + err.message, false);
+          }
+        }
+
+        async function deleteNote(id) {
+          if (!confirm('Delete this note?')) return;
+          try {
+            const res = await fetch('/api/admin/notes/' + id, { method: 'DELETE' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            showAlert('Note deleted');
+            loadData();
+          } catch (err) {
+            showAlert('Error: ' + err.message, false);
+          }
+        }
+
+        async function addTask() {
+          try {
+            const res = await fetch('/api/admin/tasks', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newTask.value)
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            newTask.value = { title: '', assignee: '', reward: 0 };
+            showAlert('Task created & pushed to dashboard');
+            loadData();
+          } catch (err) {
+            showAlert('Error: ' + err.message, false);
+          }
+        }
+
+        async function toggleTaskStatus(task) {
+          const nextStatus = task.status === 'completed' ? 'pending' : 'completed';
+          try {
+            const res = await fetch('/api/admin/tasks/' + task.id, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: nextStatus })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            task.status = nextStatus;
+          } catch (err) {
+            showAlert('Error: ' + err.message, false);
+          }
+        }
+
+        async function deleteTask(id) {
+          if (!confirm('Delete this task?')) return;
+          try {
+            const res = await fetch('/api/admin/tasks/' + id, { method: 'DELETE' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            showAlert('Task deleted');
+            loadData();
+          } catch (err) {
+            showAlert('Error: ' + err.message, false);
+          }
+        }
+
+        async function simulateMessage() {
+          simLoading.value = true;
+          simResult.value = null;
+          try {
+            const res = await fetch('/api/admin/simulate-message', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: simText.value })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+            simResult.value = data.parsed;
+            simText.value = '';
+            showAlert('Message parsed with Gemini & broadcast to dashboard!');
+            loadData();
+          } catch (err) {
+            showAlert('Gemini parsing failed: ' + err.message, false);
+          } finally {
+            simLoading.value = false;
+          }
+        }
+
+        onMounted(() => {
+          loadData();
+        });
+
+        return {
+          notes,
+          tasks,
+          alertMessage,
+          alertSuccess,
+          simText,
+          simLoading,
+          simResult,
+          newNoteContent,
+          newTask,
+          loadData,
+          addNote,
+          deleteNote,
+          addTask,
+          toggleTaskStatus,
+          deleteTask,
+          simulateMessage
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>

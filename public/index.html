@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-black">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Smart Home Kiosk Dashboard</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#000000">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            mono: {
+              50: '#f8fafc',
+              100: '#f1f5f9',
+              200: '#e2e8f0',
+              300: '#cbd5e1',
+              400: '#94a3b8',
+              500: '#64748b',
+              600: '#475569',
+              700: '#334155',
+              800: '#1e293b',
+              850: '#131926',
+              900: '#0f172a',
+              950: '#020617'
+            }
+          },
+          fontFamily: {
+            mono: ['SF Mono', 'Roboto Mono', 'Menlo', 'monospace'],
+            sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Vue 3 via CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+
+  <!-- Socket.IO via server path -->
+  <script src="/socket.io/socket.io.js"></script>
+
+  <style>
+    /* Prevent text selection and rubber-banding for kiosk mode */
+    * {
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      touch-action: manipulation;
+    }
+    /* Smooth transitions for sleep mode */
+    .fade-sleep-enter-active,
+    .fade-sleep-leave-active {
+      transition: all 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .fade-sleep-enter-from,
+    .fade-sleep-leave-to {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+  </style>
+</head>
+<body class="h-full bg-black text-white font-sans antialiased overflow-hidden">
+  <div id="app" class="h-full w-full relative flex flex-col justify-between" @touchstart="resetSleepTimer" @click="resetSleepTimer">
+
+    <!-- SLEEP SCREEN OVERLAY (Activated after 5 minutes of inactivity) -->
+    <transition name="fade-sleep">
+      <div 
+        v-if="isSleeping" 
+        class="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center cursor-pointer select-none"
+        @touchstart.stop="wakeUp"
+        @click.stop="wakeUp"
+      >
+        <!-- Very Dim Ambient Clock for OLED protection & dark rooms -->
+        <div class="text-center opacity-30 transition-opacity duration-1000 hover:opacity-40">
+          <div class="font-mono text-7xl md:text-9xl font-light tracking-tight text-white mb-3">
+            {{ currentTime.hours }}<span class="animate-pulse">:</span>{{ currentTime.minutes }}
+          </div>
+          <div class="text-lg md:text-xl uppercase tracking-widest text-neutral-400 font-mono">
+            {{ currentDate.short }}
+          </div>
+          <div v-if="weather" class="mt-2 text-sm text-neutral-500 font-mono">
+            {{ weather.icon }} {{ weather.temperature }}°C • {{ weather.condition }}
+          </div>
+          <div class="mt-8 text-xs font-mono text-neutral-600 tracking-wider">
+            TAP SCREEN TO WAKE
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <!-- MAIN ACTIVE DASHBOARD -->
+    <div 
+      class="h-full w-full flex flex-col justify-between p-6 md:p-10 transition-all duration-700"
+      :class="{ 'opacity-0 scale-95 pointer-events-none': isSleeping }"
+    >
+      <!-- HEADER BAR -->
+      <header class="flex items-center justify-between border-b border-neutral-900 pb-5">
+        <div class="flex items-center gap-3">
+          <!-- Connection Status Indicator -->
+          <span 
+            class="inline-block w-2.5 h-2.5 rounded-full transition-colors duration-500"
+            :class="isConnected ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'bg-neutral-600'"
+          ></span>
+          <span class="font-mono text-xs uppercase tracking-widest text-neutral-400">
+            {{ isConnected ? 'CONNECTED' : 'DISCONNECTED' }}
+          </span>
+          <span class="text-neutral-700">|</span>
+          <span class="font-mono text-xs uppercase tracking-wider text-neutral-500">
+            KIOSK MODE
+          </span>
+        </div>
+
+        <div class="flex items-center gap-4">
+          <!-- Inactivity countdown / manual sleep trigger for testing -->
+          <button 
+            @click.stop="isSleeping = true" 
+            title="Force Sleep Mode"
+            class="text-[11px] font-mono border border-neutral-800 hover:border-neutral-600 text-neutral-400 hover:text-white px-2.5 py-1 rounded transition-colors"
+          >
+            SLEEP NOW
+          </button>
+          <span class="font-mono text-xs text-neutral-500">
+            AUTO-SLEEP: {{ formatSleepCountdown }}
+          </span>
+        </div>
+      </header>
+
+      <!-- CENTER HERO: LARGE CLOCK & DATE COMPONENT -->
+      <main class="flex-1 flex flex-col items-center justify-center my-auto py-8">
+        <div class="text-center select-none">
+          <!-- Time Display -->
+          <div class="font-mono text-8xl md:text-[11rem] lg:text-[13rem] font-extralight tracking-tighter text-white leading-none mb-4">
+            <span>{{ currentTime.hours }}</span>
+            <span class="inline-block transition-opacity duration-300" :class="isSecondTick ? 'opacity-100' : 'opacity-20'">:</span>
+            <span>{{ currentTime.minutes }}</span>
+            <span class="text-3xl md:text-5xl lg:text-6xl font-light text-neutral-500 ml-2 tracking-normal align-top">
+              {{ currentTime.seconds }}
+            </span>
+          </div>
+
+          <!-- Date Display -->
+          <div class="text-xl md:text-3xl lg:text-4xl font-light tracking-wide text-neutral-300 uppercase">
+            {{ currentDate.weekday }}, <span class="text-white font-normal">{{ currentDate.monthDay }}</span> {{ currentDate.year }}
+          </div>
+
+          <!-- Weather Pill Badge -->
+          <div v-if="weather" class="mt-4 inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full border border-neutral-800 bg-neutral-950/80 text-neutral-300 font-mono text-xs shadow-inner">
+            <span class="text-base">{{ weather.icon }}</span>
+            <span class="font-semibold text-white">{{ weather.temperature }}°C</span>
+            <span class="text-neutral-600">•</span>
+            <span>{{ weather.condition }}</span>
+            <span v-if="weather.tempMax !== null" class="text-neutral-500 text-[11px] ml-1">
+              (L: {{ weather.tempMin }}° / H: {{ weather.tempMax }}°)
+            </span>
+          </div>
+        </div>
+      </main>
+
+      <!-- BOTTOM SECTION: NOTES & TASKS PREVIEW (Populated in Phase 2) -->
+      <footer class="border-t border-neutral-900 pt-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- Live Notes Feed -->
+          <div class="bg-neutral-950 border border-neutral-900 rounded-xl p-4">
+            <div class="flex items-center justify-between mb-3 border-b border-neutral-900 pb-2">
+              <span class="font-mono text-xs uppercase tracking-widest text-neutral-400 font-semibold">
+                RECENT NOTES
+              </span>
+              <span class="font-mono text-[10px] text-neutral-600">
+                {{ notes.length }} ITEMS
+              </span>
+            </div>
+            <div v-if="notes.length === 0" class="text-neutral-600 text-xs font-mono py-3 text-center">
+              No notes yet. Incoming notes from Telegram will appear here.
+            </div>
+            <ul v-else class="space-y-2 max-h-32 overflow-y-auto pr-1">
+              <li v-for="note in notes" :key="note.id" class="text-neutral-300 text-sm font-sans flex items-start justify-between">
+                <span>• {{ note.content }}</span>
+                <span class="text-[10px] font-mono text-neutral-600 ml-2 whitespace-nowrap">{{ formatTime(note.timestamp) }}</span>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Live Tasks Feed -->
+          <div class="bg-neutral-950 border border-neutral-900 rounded-xl p-4">
+            <div class="flex items-center justify-between mb-3 border-b border-neutral-900 pb-2">
+              <span class="font-mono text-xs uppercase tracking-widest text-neutral-400 font-semibold">
+                ACTIVE TASKS
+              </span>
+              <span class="font-mono text-[10px] text-neutral-600">
+                {{ tasks.length }} ITEMS
+              </span>
+            </div>
+            <div v-if="tasks.length === 0" class="text-neutral-600 text-xs font-mono py-3 text-center">
+              No active tasks.
+            </div>
+            <ul v-else class="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+              <li 
+                v-for="task in tasks" 
+                :key="task.id" 
+                @click="toggleTask(task)"
+                class="text-neutral-300 text-sm font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-1 px-1.5 rounded hover:bg-neutral-900/60 select-none"
+              >
+                <div class="flex items-center gap-2.5">
+                  <span 
+                    class="w-2.5 h-2.5 rounded-full border transition-all duration-300"
+                    :class="task.status === 'completed' ? 'bg-white border-white shadow-[0_0_6px_rgba(255,255,255,0.7)]' : 'border-neutral-600'"
+                  ></span>
+                  <span :class="{ 'line-through text-neutral-500': task.status === 'completed' }">
+                    {{ task.title }}
+                  </span>
+                  <span v-if="task.assignee" class="text-xs text-neutral-500 font-mono">(@{{ task.assignee }})</span>
+                </div>
+                <span v-if="task.reward" class="font-mono text-xs text-neutral-400 font-medium">+{{ task.reward }}</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </footer>
+
+    </div>
+
+  </div>
+
+  <script>
+    const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
+
+    createApp({
+      setup() {
+        // State
+        const isConnected = ref(false);
+        const isSleeping = ref(false);
+        const isSecondTick = ref(true);
+        const now = ref(new Date());
+        
+        // Notes and Tasks (for Phase 2 real-time sync)
+        const notes = ref([]);
+        const tasks = ref([]);
+        const weather = ref(null);
+
+        async function fetchWeather() {
+          try {
+            const res = await fetch('/api/weather');
+            if (res.ok) {
+              weather.value = await res.json();
+            }
+          } catch (e) {
+            console.warn('[Kiosk] Weather fetch failed', e);
+          }
+        }
+
+        // Inactivity timeout: 5 minutes (300,000 ms)
+        const SLEEP_TIMEOUT_MS = 5 * 60 * 1000;
+        const remainingSeconds = ref(Math.floor(SLEEP_TIMEOUT_MS / 1000));
+        let sleepTimer = null;
+        let countdownTimer = null;
+        let clockInterval = null;
+        let socket = null;
+
+        // Formatted Clock
+        const currentTime = computed(() => {
+          const d = now.value;
+          const hours = String(d.getHours()).padStart(2, '0');
+          const minutes = String(d.getMinutes()).padStart(2, '0');
+          const seconds = String(d.getSeconds()).padStart(2, '0');
+          return { hours, minutes, seconds };
+        });
+
+        // Formatted Date
+        const currentDate = computed(() => {
+          const d = now.value;
+          const weekday = d.toLocaleDateString(undefined, { weekday: 'long' });
+          const monthDay = d.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+          const year = d.getFullYear();
+          const short = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+          return { weekday, monthDay, year, short };
+        });
+
+        const formatSleepCountdown = computed(() => {
+          const m = Math.floor(remainingSeconds.value / 60);
+          const s = remainingSeconds.value % 60;
+          return `${m}:${String(s).padStart(2, '0')}`;
+        });
+
+        function formatTime(ts) {
+          if (!ts) return '';
+          try {
+            const d = new Date(ts);
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          } catch(e) {
+            return '';
+          }
+        }
+
+        // Sleep management
+        function resetSleepTimer() {
+          if (isSleeping.value) {
+            wakeUp();
+            return;
+          }
+          remainingSeconds.value = Math.floor(SLEEP_TIMEOUT_MS / 1000);
+          if (sleepTimer) clearTimeout(sleepTimer);
+          sleepTimer = setTimeout(() => {
+            isSleeping.value = true;
+          }, SLEEP_TIMEOUT_MS);
+        }
+
+        function wakeUp() {
+          isSleeping.value = false;
+          resetSleepTimer();
+        }
+
+        // Socket.IO Initialization
+        function initSocket() {
+          // Retrieve token from URL parameter or localStorage
+          const urlParams = new URLSearchParams(window.location.search);
+          let token = urlParams.get('token');
+          if (token) {
+            localStorage.setItem('dashboard_token', token);
+          } else {
+            token = localStorage.getItem('dashboard_token') || 'your_secret_token';
+          }
+
+          socket = io({
+            auth: { token },
+            query: { token },
+            reconnection: true,
+            reconnectionDelay: 2000,
+            reconnectionAttempts: Infinity
+          });
+
+          socket.on('connect', () => {
+            isConnected.value = true;
+            console.log('[Kiosk] Socket connected successfully');
+          });
+
+          socket.on('disconnect', () => {
+            isConnected.value = false;
+            console.log('[Kiosk] Socket disconnected');
+          });
+
+          socket.on('connect_error', (err) => {
+            isConnected.value = false;
+            console.warn('[Kiosk] Socket connection error:', err.message);
+          });
+
+          // Listen to dashboard_update event (for Phase 2)
+          socket.on('dashboard_update', (data) => {
+            console.log('[Kiosk] dashboard_update received:', data);
+            if (data.notes && Array.isArray(data.notes)) {
+              notes.value = data.notes;
+            }
+            if (data.tasks && Array.isArray(data.tasks)) {
+              tasks.value = data.tasks;
+            }
+          });
+        }
+
+        onMounted(() => {
+          // Clock ticker
+          clockInterval = setInterval(() => {
+            now.value = new Date();
+            isSecondTick.value = !isSecondTick.value;
+          }, 1000);
+
+          // Sleep countdown ticker
+          countdownTimer = setInterval(() => {
+            if (!isSleeping.value && remainingSeconds.value > 0) {
+              remainingSeconds.value--;
+            }
+          }, 1000);
+
+          // Global interaction listeners
+          window.addEventListener('touchstart', resetSleepTimer, { passive: true });
+          window.addEventListener('click', resetSleepTimer, { passive: true });
+
+          // Start initial sleep timer
+          resetSleepTimer();
+
+          // Connect Socket.IO
+          initSocket();
+
+          // Fetch Weather
+          fetchWeather();
+          const weatherInterval = setInterval(fetchWeather, 15 * 60 * 1000);
+          onUnmounted(() => clearInterval(weatherInterval));
+        });
+
+        onUnmounted(() => {
+          if (clockInterval) clearInterval(clockInterval);
+          if (countdownTimer) clearInterval(countdownTimer);
+          if (sleepTimer) clearTimeout(sleepTimer);
+          window.removeEventListener('touchstart', resetSleepTimer);
+          window.removeEventListener('click', resetSleepTimer);
+          if (socket) socket.disconnect();
+        });
+
+        function toggleTask(task) {
+          const nextStatus = task.status === 'completed' ? 'pending' : 'completed';
+          task.status = nextStatus;
+          if (socket && socket.connected) {
+            socket.emit('task:toggle', { id: task.id, status: nextStatus });
+          }
+        }
+
+        return {
+          isConnected,
+          isSleeping,
+          isSecondTick,
+          currentTime,
+          currentDate,
+          remainingSeconds,
+          formatSleepCountdown,
+          resetSleepTimer,
+          wakeUp,
+          notes,
+          tasks,
+          formatTime,
+          toggleTask,
+          weather
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
