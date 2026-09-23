@@ -31,6 +31,8 @@ const {
   getWidgetLayouts,
   getAllProfileLayouts,
   saveWidgetLayouts,
+  getPageConfigs,
+  savePageConfig,
   getSettings,
   updateSettings,
   getPhotos,
@@ -118,6 +120,20 @@ io.on('connection', (socket) => {
       saveWidgetLayouts(data.layouts, data.profileId || null);
     }
     io.emit('dashboard_update', getDashboardData());
+  });
+
+  // Save page config from kiosk (theme & font_size per page / profile)
+  socket.on('page:config:save', (data) => {
+    if (data) {
+      const pKey = data.profile_key || (data.profileId ? String(data.profileId) : 'family');
+      savePageConfig({
+        profile_key: pKey,
+        page: Number(data.page) || 0,
+        theme: data.theme || 'inherit',
+        font_size: data.font_size || 'inherit'
+      });
+      io.emit('dashboard_update', getDashboardData());
+    }
   });
 
   socket.on('disconnect', (reason) => {
@@ -217,9 +233,9 @@ app.get('/api/admin/profiles', (req, res) => {
 });
 
 app.post('/api/admin/profiles', (req, res) => {
-  const { name, color, avatar_type, avatar_value, telegram_id } = req.body;
+  const { name, color, avatar_type, avatar_value, telegram_id, theme, font_size } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
-  const profile = insertProfile({ name, color, avatar_type, avatar_value, telegram_id });
+  const profile = insertProfile({ name, color, avatar_type, avatar_value, telegram_id, theme, font_size });
   io.emit('dashboard_update', getDashboardData());
   res.json({ ok: true, profile });
 });
@@ -235,6 +251,24 @@ app.delete('/api/admin/profiles/:id', (req, res) => {
   deleteProfile(req.params.id);
   io.emit('dashboard_update', getDashboardData());
   res.json({ ok: true });
+});
+
+// Page Config API (admin & kiosk)
+app.get('/api/page-configs', (req, res) => {
+  res.json(getPageConfigs());
+});
+
+app.post('/api/admin/page-config', (req, res) => {
+  const { profile_key, profileId, page, theme, font_size } = req.body;
+  const pKey = profile_key || (profileId ? String(profileId) : 'family');
+  const configs = savePageConfig({
+    profile_key: pKey,
+    page: Number(page) || 0,
+    theme: theme || 'inherit',
+    font_size: font_size || 'inherit'
+  });
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, page_configs: configs });
 });
 
 app.post('/api/admin/upload/avatar', uploadAvatar.single('avatar'), (req, res) => {

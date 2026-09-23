@@ -37,7 +37,18 @@ db.exec(`
     avatar_type TEXT DEFAULT 'builtin',
     avatar_value TEXT DEFAULT '🙂',
     telegram_id TEXT,
+    theme TEXT DEFAULT 'dark',
+    font_size TEXT DEFAULT 'normal',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS page_configs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_key TEXT NOT NULL,
+    page INTEGER NOT NULL DEFAULT 0,
+    theme TEXT DEFAULT 'inherit',
+    font_size TEXT DEFAULT 'inherit',
+    UNIQUE(profile_key, page)
   );
 
   CREATE TABLE IF NOT EXISTS lists (
@@ -129,8 +140,14 @@ try {
   if (!profCols.includes('telegram_id')) {
     db.exec('ALTER TABLE profiles ADD COLUMN telegram_id TEXT');
   }
+  if (!profCols.includes('theme')) {
+    db.exec("ALTER TABLE profiles ADD COLUMN theme TEXT DEFAULT 'dark'");
+  }
+  if (!profCols.includes('font_size')) {
+    db.exec("ALTER TABLE profiles ADD COLUMN font_size TEXT DEFAULT 'normal'");
+  }
 } catch (e) {
-  console.warn('Migration profiles telegram_id check:', e.message);
+  console.warn('Migration profiles columns check:', e.message);
 }
 
 try {
@@ -268,18 +285,18 @@ function getProfileByTelegramId(telegramId) {
   return db.prepare('SELECT * FROM profiles WHERE telegram_id = ?').get(String(telegramId).trim());
 }
 
-function insertProfile({ name, color = '#38bdf8', avatar_type = 'builtin', avatar_value = '🙂', telegram_id = null }) {
-  const stmt = db.prepare('INSERT INTO profiles (name, color, avatar_type, avatar_value, telegram_id) VALUES (?, ?, ?, ?, ?)');
-  const info = stmt.run(name.trim(), color, avatar_type, avatar_value, telegram_id ? String(telegram_id).trim() : null);
+function insertProfile({ name, color = '#38bdf8', avatar_type = 'builtin', avatar_value = '🙂', telegram_id = null, theme = 'dark', font_size = 'normal' }) {
+  const stmt = db.prepare('INSERT INTO profiles (name, color, avatar_type, avatar_value, telegram_id, theme, font_size) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  const info = stmt.run(name.trim(), color, avatar_type, avatar_value, telegram_id ? String(telegram_id).trim() : null, theme || 'dark', font_size || 'normal');
   return getProfileById(info.lastInsertRowid);
 }
 
-function updateProfile(id, { name, color, avatar_type, avatar_value, telegram_id }) {
+function updateProfile(id, { name, color, avatar_type, avatar_value, telegram_id, theme, font_size }) {
   const current = getProfileById(id);
   if (!current) return null;
   const stmt = db.prepare(`
     UPDATE profiles 
-    SET name = ?, color = ?, avatar_type = ?, avatar_value = ?, telegram_id = ? 
+    SET name = ?, color = ?, avatar_type = ?, avatar_value = ?, telegram_id = ?, theme = ?, font_size = ? 
     WHERE id = ?
   `);
   stmt.run(
@@ -288,6 +305,8 @@ function updateProfile(id, { name, color, avatar_type, avatar_value, telegram_id
     avatar_type !== undefined ? avatar_type : current.avatar_type,
     avatar_value !== undefined ? avatar_value : current.avatar_value,
     telegram_id !== undefined ? (telegram_id ? String(telegram_id).trim() : null) : current.telegram_id,
+    theme !== undefined ? theme : (current.theme || 'dark'),
+    font_size !== undefined ? font_size : (current.font_size || 'normal'),
     id
   );
   return getProfileById(id);
@@ -673,6 +692,35 @@ function deleteCalendarEvent(id) {
 }
 
 /* ==========================================================================
+   Page Configs (Theme & Font Size per page / profile)
+   ========================================================================== */
+function getPageConfigs() {
+  const rows = db.prepare('SELECT * FROM page_configs').all();
+  const map = {};
+  for (const r of rows) {
+    map[`${r.profile_key}_${r.page}`] = {
+      profile_key: r.profile_key,
+      page: r.page,
+      theme: r.theme || 'inherit',
+      font_size: r.font_size || 'inherit'
+    };
+  }
+  return map;
+}
+
+function savePageConfig({ profile_key = 'family', page = 0, theme = 'inherit', font_size = 'inherit' }) {
+  const stmt = db.prepare(`
+    INSERT INTO page_configs (profile_key, page, theme, font_size)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(profile_key, page) DO UPDATE SET
+      theme = excluded.theme,
+      font_size = excluded.font_size
+  `);
+  stmt.run(String(profile_key), Number(page), theme || 'inherit', font_size || 'inherit');
+  return getPageConfigs();
+}
+
+/* ==========================================================================
    Unified Dashboard State
    ========================================================================== */
 function getDashboardData() {
@@ -683,6 +731,7 @@ function getDashboardData() {
     lists: getLists(),
     layouts: getWidgetLayouts(null),
     profile_layouts: getAllProfileLayouts(),
+    page_configs: getPageConfigs(),
     photos: getPhotos({ screensaverOnly: true }),
     events: getCalendarEvents({ limit: 50 }),
     feeds: getCalendarFeeds(),
@@ -717,6 +766,8 @@ module.exports = {
   getWidgetLayouts,
   getAllProfileLayouts,
   saveWidgetLayouts,
+  getPageConfigs,
+  savePageConfig,
   getSettings,
   updateSettings,
   getPhotos,

@@ -194,6 +194,32 @@
             <span class="text-[10px] text-neutral-500 font-mono mt-1 block">Allows Telegram Bot & Gemini to identify this user</span>
           </div>
 
+          <!-- Profile Theme & Font Size -->
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-neutral-400 text-[11px] font-mono mb-1">DEFAULT THEME</label>
+              <select 
+                v-model="newProfile.theme" 
+                class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-lg p-2 text-xs text-neutral-100 outline-none cursor-pointer"
+              >
+                <option value="dark">🌙 Dark Theme</option>
+                <option value="white">☀️ White Theme</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-neutral-400 text-[11px] font-mono mb-1">DEFAULT FONT SIZE</label>
+              <select 
+                v-model="newProfile.font_size" 
+                class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-lg p-2 text-xs text-neutral-100 outline-none cursor-pointer"
+              >
+                <option value="small">Small</option>
+                <option value="normal">Normal (Default)</option>
+                <option value="large">Large</option>
+                <option value="xlarge">Extra Large</option>
+              </select>
+            </div>
+          </div>
+
           <button 
             type="submit" 
             class="w-full font-mono text-xs bg-sky-600 hover:bg-sky-500 text-white py-2 rounded-lg font-medium transition"
@@ -244,6 +270,12 @@
                     <span class="text-[11px] font-mono text-neutral-400">{{ prof.color }}</span>
                     <span v-if="prof.telegram_id" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-950 border border-sky-800 text-sky-400">
                       TG: {{ prof.telegram_id }}
+                    </span>
+                    <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-neutral-800 border border-neutral-700 text-neutral-300">
+                      {{ prof.theme === 'white' ? '☀️ White' : '🌙 Dark' }}
+                    </span>
+                    <span v-if="prof.font_size && prof.font_size !== 'normal'" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-neutral-800 border border-neutral-700 text-neutral-300">
+                      Aa: {{ prof.font_size }}
                     </span>
                   </div>
                 </div>
@@ -365,6 +397,32 @@
                 placeholder="e.g. 123456789" 
                 class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-lg p-2.5 text-xs text-neutral-100 outline-none"
               />
+            </div>
+
+            <!-- Profile Theme & Font Size (Edit) -->
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-neutral-300 text-xs font-mono mb-1">DEFAULT THEME</label>
+                <select 
+                  v-model="editingProfile.theme" 
+                  class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-lg p-2 text-xs text-neutral-100 outline-none cursor-pointer"
+                >
+                  <option value="dark">🌙 Dark Theme</option>
+                  <option value="white">☀️ White Theme</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-neutral-300 text-xs font-mono mb-1">DEFAULT FONT SIZE</label>
+                <select 
+                  v-model="editingProfile.font_size" 
+                  class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-lg p-2 text-xs text-neutral-100 outline-none cursor-pointer"
+                >
+                  <option value="small">Small</option>
+                  <option value="normal">Normal (Default)</option>
+                  <option value="large">Large</option>
+                  <option value="xlarge">Extra Large</option>
+                </select>
+              </div>
             </div>
 
             <div class="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
@@ -1355,7 +1413,9 @@
           color: '#38bdf8',
           avatar_type: 'builtin',
           avatar_value: '🦁',
-          telegram_id: ''
+          telegram_id: '',
+          theme: 'dark',
+          font_size: 'normal'
         });
         const avatarFileInput = ref(null);
         const avatarUploadFile = ref(null);
@@ -1500,7 +1560,9 @@
             color: prof.color || '#38bdf8',
             avatar_type: prof.avatar_type || 'builtin',
             avatar_value: prof.avatar_value || '🙂',
-            telegram_id: prof.telegram_id || ''
+            telegram_id: prof.telegram_id || '',
+            theme: prof.theme || 'dark',
+            font_size: prof.font_size || 'normal'
           };
           editAvatarUploadFile.value = null;
           editAvatarUploadPreview.value = prof.avatar_type === 'upload' ? prof.avatar_value : null;
@@ -1544,7 +1606,9 @@
                 color: editingProfile.value.color,
                 avatar_type: editingProfile.value.avatar_type,
                 avatar_value: avatarVal,
-                telegram_id: editingProfile.value.telegram_id || null
+                telegram_id: editingProfile.value.telegram_id || null,
+                theme: editingProfile.value.theme || 'dark',
+                font_size: editingProfile.value.font_size || 'normal'
               })
             });
             if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -1617,13 +1681,17 @@
                 color: newProfile.value.color,
                 avatar_type: newProfile.value.avatar_type,
                 avatar_value: avatarVal,
-                telegram_id: newProfile.value.telegram_id || null
+                telegram_id: newProfile.value.telegram_id || null,
+                theme: newProfile.value.theme || 'dark',
+                font_size: newProfile.value.font_size || 'normal'
               })
             });
             if (!res.ok) throw new Error('HTTP ' + res.status);
             showAlert('Profile created successfully!');
             newProfile.value.name = '';
             newProfile.value.telegram_id = '';
+            newProfile.value.theme = 'dark';
+            newProfile.value.font_size = 'normal';
             avatarUploadFile.value = null;
             avatarUploadPreview.value = null;
             loadData();

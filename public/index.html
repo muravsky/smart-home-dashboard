@@ -83,12 +83,164 @@
       color: #f97316 !important;
       text-shadow: 0 0 35px rgba(249, 115, 22, 0.45);
     }
+
+    /* ==========================================================================
+       White Theme System
+       ========================================================================== */
+    .theme-white {
+      background-color: #f1f5f9 !important;
+      color: #0f172a !important;
+    }
+    .theme-white header {
+      border-color: #e2e8f0 !important;
+    }
+    .theme-white .bg-black {
+      background-color: #f8fafc !important;
+    }
+    .theme-white .bg-neutral-950 {
+      background-color: #ffffff !important;
+      border-color: #e2e8f0 !important;
+      color: #0f172a !important;
+    }
+    .theme-white .bg-neutral-950\/80 {
+      background-color: rgba(255, 255, 255, 0.92) !important;
+      border-color: #e2e8f0 !important;
+    }
+    .theme-white .bg-neutral-900 {
+      background-color: #f8fafc !important;
+      border-color: #e2e8f0 !important;
+      color: #0f172a !important;
+    }
+    .theme-white .bg-neutral-900\/80,
+    .theme-white .bg-neutral-900\/90 {
+      background-color: rgba(248, 250, 252, 0.95) !important;
+      border-color: #e2e8f0 !important;
+    }
+    .theme-white .bg-neutral-800 {
+      background-color: #e2e8f0 !important;
+      color: #0f172a !important;
+    }
+    .theme-white .border-neutral-900,
+    .theme-white .border-neutral-800,
+    .theme-white .border-neutral-700 {
+      border-color: #e2e8f0 !important;
+    }
+    .theme-white .text-white {
+      color: #0f172a !important;
+    }
+    .theme-white .text-neutral-100,
+    .theme-white .text-neutral-200 {
+      color: #1e293b !important;
+    }
+    .theme-white .text-neutral-300,
+    .theme-white .text-neutral-400 {
+      color: #475569 !important;
+    }
+    .theme-white .text-neutral-500 {
+      color: #64748b !important;
+    }
+    .theme-white .text-neutral-600 {
+      color: #94a3b8 !important;
+    }
+    .theme-white .text-neutral-700,
+    .theme-white .text-neutral-800 {
+      color: #cbd5e1 !important;
+    }
+    .theme-white .bg-sky-950,
+    .theme-white .bg-sky-950\/20,
+    .theme-white .bg-sky-950\/30,
+    .theme-white .bg-sky-950\/40,
+    .theme-white .bg-sky-950\/50,
+    .theme-white .bg-sky-950\/60 {
+      background-color: #e0f2fe !important;
+      border-color: #bae6fd !important;
+    }
+    .theme-white .text-sky-400 {
+      color: #0284c7 !important;
+    }
+    .theme-white .text-sky-300 {
+      color: #0369a1 !important;
+    }
+    .theme-white .text-emerald-400 {
+      color: #059669 !important;
+    }
+    .theme-white .text-emerald-300 {
+      color: #047857 !important;
+    }
+    .theme-white .text-amber-400 {
+      color: #d97706 !important;
+    }
+    .theme-white .border-sky-950\/60 {
+      border-color: #bae6fd !important;
+    }
+    .theme-white .widget-card {
+      background-color: #ffffff !important;
+      border: 1px solid #e2e8f0 !important;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05) !important;
+    }
+    .theme-white input[type="text"] {
+      background-color: #f8fafc !important;
+      border-color: #cbd5e1 !important;
+      color: #0f172a !important;
+    }
+    /* Preserve deep black for screensaver even when dashboard is in white theme */
+    .theme-white .fixed.inset-0.z-50 {
+      background-color: #000000 !important;
+      color: #ffffff !important;
+    }
+    .theme-white .fixed.inset-0.z-50 .text-white {
+      color: #ffffff !important;
+    }
+
+    /* ==========================================================================
+       Font Size Sizing System (Proportional Scaling per Page & Widget)
+       ========================================================================== */
+    .fs-small {
+      font-size: 0.8rem;
+    }
+    .fs-small .text-xs { font-size: 0.68rem !important; }
+    .fs-small .text-sm { font-size: 0.78rem !important; }
+    .fs-small .text-base { font-size: 0.88rem !important; }
+    .fs-small .text-lg { font-size: 1rem !important; }
+    .fs-small .text-xl { font-size: 1.15rem !important; }
+    .fs-small .text-2xl { font-size: 1.35rem !important; }
+    .fs-small .text-3xl { font-size: 1.6rem !important; }
+    .fs-small .responsive-clock-text { font-size: clamp(2.2rem, 6vw, 5.5rem) !important; }
+
+    .fs-normal {
+      /* standard browser & tailwind defaults */
+    }
+
+    .fs-large {
+      font-size: 1.12rem;
+    }
+    .fs-large .text-xs { font-size: 0.85rem !important; }
+    .fs-large .text-sm { font-size: 0.98rem !important; }
+    .fs-large .text-base { font-size: 1.12rem !important; }
+    .fs-large .text-lg { font-size: 1.28rem !important; }
+    .fs-large .text-xl { font-size: 1.45rem !important; }
+    .fs-large .text-2xl { font-size: 1.75rem !important; }
+    .fs-large .text-3xl { font-size: 2.15rem !important; }
+    .fs-large .responsive-clock-text { font-size: clamp(3.2rem, 9vw, 8.5rem) !important; }
+
+    .fs-xlarge {
+      font-size: 1.26rem;
+    }
+    .fs-xlarge .text-xs { font-size: 0.98rem !important; }
+    .fs-xlarge .text-sm { font-size: 1.12rem !important; }
+    .fs-xlarge .text-base { font-size: 1.28rem !important; }
+    .fs-xlarge .text-lg { font-size: 1.48rem !important; }
+    .fs-xlarge .text-xl { font-size: 1.75rem !important; }
+    .fs-xlarge .text-2xl { font-size: 2.1rem !important; }
+    .fs-xlarge .text-3xl { font-size: 2.6rem !important; }
+    .fs-xlarge .responsive-clock-text { font-size: clamp(3.6rem, 11vw, 9.5rem) !important; }
   </style>
 </head>
 <body class="h-full bg-black text-white font-sans antialiased overflow-hidden select-none">
   <div 
     id="app" 
     class="h-full w-full relative flex flex-col justify-between overflow-hidden" 
+    :class="{ 'theme-white': activeTheme === 'white' }" 
     @touchstart="handleTouchStart" 
     @touchmove="handleTouchMove"
     @touchend="handleTouchEnd"
@@ -166,7 +318,13 @@
     <!-- MAIN DASHBOARD CONTENT -->
     <div 
       class="h-full w-full flex flex-col justify-between p-3 md:p-5 transition-all duration-500 overflow-hidden"
-      :class="{ 'opacity-0 scale-95 pointer-events-none': isSleeping, 'night-mode-glow': isNightModeActive }"
+      :class="{ 
+        'opacity-0 scale-95 pointer-events-none': isSleeping, 
+        'night-mode-glow': isNightModeActive,
+        'fs-small': activeFontSize === 'small',
+        'fs-large': activeFontSize === 'large',
+        'fs-xlarge': activeFontSize === 'xlarge'
+      }"
     >
       
       <!-- TOP NAVIGATION & STATUS BAR -->
@@ -185,6 +343,8 @@
             <span class="font-mono text-xs text-neutral-500">
               PAGE {{ activePage + 1 }} / {{ totalPages }}
             </span>
+            <span v-if="activeTheme === 'white'" class="text-xs text-sky-600 font-mono ml-1.5 font-bold">☀️ White</span>
+            <span v-if="activeFontSize !== 'normal'" class="text-[11px] text-neutral-400 font-mono ml-1">[{{ activeFontSize }}]</span>
             <span v-if="isNightModeActive" class="text-xs text-amber-500 font-mono ml-2">🌙 Night</span>
           </div>
 
@@ -271,6 +431,33 @@
           </div>
 
           <div class="flex items-center gap-2">
+            <!-- Page Theme & Font Size Controls -->
+            <div class="flex items-center gap-1.5 bg-neutral-900 border border-neutral-800 px-2 py-1 rounded-lg">
+              <span class="text-neutral-400 text-[10px]">PAGE:</span>
+              <!-- Theme toggle for this page -->
+              <button 
+                type="button"
+                @click="cyclePageTheme"
+                class="px-2 py-0.5 rounded text-[11px] font-mono border transition flex items-center gap-1"
+                :class="currentPageConfigTheme === 'white' ? 'bg-white text-black border-neutral-300 font-bold' : (currentPageConfigTheme === 'dark' ? 'bg-neutral-950 text-white border-neutral-700' : 'bg-neutral-800 text-neutral-300 border-neutral-700')"
+                :title="'Page Theme: ' + (currentPageConfigTheme === 'inherit' ? 'Auto (' + activeTheme + ')' : currentPageConfigTheme)"
+              >
+                <span>Theme:</span>
+                <span>{{ currentPageConfigTheme === 'white' ? '☀️ White' : (currentPageConfigTheme === 'dark' ? '🌙 Dark' : 'Auto') }}</span>
+              </button>
+
+              <!-- Font size toggle for this page -->
+              <button 
+                type="button"
+                @click="cyclePageFontSize"
+                class="px-2 py-0.5 rounded text-[11px] font-mono border border-neutral-700 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition flex items-center gap-1"
+                :title="'Page Font Size: ' + (currentPageConfigFontSize === 'inherit' ? 'Auto (' + activeFontSize + ')' : currentPageConfigFontSize)"
+              >
+                <span>Font:</span>
+                <span>{{ currentPageConfigFontSize === 'inherit' ? 'Auto' : currentPageConfigFontSize }}</span>
+              </button>
+            </div>
+
             <button 
               @click="showAddWidgetDrawer = true" 
               class="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1 rounded-lg font-bold transition"
@@ -310,6 +497,8 @@
             :class="[
               getColSpanClass(w.w),
               getHeightClass(w.h),
+              getWidgetFontSizeClass(w),
+              'widget-card',
               isEditMode && isAdminUnlocked ? 'ring-2 ring-sky-500/60 bg-neutral-900/90 shadow-2xl' : 'bg-neutral-950 border border-neutral-900 shadow-xl'
             ]"
             class="rounded-2xl p-4 relative flex flex-col justify-between transition-all duration-300 overflow-hidden"
@@ -341,6 +530,15 @@
                 class="px-2 py-1 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 text-emerald-400 font-semibold"
               >
                 {{ w.h || 2 }}h
+              </button>
+
+              <!-- Widget-Level Font Size Button (cycles: Auto -> Small -> Normal -> Large -> XLarge) -->
+              <button 
+                @click.stop="cycleWidgetFontSize(w)"
+                title="Cycle widget font size (Auto, Small, Normal, Large, XLarge)"
+                class="px-2 py-1 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 text-sky-400 font-semibold"
+              >
+                Aa{{ (w.config && w.config.font_size) ? ':' + w.config.font_size[0].toUpperCase() : '' }}
               </button>
 
               <!-- Delete Widget -->
@@ -946,6 +1144,7 @@
         const profileLayouts = ref({});
         const photos = ref([]);
         const events = ref([]);
+        const pageConfigs = ref({});
         const weather = ref(null);
         const settings = ref({
           sleep_timeout: 300,
@@ -1190,6 +1389,119 @@
         const selectedProfile = computed(() => {
           return profiles.value.find(p => p.id === selectedProfileId.value) || null;
         });
+
+        // ==========================================================================
+        // Theme & Font Size Resolution System
+        // Resolution: Widget override -> Page override -> Profile default -> Global default
+        // ==========================================================================
+        const activeTheme = computed(() => {
+          const profKey = selectedProfileId.value !== null ? String(selectedProfileId.value) : 'family';
+          const pageKey = `${profKey}_${activePage.value}`;
+          const pageCfg = pageConfigs.value && pageConfigs.value[pageKey];
+          if (pageCfg && pageCfg.theme && pageCfg.theme !== 'inherit') {
+            return pageCfg.theme;
+          }
+          const prof = selectedProfile.value;
+          return (prof && prof.theme) || 'dark';
+        });
+
+        const activeFontSize = computed(() => {
+          const profKey = selectedProfileId.value !== null ? String(selectedProfileId.value) : 'family';
+          const pageKey = `${profKey}_${activePage.value}`;
+          const pageCfg = pageConfigs.value && pageConfigs.value[pageKey];
+          if (pageCfg && pageCfg.font_size && pageCfg.font_size !== 'inherit') {
+            return pageCfg.font_size;
+          }
+          const prof = selectedProfile.value;
+          return (prof && prof.font_size) || 'normal';
+        });
+
+        const currentPageConfigKey = computed(() => {
+          const profKey = selectedProfileId.value !== null ? String(selectedProfileId.value) : 'family';
+          return `${profKey}_${activePage.value}`;
+        });
+
+        const currentPageConfig = computed(() => {
+          return (pageConfigs.value && pageConfigs.value[currentPageConfigKey.value]) || null;
+        });
+
+        const currentPageConfigTheme = computed(() => {
+          return (currentPageConfig.value && currentPageConfig.value.theme) || 'inherit';
+        });
+
+        const currentPageConfigFontSize = computed(() => {
+          return (currentPageConfig.value && currentPageConfig.value.font_size) || 'inherit';
+        });
+
+        function cyclePageTheme() {
+          triggerHaptic('tap');
+          const cur = currentPageConfigTheme.value || 'inherit';
+          const order = ['inherit', 'dark', 'white'];
+          const nextIdx = (order.indexOf(cur) + 1) % order.length;
+          savePageSetting(order[nextIdx], currentPageConfigFontSize.value || 'inherit');
+        }
+
+        function cyclePageFontSize() {
+          triggerHaptic('tap');
+          const cur = currentPageConfigFontSize.value || 'inherit';
+          const order = ['inherit', 'small', 'normal', 'large', 'xlarge'];
+          const nextIdx = (order.indexOf(cur) + 1) % order.length;
+          savePageSetting(currentPageConfigTheme.value || 'inherit', order[nextIdx]);
+        }
+
+        function savePageSetting(themeVal, fontSizeVal) {
+          const profKey = selectedProfileId.value !== null ? String(selectedProfileId.value) : 'family';
+          const payload = {
+            profile_key: profKey,
+            page: activePage.value,
+            theme: themeVal,
+            font_size: fontSizeVal
+          };
+          pageConfigs.value = {
+            ...pageConfigs.value,
+            [currentPageConfigKey.value]: payload
+          };
+          if (socket && socket.connected) {
+            socket.emit('page:config:save', payload);
+          }
+        }
+
+        function getWidgetFontSize(w) {
+          let cfg = w && w.config;
+          if (typeof cfg === 'string') {
+            try { cfg = JSON.parse(cfg); } catch(e) { cfg = null; }
+          }
+          if (cfg && cfg.font_size && cfg.font_size !== 'inherit') {
+            return cfg.font_size;
+          }
+          return activeFontSize.value;
+        }
+
+        function getWidgetFontSizeClass(w) {
+          const fs = getWidgetFontSize(w);
+          if (fs === 'small') return 'fs-small';
+          if (fs === 'large') return 'fs-large';
+          if (fs === 'xlarge') return 'fs-xlarge';
+          return 'fs-normal';
+        }
+
+        function cycleWidgetFontSize(w) {
+          triggerHaptic('tap');
+          if (!w.config) w.config = {};
+          if (typeof w.config === 'string') {
+            try { w.config = JSON.parse(w.config); } catch(e) { w.config = {}; }
+          }
+          const cur = w.config.font_size || 'inherit';
+          const order = ['inherit', 'small', 'normal', 'large', 'xlarge'];
+          const nextIdx = (order.indexOf(cur) + 1) % order.length;
+          const nextVal = order[nextIdx];
+          if (nextVal === 'inherit') {
+            delete w.config.font_size;
+          } else {
+            w.config.font_size = nextVal;
+          }
+          saveCurrentLayout();
+        }
 
         // Compute total pages from active layouts
         const totalPages = computed(() => {
@@ -1759,6 +2071,7 @@
             if (data.photos && Array.isArray(data.photos)) photos.value = data.photos;
             if (data.events && Array.isArray(data.events)) events.value = data.events;
             if (data.settings) settings.value = { ...settings.value, ...data.settings };
+            if (data.page_configs) pageConfigs.value = data.page_configs;
 
             // Apply profile layout if matching
             const pKey = selectedProfileId.value !== null ? String(selectedProfileId.value) : 'family';
@@ -1910,6 +2223,18 @@
           verifyAdminPassword,
           cycleWidgetWidth,
           cycleWidgetHeight,
+          cycleWidgetFontSize,
+          getWidgetFontSize,
+          getWidgetFontSizeClass,
+          pageConfigs,
+          activeTheme,
+          activeFontSize,
+          currentPageConfigKey,
+          currentPageConfig,
+          currentPageConfigTheme,
+          currentPageConfigFontSize,
+          cyclePageTheme,
+          cyclePageFontSize,
           removeWidget,
           addWidget,
           addNewPage,
