@@ -7,16 +7,48 @@ const {
 } = require('../db');
 
 /**
+ * Normalize calendar URL (handles webcal:// and extracts Google Calendar ID from cid web URLs)
+ * @param {string} url
+ * @returns {string}
+ */
+function normalizeCalendarUrl(url) {
+  if (!url || typeof url !== 'string') return url;
+  let clean = url.trim();
+  if (clean.startsWith('webcal://')) {
+    clean = 'https://' + clean.slice(9);
+  }
+  try {
+    const parsed = new URL(clean);
+    if (parsed.hostname.includes('calendar.google.com') && parsed.searchParams.has('cid')) {
+      let cid = parsed.searchParams.get('cid');
+      if (cid && !cid.includes('@')) {
+        try {
+          const decoded = Buffer.from(cid, 'base64').toString('utf-8');
+          if (decoded && decoded.includes('@')) {
+            cid = decoded;
+          }
+        } catch(e) {}
+      }
+      if (cid && cid.includes('@')) {
+        return `https://calendar.google.com/calendar/ical/${encodeURIComponent(cid)}/public/basic.ics`;
+      }
+    }
+  } catch(e) {}
+  return clean;
+}
+
+/**
  * Synchronize a single iCal feed (Google Calendar, Apple, Outlook)
  * @param {object} feed - Feed record from calendar_feeds table
  * @returns {Promise<number>} Number of events synced
  */
 async function syncFeed(feed) {
   if (!feed || !feed.ical_url) return 0;
-  console.log(`[Calendar] Syncing feed #${feed.id} "${feed.name}" from ${feed.ical_url}...`);
+  const feedUrl = normalizeCalendarUrl(feed.ical_url);
+  console.log(`[Calendar] Syncing feed #${feed.id} "${feed.name}" from ${feedUrl}...`);
 
   try {
-    const data = await ical.async.fromURL(feed.ical_url);
+    const data = await ical.async.fromURL(feedUrl);
     let count = 0;
 
     for (const key of Object.keys(data)) {
@@ -114,6 +146,7 @@ function startCalendarSyncCron(io, intervalMs = 15 * 60 * 1000) {
 }
 
 module.exports = {
+  normalizeCalendarUrl,
   syncFeed,
   syncAllFeeds,
   startCalendarSyncCron

@@ -104,6 +104,44 @@ async function runTests() {
   assert.strictEqual(currentSettings.weather_units, 'fahrenheit');
   console.log('[PASS] Weather location & unit settings properly stored and retrieved');
 
+  console.log('\n--- 5. Testing Calendar URL Normalization & formatTime ---');
+  const { normalizeCalendarUrl } = require('../src/services/calendar');
+  const { insertCalendarFeed, getCalendarFeeds, deleteCalendarFeed, updateCalendarFeedSyncTime } = require('../src/db');
+  const fs = require('fs');
+
+  // Webcal
+  const normWebcal = normalizeCalendarUrl('webcal://example.com/calendar.ics');
+  assert.strictEqual(normWebcal, 'https://example.com/calendar.ics');
+  console.log('[PASS] normalizeCalendarUrl converts webcal:// to https://');
+
+  // Google cid web URL
+  const googleWebUrl = 'https://calendar.google.com/calendar/u/0?cid=ZmFtaWx5MTUxMjU4MTkzNTc5ODQ4NDc1NjFAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ';
+  const normGoogle = normalizeCalendarUrl(googleWebUrl);
+  assert(normGoogle.includes('/ical/'), 'Should normalize cid to ical path');
+  assert(normGoogle.includes('family15125819357984847561%40group.calendar.google.com'), 'Should extract base64-decoded calendar ID');
+  console.log('[PASS] normalizeCalendarUrl extracts base64 calendar ID from Google web link');
+
+  // Feed DB insertion and last_synced formatTime verification
+  const testFeed = insertCalendarFeed({
+    name: 'Test Family Feed',
+    ical_url: normGoogle,
+    color: '#38bdf8'
+  });
+  updateCalendarFeedSyncTime(testFeed.id);
+  const feeds = getCalendarFeeds();
+  const foundFeed = feeds.find(f => f.id === testFeed.id);
+  assert(foundFeed.last_synced, 'Feed should have last_synced populated');
+  console.log('[PASS] Feed last_synced timestamp successfully written');
+
+  // Verify formatTime exists in admin/index.html
+  const adminHtml = fs.readFileSync('admin/index.html', 'utf-8');
+  assert(adminHtml.includes('function formatTime('), 'admin/index.html must define formatTime');
+  assert(adminHtml.includes('formatTime,'), 'admin/index.html must export formatTime in setup return');
+  console.log('[PASS] formatTime is properly defined and exported in admin/index.html');
+
+  // Cleanup
+  deleteCalendarFeed(testFeed.id);
+
   console.log('\n=== ALL LATEST FEATURE TESTS PASSED SUCCESSFULLY ===\n');
 }
 

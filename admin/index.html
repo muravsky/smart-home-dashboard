@@ -1039,9 +1039,17 @@
               + GOOGLE CALENDAR / ICAL FEED
             </h2>
           </div>
-          <p class="text-[11px] text-neutral-400 leading-relaxed">
-            In Google Calendar &gt; Calendar Settings &gt; copy your <b>"Secret address in iCal format"</b> URL.
-          </p>
+          <div class="p-2.5 rounded-lg bg-sky-950/40 border border-sky-800/50 text-[11px] text-sky-200 leading-relaxed space-y-1.5">
+            <div class="font-bold flex items-center gap-1.5 text-sky-300">
+              <span>💡</span> Google Calendar Integration Guide:
+            </div>
+            <div class="text-[10.5px] text-neutral-300 space-y-1">
+              <div>1. Open Google Calendar on web, click <b>⚙️ Settings &gt; Settings for my calendars</b>.</div>
+              <div>2. Click your calendar (e.g. <i>Family</i>) and scroll down to <b>Integrate calendar</b>.</div>
+              <div>3. Copy the <b>"Secret address in iCal format"</b> (ends with <code>/basic.ics</code>).</div>
+              <div class="text-amber-300/90 text-[10px] pt-0.5">⚠️ Web links (like <code>.../u/0?cid=...</code>) require login and cannot be synced directly. Always copy the <b>.ics</b> secret address.</div>
+            </div>
+          </div>
 
           <form @submit.prevent="addFeed" class="space-y-3">
             <div>
@@ -2039,6 +2047,14 @@
           }
         }
 
+        function formatTime(iso) {
+          if (!iso) return '';
+          try {
+            const d = new Date(iso);
+            return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+          } catch(e) { return String(iso); }
+        }
+
         function formatEventDate(iso) {
           if (!iso) return '';
           try {
@@ -2054,8 +2070,13 @@
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(newFeed.value)
             });
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            showAlert('iCal feed subscribed & initial sync triggered!');
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+            if (data.warning) {
+              showAlert(data.warning, false);
+            } else {
+              showAlert(`iCal feed subscribed! Synced ${data.count || 0} events.`);
+            }
             newFeed.value.name = '';
             newFeed.value.ical_url = '';
             loadData();
@@ -2213,6 +2234,7 @@
           addNote,
           deleteNote,
           simulateMessage,
+          formatTime,
           formatEventDate,
           addFeed,
           syncFeeds,

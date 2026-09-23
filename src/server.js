@@ -50,7 +50,7 @@ const { parseTextWithGemini } = require('./services/gemini');
 const { getWeather, searchCity, clearWeatherCache } = require('./services/weather');
 const { initBot } = require('./bot');
 const { uploadAvatar, uploadPhoto } = require('./middleware/upload');
-const { syncFeed, syncAllFeeds, startCalendarSyncCron } = require('./services/calendar');
+const { normalizeCalendarUrl, syncFeed, syncAllFeeds, startCalendarSyncCron } = require('./services/calendar');
 
 const app = express();
 const server = http.createServer(app);
@@ -457,13 +457,24 @@ app.get('/api/admin/calendar/feeds', (req, res) => {
 });
 
 app.post('/api/admin/calendar/feeds', async (req, res) => {
-  const { name, ical_url, color, profile_id } = req.body;
+  let { name, ical_url, color, profile_id } = req.body;
   if (!name || !ical_url) return res.status(400).json({ error: 'name and ical_url are required' });
+  ical_url = normalizeCalendarUrl(ical_url);
   const feed = insertCalendarFeed({ name, ical_url, color, profile_id });
-  // Initial sync in background
-  syncFeed(feed).then(() => io.emit('dashboard_update', getDashboardData())).catch(e => console.warn(e));
+
+  let count = 0;
+  let warning = null;
+  try {
+    count = await syncFeed(feed);
+    if (count === 0) {
+      warning = 'Calendar feed added, but 0 events were found. If this is a private Google Calendar (like a Family group), please use the "Secret address in iCal format" (.ics) from Google Calendar Settings > Integrate calendar.';
+    }
+  } catch (e) {
+    warning = `Initial sync failed: ${e.message}. Please verify the iCal URL (.ics).`;
+  }
+
   io.emit('dashboard_update', getDashboardData());
-  res.json({ ok: true, feed });
+  res.json({ ok: true, feed, count, warning });
 });
 
 app.delete('/api/admin/calendar/feeds/:id', (req, res) => {
