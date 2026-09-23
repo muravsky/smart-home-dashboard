@@ -22,7 +22,24 @@ if [ ! -f "$PROJECT_DIR/.env" ]; then
   echo "Please edit $PROJECT_DIR/.env with your secrets!"
 fi
 
-# Create systemd service unit
+# Check if systemd is available
+if [ ! -d /run/systemd/system ]; then
+  echo ""
+  echo "⚠️  NOTE: systemd is not active in this environment."
+  echo "You appear to be running inside Google Cloud Shell (or a container/WSL),"
+  echo "rather than inside your actual Compute Engine VM ('smart-home-kiosk')."
+  echo ""
+  echo "To connect to your real Compute Engine VM, run:"
+  echo "  gcloud compute ssh smart-home-kiosk --zone=us-central1-a"
+  echo ""
+  echo "If you want to run the server here anyway, you can use PM2:"
+  echo "  npx pm2 start src/server.js --name smart-home"
+  echo "Or run in foreground:"
+  echo "  npm start"
+  exit 0
+fi
+
+# Create systemd service unit on real VM
 SERVICE_FILE="/etc/systemd/system/smart-home.service"
 echo "Generating systemd service definition..."
 

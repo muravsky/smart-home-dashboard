@@ -1,10 +1,10 @@
 const path = require('path');
 const Database = require('better-sqlite3');
+const fs = require('fs');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../data/smart_home.db');
 
 // Ensure parent directory exists
-const fs = require('fs');
 const dbDir = path.dirname(DB_PATH);
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
@@ -12,6 +12,7 @@ if (!fs.existsSync(dbDir)) {
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
 
 // Initialize schema
 db.exec(`
@@ -28,84 +29,537 @@ db.exec(`
     reward REAL DEFAULT 0,
     status TEXT DEFAULT 'pending'
   );
+
+  CREATE TABLE IF NOT EXISTS profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    color TEXT DEFAULT '#38bdf8',
+    avatar_type TEXT DEFAULT 'builtin',
+    avatar_value TEXT DEFAULT '🙂',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS lists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    type TEXT DEFAULT 'custom',
+    profile_id INTEGER,
+    color TEXT DEFAULT '#334155',
+    icon TEXT DEFAULT '📋',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS list_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    list_id INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    checked INTEGER DEFAULT 0,
+    assignee_profile_id INTEGER,
+    reward REAL DEFAULT 0,
+    position INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (list_id) REFERENCES lists(id) ON DELETE CASCADE,
+    FOREIGN KEY (assignee_profile_id) REFERENCES profiles(id) ON DELETE SET NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS widget_layouts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    page INTEGER NOT NULL DEFAULT 0,
+    widget_type TEXT NOT NULL,
+    x INTEGER NOT NULL DEFAULT 0,
+    y INTEGER NOT NULL DEFAULT 0,
+    w INTEGER NOT NULL DEFAULT 6,
+    h INTEGER NOT NULL DEFAULT 2,
+    config TEXT DEFAULT '{}',
+    position INTEGER DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS photos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT NOT NULL,
+    original_name TEXT,
+    source TEXT DEFAULT 'upload',
+    caption TEXT,
+    show_in_screensaver INTEGER DEFAULT 1,
+    telegram_file_id TEXT,
+    uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS calendar_feeds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    ical_url TEXT NOT NULL,
+    color TEXT DEFAULT '#38bdf8',
+    profile_id INTEGER,
+    last_synced DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE SET NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS calendar_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uid TEXT UNIQUE,
+    feed_id INTEGER,
+    title TEXT NOT NULL,
+    description TEXT,
+    start_datetime TEXT NOT NULL,
+    end_datetime TEXT,
+    all_day INTEGER DEFAULT 0,
+    profile_id INTEGER,
+    color TEXT DEFAULT '#38bdf8',
+    source TEXT DEFAULT 'manual',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (feed_id) REFERENCES calendar_feeds(id) ON DELETE CASCADE,
+    FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE SET NULL
+  );
 `);
 
-/**
- * Insert a note into SQLite
- */
-function insertNote(content) {
-  const stmt = db.prepare('INSERT INTO notes (content, timestamp) VALUES (?, ?)');
-  const info = stmt.run(content, new Date().toISOString());
-  return {
-    id: info.lastInsertRowid,
-    content,
-    timestamp: new Date().toISOString()
-  };
+// Seed default layouts if empty
+const existingLayouts = db.prepare('SELECT COUNT(*) as count FROM widget_layouts').get();
+if (existingLayouts.count === 0) {
+  const insertLayoutStmt = db.prepare(`
+    INSERT INTO widget_layouts (page, widget_type, x, y, w, h, config, position)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  // Page 0: Main Family Hub
+  insertLayoutStmt.run(0, 'clock', 0, 0, 12, 2, JSON.stringify({ showSeconds: true, showDate: true }), 0);
+  insertLayoutStmt.run(0, 'tasks', 0, 2, 6, 2, JSON.stringify({ title: 'Family Tasks' }), 1);
+  insertLayoutStmt.run(0, 'list', 6, 2, 6, 2, JSON.stringify({ title: 'Shopping' }), 2);
+  insertLayoutStmt.run(0, 'notes', 0, 4, 12, 2, JSON.stringify({ title: 'Family Notes' }), 3);
+
+  // Page 1: Daily Tools (Weather & Kitchen Timer)
+  insertLayoutStmt.run(1, 'weather', 0, 0, 6, 2, JSON.stringify({ title: 'Live Forecast' }), 0);
+  insertLayoutStmt.run(1, 'timer', 6, 0, 6, 2, JSON.stringify({ title: 'Kitchen Timer' }), 1);
+  insertLayoutStmt.run(1, 'tasks', 0, 2, 12, 2, JSON.stringify({ title: 'Chores Board' }), 2);
 }
 
-/**
- * Insert a task into SQLite
- */
+// Seed default lists if empty
+const existingLists = db.prepare('SELECT COUNT(*) as count FROM lists').get();
+if (existingLists.count === 0) {
+  const insertListStmt = db.prepare('INSERT INTO lists (name, type, profile_id, color, icon) VALUES (?, ?, ?, ?, ?)');
+  const insertItemStmt = db.prepare('INSERT INTO list_items (list_id, content, checked, reward) VALUES (?, ?, ?, ?)');
+
+  const taskList = insertListStmt.run('Family Tasks', 'tasks', null, '#38bdf8', '✅');
+  insertItemStmt.run(taskList.lastInsertRowid, 'Organize living room bookshelf', 0, 10);
+  insertItemStmt.run(taskList.lastInsertRowid, 'Take out recycling bins', 0, 15);
+
+  const shopList = insertListStmt.run('Shopping List', 'shopping', null, '#34d399', '🛒');
+  insertItemStmt.run(shopList.lastInsertRowid, 'Fresh whole milk', 0, 0);
+  insertItemStmt.run(shopList.lastInsertRowid, 'Organic eggs', 0, 0);
+  insertItemStmt.run(shopList.lastInsertRowid, 'Sourdough bread', 1, 0);
+}
+
+// Seed sample profiles if empty
+const existingProfiles = db.prepare('SELECT COUNT(*) as count FROM profiles').get();
+if (existingProfiles.count === 0) {
+  const insertProfileStmt = db.prepare('INSERT INTO profiles (name, color, avatar_type, avatar_value) VALUES (?, ?, ?, ?)');
+  insertProfileStmt.run('Leo', '#f59e0b', 'builtin', '🦁');
+  insertProfileStmt.run('Mia', '#ec4899', 'builtin', '🦄');
+}
+
+// Seed sample calendar events if empty
+const existingEvents = db.prepare('SELECT COUNT(*) as count FROM calendar_events').get();
+if (existingEvents.count === 0) {
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+
+  const insertEventStmt = db.prepare(`
+    INSERT INTO calendar_events (title, description, start_datetime, end_datetime, all_day, color, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  insertEventStmt.run('Family Game Night', 'Board games in living room', `${todayStr}T19:00:00`, `${todayStr}T21:00:00`, 0, '#38bdf8', 'manual');
+  insertEventStmt.run('Soccer Practice', 'Community field', `${tomorrowStr}T16:30:00`, `${tomorrowStr}T18:00:00`, 0, '#34d399', 'manual');
+}
+
+/* ==========================================================================
+   Notes Methods (Backward Compatible)
+   ========================================================================== */
+function insertNote(content) {
+  const stmt = db.prepare('INSERT INTO notes (content, timestamp) VALUES (?, ?)');
+  const ts = new Date().toISOString();
+  const info = stmt.run(content, ts);
+  return { id: info.lastInsertRowid, content, timestamp: ts };
+}
+
+function getNotes(limit = 50) {
+  return db.prepare('SELECT * FROM notes ORDER BY id DESC LIMIT ?').all(limit);
+}
+
+function deleteNote(id) {
+  return db.prepare('DELETE FROM notes WHERE id = ?').run(id);
+}
+
+/* ==========================================================================
+   Tasks Methods (Backward Compatible)
+   ========================================================================== */
 function insertTask({ assignee = null, title, reward = 0, status = 'pending' }) {
   const stmt = db.prepare('INSERT INTO tasks (assignee, title, reward, status) VALUES (?, ?, ?, ?)');
   const info = stmt.run(assignee, title, Number(reward) || 0, status);
-  return {
-    id: info.lastInsertRowid,
-    assignee,
-    title,
-    reward: Number(reward) || 0,
-    status
-  };
+  return { id: info.lastInsertRowid, assignee, title, reward: Number(reward) || 0, status };
 }
 
-/**
- * Retrieve notes ordered by latest first
- */
-function getNotes(limit = 50) {
-  const stmt = db.prepare('SELECT * FROM notes ORDER BY id DESC LIMIT ?');
-  return stmt.all(limit);
-}
-
-/**
- * Retrieve tasks
- */
 function getTasks() {
-  const stmt = db.prepare('SELECT * FROM tasks ORDER BY id DESC');
-  return stmt.all();
+  return db.prepare('SELECT * FROM tasks ORDER BY id DESC').all();
 }
 
-/**
- * Get unified dashboard data
- */
+function updateTaskStatus(id, status) {
+  return db.prepare('UPDATE tasks SET status = ? WHERE id = ?').run(status, id);
+}
+
+function deleteTask(id) {
+  return db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+}
+
+/* ==========================================================================
+   Profiles Methods
+   ========================================================================== */
+function getProfiles() {
+  return db.prepare('SELECT * FROM profiles ORDER BY name ASC').all();
+}
+
+function getProfileById(id) {
+  return db.prepare('SELECT * FROM profiles WHERE id = ?').get(id);
+}
+
+function insertProfile({ name, color = '#38bdf8', avatar_type = 'builtin', avatar_value = '🙂' }) {
+  const stmt = db.prepare('INSERT INTO profiles (name, color, avatar_type, avatar_value) VALUES (?, ?, ?, ?)');
+  const info = stmt.run(name.trim(), color, avatar_type, avatar_value);
+  return getProfileById(info.lastInsertRowid);
+}
+
+function updateProfile(id, { name, color, avatar_type, avatar_value }) {
+  const current = getProfileById(id);
+  if (!current) return null;
+  const stmt = db.prepare(`
+    UPDATE profiles 
+    SET name = ?, color = ?, avatar_type = ?, avatar_value = ? 
+    WHERE id = ?
+  `);
+  stmt.run(
+    name !== undefined ? name.trim() : current.name,
+    color !== undefined ? color : current.color,
+    avatar_type !== undefined ? avatar_type : current.avatar_type,
+    avatar_value !== undefined ? avatar_value : current.avatar_value,
+    id
+  );
+  return getProfileById(id);
+}
+
+function deleteProfile(id) {
+  return db.prepare('DELETE FROM profiles WHERE id = ?').run(id);
+}
+
+/* ==========================================================================
+   Lists & List Items Methods
+   ========================================================================== */
+function getLists() {
+  const lists = db.prepare(`
+    SELECT l.*, p.name as profile_name, p.color as profile_color 
+    FROM lists l 
+    LEFT JOIN profiles p ON l.profile_id = p.id 
+    ORDER BY l.id ASC
+  `).all();
+
+  const getItemsStmt = db.prepare(`
+    SELECT i.*, p.name as assignee_name, p.color as assignee_color, p.avatar_type as assignee_avatar_type, p.avatar_value as assignee_avatar_value
+    FROM list_items i
+    LEFT JOIN profiles p ON i.assignee_profile_id = p.id
+    WHERE i.list_id = ?
+    ORDER BY i.checked ASC, i.position ASC, i.id DESC
+  `);
+
+  return lists.map((list) => ({
+    ...list,
+    items: getItemsStmt.all(list.id)
+  }));
+}
+
+function getListById(id) {
+  const list = db.prepare(`
+    SELECT l.*, p.name as profile_name, p.color as profile_color 
+    FROM lists l 
+    LEFT JOIN profiles p ON l.profile_id = p.id 
+    WHERE l.id = ?
+  `).get(id);
+
+  if (!list) return null;
+
+  list.items = db.prepare(`
+    SELECT i.*, p.name as assignee_name, p.color as assignee_color
+    FROM list_items i
+    LEFT JOIN profiles p ON i.assignee_profile_id = p.id
+    WHERE i.list_id = ?
+    ORDER BY i.checked ASC, i.position ASC, i.id DESC
+  `).all(id);
+
+  return list;
+}
+
+function insertList({ name, type = 'custom', profile_id = null, color = '#334155', icon = '📋' }) {
+  const stmt = db.prepare('INSERT INTO lists (name, type, profile_id, color, icon) VALUES (?, ?, ?, ?, ?)');
+  const info = stmt.run(name.trim(), type, profile_id || null, color, icon);
+  return getListById(info.lastInsertRowid);
+}
+
+function updateList(id, { name, color, icon, profile_id }) {
+  const current = getListById(id);
+  if (!current) return null;
+  const stmt = db.prepare(`
+    UPDATE lists 
+    SET name = ?, color = ?, icon = ?, profile_id = ? 
+    WHERE id = ?
+  `);
+  stmt.run(
+    name !== undefined ? name.trim() : current.name,
+    color !== undefined ? color : current.color,
+    icon !== undefined ? icon : current.icon,
+    profile_id !== undefined ? profile_id : current.profile_id,
+    id
+  );
+  return getListById(id);
+}
+
+function deleteList(id) {
+  return db.prepare('DELETE FROM lists WHERE id = ?').run(id);
+}
+
+function insertListItem({ list_id, content, assignee_profile_id = null, reward = 0, position = 0 }) {
+  const stmt = db.prepare(`
+    INSERT INTO list_items (list_id, content, assignee_profile_id, reward, position)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  const info = stmt.run(list_id, content.trim(), assignee_profile_id || null, Number(reward) || 0, position);
+  return db.prepare('SELECT * FROM list_items WHERE id = ?').get(info.lastInsertRowid);
+}
+
+function toggleListItemChecked(id, checked) {
+  const stmt = db.prepare('UPDATE list_items SET checked = ? WHERE id = ?');
+  stmt.run(checked ? 1 : 0, id);
+  return db.prepare('SELECT * FROM list_items WHERE id = ?').get(id);
+}
+
+function updateListItem(id, { content, checked, assignee_profile_id, reward }) {
+  const current = db.prepare('SELECT * FROM list_items WHERE id = ?').get(id);
+  if (!current) return null;
+  const stmt = db.prepare(`
+    UPDATE list_items 
+    SET content = ?, checked = ?, assignee_profile_id = ?, reward = ?
+    WHERE id = ?
+  `);
+  stmt.run(
+    content !== undefined ? content.trim() : current.content,
+    checked !== undefined ? (checked ? 1 : 0) : current.checked,
+    assignee_profile_id !== undefined ? assignee_profile_id : current.assignee_profile_id,
+    reward !== undefined ? Number(reward) || 0 : current.reward,
+    id
+  );
+  return db.prepare('SELECT * FROM list_items WHERE id = ?').get(id);
+}
+
+function deleteListItem(id) {
+  return db.prepare('DELETE FROM list_items WHERE id = ?').run(id);
+}
+
+/* ==========================================================================
+   Widget Layouts Methods
+   ========================================================================== */
+function getWidgetLayouts() {
+  const rows = db.prepare('SELECT * FROM widget_layouts ORDER BY page ASC, position ASC, id ASC').all();
+  return rows.map(r => {
+    let cfg = {};
+    try {
+      cfg = JSON.parse(r.config);
+    } catch(e) {}
+    return {
+      ...r,
+      config: cfg
+    };
+  });
+}
+
+function saveWidgetLayouts(layouts) {
+  if (!Array.isArray(layouts)) return getWidgetLayouts();
+
+  const tx = db.transaction((items) => {
+    db.prepare('DELETE FROM widget_layouts').run();
+    const insertStmt = db.prepare(`
+      INSERT INTO widget_layouts (page, widget_type, x, y, w, h, config, position)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      insertStmt.run(
+        it.page !== undefined ? Number(it.page) : 0,
+        it.widget_type,
+        it.x !== undefined ? Number(it.x) : 0,
+        it.y !== undefined ? Number(it.y) : 0,
+        it.w !== undefined ? Number(it.w) : 6,
+        it.h !== undefined ? Number(it.h) : 2,
+        typeof it.config === 'object' ? JSON.stringify(it.config) : (it.config || '{}'),
+        it.position !== undefined ? Number(it.position) : i
+      );
+    }
+  });
+
+  tx(layouts);
+  return getWidgetLayouts();
+}
+
+/* ==========================================================================
+   Photos Methods
+   ========================================================================== */
+function getPhotos({ screensaverOnly = false } = {}) {
+  if (screensaverOnly) {
+    return db.prepare('SELECT * FROM photos WHERE show_in_screensaver = 1 ORDER BY uploaded_at DESC').all();
+  }
+  return db.prepare('SELECT * FROM photos ORDER BY uploaded_at DESC').all();
+}
+
+function getPhotoById(id) {
+  return db.prepare('SELECT * FROM photos WHERE id = ?').get(id);
+}
+
+function insertPhoto({ filename, original_name = null, source = 'upload', caption = null, show_in_screensaver = 1, telegram_file_id = null }) {
+  const stmt = db.prepare(`
+    INSERT INTO photos (filename, original_name, source, caption, show_in_screensaver, telegram_file_id)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  const info = stmt.run(filename, original_name, source, caption, show_in_screensaver ? 1 : 0, telegram_file_id);
+  return getPhotoById(info.lastInsertRowid);
+}
+
+function updatePhoto(id, { caption, show_in_screensaver }) {
+  const current = getPhotoById(id);
+  if (!current) return null;
+  const stmt = db.prepare('UPDATE photos SET caption = ?, show_in_screensaver = ? WHERE id = ?');
+  stmt.run(
+    caption !== undefined ? caption : current.caption,
+    show_in_screensaver !== undefined ? (show_in_screensaver ? 1 : 0) : current.show_in_screensaver,
+    id
+  );
+  return getPhotoById(id);
+}
+
+function deletePhoto(id) {
+  return db.prepare('DELETE FROM photos WHERE id = ?').run(id);
+}
+
+/* ==========================================================================
+   Calendar Feeds & Events Methods
+   ========================================================================== */
+function getCalendarFeeds() {
+  return db.prepare(`
+    SELECT f.*, p.name as profile_name 
+    FROM calendar_feeds f 
+    LEFT JOIN profiles p ON f.profile_id = p.id 
+    ORDER BY f.id ASC
+  `).all();
+}
+
+function getCalendarFeedById(id) {
+  return db.prepare('SELECT * FROM calendar_feeds WHERE id = ?').get(id);
+}
+
+function insertCalendarFeed({ name, ical_url, color = '#38bdf8', profile_id = null }) {
+  const stmt = db.prepare('INSERT INTO calendar_feeds (name, ical_url, color, profile_id) VALUES (?, ?, ?, ?)');
+  const info = stmt.run(name.trim(), ical_url.trim(), color, profile_id || null);
+  return getCalendarFeedById(info.lastInsertRowid);
+}
+
+function updateCalendarFeedSyncTime(id, last_synced = new Date().toISOString()) {
+  db.prepare('UPDATE calendar_feeds SET last_synced = ? WHERE id = ?').run(last_synced, id);
+}
+
+function deleteCalendarFeed(id) {
+  return db.prepare('DELETE FROM calendar_feeds WHERE id = ?').run(id);
+}
+
+function getCalendarEvents({ profileId = null, limit = 100 } = {}) {
+  let query = `
+    SELECT e.*, p.name as profile_name, p.color as profile_color 
+    FROM calendar_events e 
+    LEFT JOIN profiles p ON e.profile_id = p.id
+  `;
+  const params = [];
+  if (profileId) {
+    query += ' WHERE e.profile_id IS NULL OR e.profile_id = ?';
+    params.push(profileId);
+  }
+  query += ' ORDER BY e.start_datetime ASC LIMIT ?';
+  params.push(limit);
+
+  return db.prepare(query).all(...params);
+}
+
+function insertCalendarEvent({ uid = null, feed_id = null, title, description = null, start_datetime, end_datetime = null, all_day = 0, profile_id = null, color = '#38bdf8', source = 'manual' }) {
+  const stmt = db.prepare(`
+    INSERT INTO calendar_events (uid, feed_id, title, description, start_datetime, end_datetime, all_day, profile_id, color, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const info = stmt.run(
+    uid,
+    feed_id,
+    title.trim(),
+    description,
+    start_datetime,
+    end_datetime,
+    all_day ? 1 : 0,
+    profile_id || null,
+    color,
+    source
+  );
+  return db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(info.lastInsertRowid);
+}
+
+function upsertCalendarEventByUid({ uid, feed_id = null, title, description = null, start_datetime, end_datetime = null, all_day = 0, profile_id = null, color = '#38bdf8', source = 'google' }) {
+  const stmt = db.prepare(`
+    INSERT INTO calendar_events (uid, feed_id, title, description, start_datetime, end_datetime, all_day, profile_id, color, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(uid) DO UPDATE SET
+      title = excluded.title,
+      description = excluded.description,
+      start_datetime = excluded.start_datetime,
+      end_datetime = excluded.end_datetime,
+      all_day = excluded.all_day,
+      color = excluded.color
+  `);
+  stmt.run(
+    uid,
+    feed_id,
+    title.trim(),
+    description,
+    start_datetime,
+    end_datetime,
+    all_day ? 1 : 0,
+    profile_id || null,
+    color,
+    source
+  );
+  return db.prepare('SELECT * FROM calendar_events WHERE uid = ?').get(uid);
+}
+
+function deleteCalendarEvent(id) {
+  return db.prepare('DELETE FROM calendar_events WHERE id = ?').run(id);
+}
+
+/* ==========================================================================
+   Unified Dashboard State
+   ========================================================================== */
 function getDashboardData() {
   return {
     notes: getNotes(),
-    tasks: getTasks()
+    tasks: getTasks(),
+    profiles: getProfiles(),
+    lists: getLists(),
+    layouts: getWidgetLayouts(),
+    photos: getPhotos({ screensaverOnly: true }),
+    events: getCalendarEvents({ limit: 50 }),
+    feeds: getCalendarFeeds()
   };
-}
-
-/**
- * Delete a note by ID
- */
-function deleteNote(id) {
-  const stmt = db.prepare('DELETE FROM notes WHERE id = ?');
-  return stmt.run(id);
-}
-
-/**
- * Update a task's status (e.g. 'pending', 'completed')
- */
-function updateTaskStatus(id, status) {
-  const stmt = db.prepare('UPDATE tasks SET status = ? WHERE id = ?');
-  return stmt.run(status, id);
-}
-
-/**
- * Delete a task by ID
- */
-function deleteTask(id) {
-  const stmt = db.prepare('DELETE FROM tasks WHERE id = ?');
-  return stmt.run(id);
 }
 
 module.exports = {
@@ -117,5 +571,35 @@ module.exports = {
   deleteTask,
   getNotes,
   getTasks,
+  getProfiles,
+  getProfileById,
+  insertProfile,
+  updateProfile,
+  deleteProfile,
+  getLists,
+  getListById,
+  insertList,
+  updateList,
+  deleteList,
+  insertListItem,
+  toggleListItemChecked,
+  updateListItem,
+  deleteListItem,
+  getWidgetLayouts,
+  saveWidgetLayouts,
+  getPhotos,
+  getPhotoById,
+  insertPhoto,
+  updatePhoto,
+  deletePhoto,
+  getCalendarFeeds,
+  getCalendarFeedById,
+  insertCalendarFeed,
+  updateCalendarFeedSyncTime,
+  deleteCalendarFeed,
+  getCalendarEvents,
+  insertCalendarEvent,
+  upsertCalendarEventByUid,
+  deleteCalendarEvent,
   getDashboardData
 };

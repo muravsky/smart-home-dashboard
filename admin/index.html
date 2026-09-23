@@ -11,14 +11,14 @@
   <div id="app" class="max-w-6xl mx-auto px-4 py-8">
 
     <!-- TOP HEADER -->
-    <header class="flex flex-wrap items-center justify-between border-b border-neutral-800 pb-5 mb-8 gap-4">
+    <header class="flex flex-wrap items-center justify-between border-b border-neutral-800 pb-5 mb-6 gap-4">
       <div>
         <div class="flex items-center gap-2">
           <span class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
           <h1 class="text-2xl font-bold tracking-tight text-white font-mono">SMART HOME ADMIN</h1>
         </div>
         <p class="text-xs text-neutral-400 font-mono mt-1">
-          Google Compute Engine VM • Express + better-sqlite3 + Socket.IO + Gemini
+          Profiles • Custom Lists • Tasks • Telegram & Gemini AI
         </p>
       </div>
 
@@ -32,9 +32,9 @@
         <a 
           href="/?token=your_secret_token" 
           target="_blank"
-          class="text-xs font-mono bg-white hover:bg-neutral-200 text-black px-3 py-1.5 rounded font-semibold transition"
+          class="text-xs font-mono bg-white hover:bg-neutral-200 text-black px-3 py-1.5 rounded font-semibold transition flex items-center gap-1.5"
         >
-          OPEN KIOSK DASHBOARD ↗
+          <span>OPEN KIOSK</span> ↗
         </a>
       </div>
     </header>
@@ -45,13 +45,438 @@
       <button @click="alertMessage = ''" class="text-xs font-mono opacity-70 hover:opacity-100">DISMISS</button>
     </div>
 
-    <!-- MAIN GRID -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <!-- NAVIGATION TABS -->
+    <nav class="flex border-b border-neutral-800 gap-2 mb-6">
+      <button 
+        @click="activeTab = 'profiles'" 
+        :class="activeTab === 'profiles' ? 'border-sky-500 text-sky-400 bg-sky-500/10' : 'border-transparent text-neutral-400 hover:text-white'"
+        class="px-4 py-2 border-b-2 font-mono text-xs font-semibold uppercase tracking-wider transition rounded-t"
+      >
+        👥 Profiles (Kids & Family)
+      </button>
+      <button 
+        @click="activeTab = 'lists'" 
+        :class="activeTab === 'lists' ? 'border-sky-500 text-sky-400 bg-sky-500/10' : 'border-transparent text-neutral-400 hover:text-white'"
+        class="px-4 py-2 border-b-2 font-mono text-xs font-semibold uppercase tracking-wider transition rounded-t"
+      >
+        📋 Lists & Tasks
+      </button>
+      <button 
+        @click="activeTab = 'notes_ai'" 
+        :class="activeTab === 'notes_ai' ? 'border-sky-500 text-sky-400 bg-sky-500/10' : 'border-transparent text-neutral-400 hover:text-white'"
+        class="px-4 py-2 border-b-2 font-mono text-xs font-semibold uppercase tracking-wider transition rounded-t"
+      >
+        ✨ Notes & Gemini AI
+      </button>
+      <button 
+        @click="activeTab = 'photos'" 
+        :class="activeTab === 'photos' ? 'border-sky-500 text-sky-400 bg-sky-500/10' : 'border-transparent text-neutral-400 hover:text-white'"
+        class="px-4 py-2 border-b-2 font-mono text-xs font-semibold uppercase tracking-wider transition rounded-t"
+      >
+        🖼️ Photo Gallery
+      </button>
+      <button 
+        @click="activeTab = 'calendar'" 
+        :class="activeTab === 'calendar' ? 'border-sky-500 text-sky-400 bg-sky-500/10' : 'border-transparent text-neutral-400 hover:text-white'"
+        class="px-4 py-2 border-b-2 font-mono text-xs font-semibold uppercase tracking-wider transition rounded-t"
+      >
+        📅 Calendar & Feeds
+      </button>
+    </nav>
 
-      <!-- LEFT COLUMN: AI SIMULATOR & QUICK ADD (Col 1) -->
+    <!-- =========================================================================
+         TAB 1: PROFILES (KIDS & FAMILY)
+         ========================================================================= -->
+    <div v-if="activeTab === 'profiles'" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      
+      <!-- ADD PROFILE FORM -->
+      <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg h-fit">
+        <h2 class="font-mono text-xs font-bold uppercase tracking-wider text-sky-400 mb-3 border-b border-neutral-800 pb-2">
+          ADD FAMILY / KID PROFILE
+        </h2>
+
+        <form @submit.prevent="createProfile" class="space-y-4">
+          <div>
+            <label class="block text-neutral-400 text-[11px] font-mono mb-1">NAME</label>
+            <input 
+              v-model="newProfile.name" 
+              type="text" 
+              placeholder="e.g. Leo, Mia, Mom" 
+              class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-lg p-2.5 text-xs text-neutral-100 outline-none"
+              required
+            />
+          </div>
+
+          <div>
+            <label class="block text-neutral-400 text-[11px] font-mono mb-1">THEME COLOR</label>
+            <div class="flex items-center gap-2">
+              <input 
+                v-model="newProfile.color" 
+                type="color" 
+                class="w-9 h-9 rounded cursor-pointer bg-transparent border-0"
+              />
+              <span class="font-mono text-xs text-neutral-300">{{ newProfile.color }}</span>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-neutral-400 text-[11px] font-mono mb-2">AVATAR TYPE</label>
+            <div class="grid grid-cols-2 gap-2 mb-3">
+              <button 
+                type="button" 
+                @click="newProfile.avatar_type = 'builtin'"
+                :class="newProfile.avatar_type === 'builtin' ? 'bg-sky-950 border-sky-600 text-sky-300 font-semibold' : 'bg-neutral-950 border-neutral-800 text-neutral-400'"
+                class="border py-1.5 rounded text-xs font-mono transition"
+              >
+                Built-in Emoji
+              </button>
+              <button 
+                type="button" 
+                @click="newProfile.avatar_type = 'upload'"
+                :class="newProfile.avatar_type === 'upload' ? 'bg-sky-950 border-sky-600 text-sky-300 font-semibold' : 'bg-neutral-950 border-neutral-800 text-neutral-400'"
+                class="border py-1.5 rounded text-xs font-mono transition"
+              >
+                Upload Photo
+              </button>
+            </div>
+
+            <!-- Builtin Emoji Gallery Picker -->
+            <div v-if="newProfile.avatar_type === 'builtin'">
+              <div class="grid grid-cols-6 gap-2 p-2 bg-neutral-950 border border-neutral-800 rounded-lg max-h-36 overflow-y-auto">
+                <button 
+                  type="button" 
+                  v-for="em in emojiGallery" 
+                  :key="em" 
+                  @click="newProfile.avatar_value = em"
+                  :class="newProfile.avatar_value === em ? 'ring-2 ring-sky-500 bg-sky-950/50' : 'hover:bg-neutral-900'"
+                  class="text-xl p-1.5 rounded transition flex items-center justify-center"
+                >
+                  {{ em }}
+                </button>
+              </div>
+              <div class="mt-2 text-center">
+                <span class="text-xs font-mono text-neutral-500">Selected: </span>
+                <span class="text-2xl">{{ newProfile.avatar_value }}</span>
+              </div>
+            </div>
+
+            <!-- Upload Photo Input -->
+            <div v-else class="space-y-2">
+              <input 
+                type="file" 
+                ref="avatarFileInput" 
+                @change="handleAvatarFileSelect"
+                accept="image/*"
+                class="block w-full text-xs text-neutral-400 file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-xs file:font-mono file:bg-neutral-800 file:text-neutral-200 hover:file:bg-neutral-700 cursor-pointer"
+              />
+              <div v-if="avatarUploadPreview" class="flex items-center gap-3 p-2 bg-neutral-950 rounded border border-neutral-800">
+                <img :src="avatarUploadPreview" class="w-10 h-10 rounded-full object-cover border border-sky-500" />
+                <span class="text-[11px] font-mono text-emerald-400">Photo preview ready</span>
+              </div>
+            </div>
+          </div>
+
+          <button 
+            type="submit" 
+            class="w-full font-mono text-xs bg-sky-600 hover:bg-sky-500 text-white py-2 rounded-lg font-medium transition"
+          >
+            + Create Profile
+          </button>
+        </form>
+      </div>
+
+      <!-- PROFILES LIST -->
+      <div class="lg:col-span-2 space-y-4">
+        <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg">
+          <div class="flex items-center justify-between border-b border-neutral-800 pb-3 mb-4">
+            <h2 class="font-mono text-sm font-bold uppercase tracking-wider text-white">
+              EXISTING FAMILY PROFILES ({{ profiles.length }})
+            </h2>
+          </div>
+
+          <div v-if="profiles.length === 0" class="text-neutral-500 text-xs font-mono py-8 text-center border border-dashed border-neutral-800 rounded-lg">
+            No profiles yet. Add your kids or family members above!
+          </div>
+
+          <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div 
+              v-for="prof in profiles" 
+              :key="prof.id" 
+              class="bg-neutral-950 border border-neutral-800/80 rounded-xl p-4 flex items-center justify-between gap-4 hover:border-neutral-700 transition"
+              :style="{ borderLeftColor: prof.color, borderLeftWidth: '4px' }"
+            >
+              <div class="flex items-center gap-3">
+                <!-- Avatar Render -->
+                <div class="w-12 h-12 rounded-full overflow-hidden flex items-center justify-center bg-neutral-900 border border-neutral-800 shrink-0">
+                  <img 
+                    v-if="prof.avatar_type === 'upload'" 
+                    :src="prof.avatar_value" 
+                    class="w-full h-full object-cover" 
+                  />
+                  <span v-else class="text-2xl">{{ prof.avatar_value }}</span>
+                </div>
+
+                <div>
+                  <h3 class="text-sm font-bold text-white">{{ prof.name }}</h3>
+                  <div class="flex items-center gap-2 mt-0.5">
+                    <span 
+                      class="w-2.5 h-2.5 rounded-full inline-block" 
+                      :style="{ backgroundColor: prof.color }"
+                    ></span>
+                    <span class="text-[11px] font-mono text-neutral-400">{{ prof.color }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <button 
+                @click="deleteProfile(prof.id)" 
+                class="text-neutral-600 hover:text-red-400 text-xs font-mono px-2 py-1 transition"
+                title="Delete profile"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- =========================================================================
+         TAB 2: LISTS & TASKS
+         ========================================================================= -->
+    <div v-if="activeTab === 'lists'" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      
+      <!-- LEFT: LIST SELECTOR & NEW LIST FORM -->
       <div class="space-y-6 lg:col-span-1">
         
-        <!-- AI TELEGRAM SIMULATOR -->
+        <!-- NEW LIST FORM -->
+        <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg">
+          <h2 class="font-mono text-xs font-bold uppercase tracking-wider text-emerald-400 mb-3 border-b border-neutral-800 pb-2">
+            + CREATE NEW LIST
+          </h2>
+
+          <form @submit.prevent="createList" class="space-y-3">
+            <div>
+              <label class="block text-neutral-400 text-[11px] font-mono mb-1">LIST NAME</label>
+              <input 
+                v-model="newList.name" 
+                type="text" 
+                placeholder="e.g. Leo's Chores, Groceries" 
+                class="w-full bg-neutral-950 border border-neutral-800 focus:border-emerald-500 rounded-lg p-2 text-xs text-neutral-100 outline-none"
+                required
+              />
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-neutral-400 text-[11px] font-mono mb-1">TYPE</label>
+                <select 
+                  v-model="newList.type" 
+                  class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 outline-none"
+                >
+                  <option value="tasks">Tasks & Chores</option>
+                  <option value="shopping">Shopping List</option>
+                  <option value="custom">Custom List</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-neutral-400 text-[11px] font-mono mb-1">ASSIGN TO</label>
+                <select 
+                  v-model="newList.profile_id" 
+                  class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 outline-none"
+                >
+                  <option :value="null">Shared (Family)</option>
+                  <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-neutral-400 text-[11px] font-mono mb-1">ICON</label>
+                <input 
+                  v-model="newList.icon" 
+                  type="text" 
+                  class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 text-center outline-none"
+                />
+              </div>
+
+              <div>
+                <label class="block text-neutral-400 text-[11px] font-mono mb-1">COLOR</label>
+                <input 
+                  v-model="newList.color" 
+                  type="color" 
+                  class="w-full h-8 rounded bg-transparent border-0 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            <button 
+              type="submit" 
+              class="w-full font-mono text-xs bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-lg font-medium transition"
+            >
+              + Create List
+            </button>
+          </form>
+        </div>
+
+        <!-- LISTS NAVIGATION -->
+        <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-4 shadow-lg">
+          <h2 class="font-mono text-xs font-bold uppercase tracking-wider text-neutral-400 mb-3 border-b border-neutral-800 pb-2">
+            SELECT LIST
+          </h2>
+          <div class="space-y-1.5">
+            <button 
+              v-for="l in lists" 
+              :key="l.id" 
+              @click="selectedListId = l.id"
+              :class="selectedListId === l.id ? 'bg-neutral-800 text-white border-l-4 border-l-emerald-400 font-semibold' : 'text-neutral-400 hover:bg-neutral-950 hover:text-neutral-200'"
+              class="w-full text-left p-2.5 rounded text-xs font-sans flex items-center justify-between transition"
+            >
+              <div class="flex items-center gap-2">
+                <span>{{ l.icon || '📋' }}</span>
+                <span>{{ l.name }}</span>
+                <span v-if="l.profile_name" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-neutral-900 text-neutral-400 border border-neutral-800">
+                  @{{ l.profile_name }}
+                </span>
+              </div>
+              <span class="text-[10px] font-mono text-neutral-500">
+                {{ l.items ? l.items.length : 0 }}
+              </span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT: SELECTED LIST ITEMS & MANAGEMENT -->
+      <div class="lg:col-span-2 space-y-6">
+        <div v-if="currentList" class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg">
+          
+          <!-- LIST HEADER -->
+          <div class="flex items-center justify-between border-b border-neutral-800 pb-3 mb-4">
+            <div class="flex items-center gap-2.5">
+              <span class="text-xl">{{ currentList.icon || '📋' }}</span>
+              <div>
+                <h2 class="text-base font-bold text-white">{{ currentList.name }}</h2>
+                <div class="flex items-center gap-2 text-xs font-mono text-neutral-500">
+                  <span class="uppercase">{{ currentList.type }}</span>
+                  <span>•</span>
+                  <span>{{ currentList.profile_name ? 'Assigned to ' + currentList.profile_name : 'Family Shared' }}</span>
+                </div>
+              </div>
+            </div>
+
+            <button 
+              @click="deleteList(currentList.id)" 
+              class="text-xs font-mono text-neutral-500 hover:text-red-400 border border-neutral-800 hover:border-red-900 px-2.5 py-1 rounded transition"
+            >
+              Delete List
+            </button>
+          </div>
+
+          <!-- ADD ITEM INPUT -->
+          <form @submit.prevent="addListItem" class="mb-5 p-3 bg-neutral-950 border border-neutral-800 rounded-lg flex flex-wrap items-center gap-2">
+            <input 
+              v-model="newListItem.content" 
+              type="text" 
+              placeholder="Add item or task..." 
+              class="flex-1 bg-transparent border-0 text-xs text-white outline-none min-w-[160px]"
+              required
+            />
+
+            <!-- Optional Assignee profile -->
+            <select 
+              v-model="newListItem.assignee_profile_id" 
+              class="bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-[11px] text-neutral-300 font-mono outline-none"
+            >
+              <option :value="null">No Assignee</option>
+              <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+            </select>
+
+            <!-- Optional Reward -->
+            <input 
+              v-model.number="newListItem.reward" 
+              type="number" 
+              placeholder="+Reward" 
+              class="w-16 bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-[11px] text-neutral-300 font-mono outline-none text-center"
+            />
+
+            <button 
+              type="submit" 
+              class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded text-xs font-mono font-medium transition"
+            >
+              + Add
+            </button>
+          </form>
+
+          <!-- ITEMS LIST -->
+          <div v-if="!currentList.items || currentList.items.length === 0" class="text-neutral-500 text-xs font-mono py-8 text-center border border-dashed border-neutral-800 rounded-lg">
+            No items in this list yet. Add one above!
+          </div>
+
+          <div v-else class="space-y-2">
+            <div 
+              v-for="item in currentList.items" 
+              :key="item.id" 
+              class="p-2.5 bg-neutral-950 border border-neutral-800/80 rounded-lg flex items-center justify-between gap-3 hover:border-neutral-700 transition"
+              :class="{ 'opacity-50': item.checked }"
+            >
+              <div class="flex items-center gap-3">
+                <input 
+                  type="checkbox" 
+                  :checked="item.checked === 1" 
+                  @change="toggleListItem(item)"
+                  class="w-4 h-4 rounded bg-neutral-900 border-neutral-700 text-emerald-500 focus:ring-0 cursor-pointer"
+                />
+                <span 
+                  class="text-xs text-neutral-200" 
+                  :class="{ 'line-through text-neutral-500': item.checked }"
+                >
+                  {{ item.content }}
+                </span>
+                <span 
+                  v-if="item.assignee_name" 
+                  class="text-[10px] font-mono px-1.5 py-0.5 rounded border border-neutral-800 bg-neutral-900 text-neutral-400"
+                >
+                  @{{ item.assignee_name }}
+                </span>
+                <span 
+                  v-if="item.reward" 
+                  class="text-[10px] font-mono text-emerald-400 font-semibold"
+                >
+                  +{{ item.reward }} pts
+                </span>
+              </div>
+
+              <button 
+                @click="deleteListItem(item.id)" 
+                class="text-neutral-600 hover:text-red-400 text-xs font-mono px-2 py-1 transition"
+                title="Delete item"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        <div v-else class="text-neutral-500 text-xs font-mono py-12 text-center bg-neutral-900/40 border border-neutral-800 rounded-xl">
+          Select or create a list to view and manage its items.
+        </div>
+      </div>
+
+    </div>
+
+    <!-- =========================================================================
+         TAB 3: NOTES & GEMINI AI SIMULATOR
+         ========================================================================= -->
+    <div v-if="activeTab === 'notes_ai'" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      
+      <!-- AI SIMULATOR -->
+      <div class="space-y-6 lg:col-span-1">
         <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg">
           <div class="flex items-center justify-between mb-3 border-b border-neutral-800 pb-2">
             <h2 class="font-mono text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-2">
@@ -59,13 +484,13 @@
             </h2>
           </div>
           <p class="text-xs text-neutral-400 mb-3 leading-relaxed">
-            Test natural language parsing just like an incoming Telegram message. Gemini will extract notes and tasks into raw JSON and update the tablet in real-time.
+            Test natural language parsing just like incoming Telegram messages.
           </p>
 
           <form @submit.prevent="simulateMessage" class="space-y-3">
             <textarea 
               v-model="simText" 
-              placeholder="e.g.: Note: bought bread and milk. Task for Alex: clean the kitchen reward 25."
+              placeholder="e.g.: Note: bought bread and milk. Task for Leo: clean room reward 25."
               rows="3"
               class="w-full bg-neutral-950 border border-neutral-800 focus:border-purple-500 rounded-lg p-2.5 text-xs text-neutral-200 font-mono outline-none resize-none"
               required
@@ -105,105 +530,10 @@
             </button>
           </form>
         </div>
-
-        <!-- QUICK ADD TASK -->
-        <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg">
-          <h2 class="font-mono text-xs font-bold uppercase tracking-wider text-neutral-300 mb-3 border-b border-neutral-800 pb-2">
-            ADD TASK DIRECTLY
-          </h2>
-          <form @submit.prevent="addTask" class="space-y-3">
-            <input 
-              v-model="newTask.title" 
-              type="text" 
-              placeholder="Task title (e.g. Wash dishes)" 
-              class="w-full bg-neutral-950 border border-neutral-800 focus:border-neutral-600 rounded-lg p-2 text-xs text-neutral-200 outline-none"
-              required
-            />
-            <div class="grid grid-cols-2 gap-2">
-              <input 
-                v-model="newTask.assignee" 
-                type="text" 
-                placeholder="Assignee (e.g. Alex)" 
-                class="bg-neutral-950 border border-neutral-800 focus:border-neutral-600 rounded-lg p-2 text-xs text-neutral-200 outline-none"
-              />
-              <input 
-                v-model.number="newTask.reward" 
-                type="number" 
-                placeholder="Reward (e.g. 50)" 
-                class="bg-neutral-950 border border-neutral-800 focus:border-neutral-600 rounded-lg p-2 text-xs text-neutral-200 outline-none"
-              />
-            </div>
-            <button type="submit" class="w-full font-mono text-xs bg-neutral-800 hover:bg-neutral-700 text-white py-1.5 rounded-lg transition">
-              + Create Task
-            </button>
-          </form>
-        </div>
-
       </div>
 
-      <!-- RIGHT COLUMNS: NOTES & TASKS TABLE (Col 2 & 3) -->
-      <div class="space-y-6 lg:col-span-2">
-
-        <!-- TASKS LIST -->
-        <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg">
-          <div class="flex items-center justify-between mb-4 border-b border-neutral-800 pb-3">
-            <div>
-              <h2 class="font-mono text-sm font-bold uppercase tracking-wider text-white">ACTIVE TASKS</h2>
-              <span class="text-xs text-neutral-500 font-mono">{{ tasks.length }} total recorded</span>
-            </div>
-          </div>
-
-          <div v-if="tasks.length === 0" class="text-neutral-500 text-xs font-mono py-6 text-center border border-dashed border-neutral-800 rounded-lg">
-            No tasks in database. Add one above or send via Telegram.
-          </div>
-
-          <div v-else class="overflow-x-auto">
-            <table class="w-full text-left text-xs">
-              <thead class="bg-neutral-950 font-mono text-neutral-400 uppercase text-[10px] border-b border-neutral-800">
-                <tr>
-                  <th class="py-2.5 px-3">Status</th>
-                  <th class="py-2.5 px-3">Title</th>
-                  <th class="py-2.5 px-3">Assignee</th>
-                  <th class="py-2.5 px-3">Reward</th>
-                  <th class="py-2.5 px-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-neutral-800/60 font-sans">
-                <tr v-for="task in tasks" :key="task.id" class="hover:bg-neutral-800/30 transition">
-                  <td class="py-2.5 px-3">
-                    <button 
-                      @click="toggleTaskStatus(task)" 
-                      :class="task.status === 'completed' ? 'bg-emerald-950 text-emerald-400 border-emerald-800' : 'bg-neutral-800 text-neutral-300 border-neutral-700'"
-                      class="px-2 py-0.5 rounded text-[10px] font-mono border uppercase tracking-wider transition"
-                    >
-                      {{ task.status }}
-                    </button>
-                  </td>
-                  <td class="py-2.5 px-3 font-medium text-neutral-200" :class="{ 'line-through text-neutral-500': task.status === 'completed' }">
-                    {{ task.title }}
-                  </td>
-                  <td class="py-2.5 px-3 font-mono text-neutral-400">
-                    {{ task.assignee ? '@' + task.assignee : '—' }}
-                  </td>
-                  <td class="py-2.5 px-3 font-mono text-neutral-300">
-                    {{ task.reward ? '+' + task.reward : '0' }}
-                  </td>
-                  <td class="py-2.5 px-3 text-right">
-                    <button 
-                      @click="deleteTask(task.id)" 
-                      class="text-neutral-500 hover:text-red-400 font-mono text-xs px-2 py-1 transition"
-                      title="Delete task"
-                    >
-                      ✕
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- NOTES LIST -->
+      <!-- NOTES LIST -->
+      <div class="lg:col-span-2">
         <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg">
           <div class="flex items-center justify-between mb-4 border-b border-neutral-800 pb-3">
             <div>
@@ -212,11 +542,11 @@
             </div>
           </div>
 
-          <div v-if="notes.length === 0" class="text-neutral-500 text-xs font-mono py-6 text-center border border-dashed border-neutral-800 rounded-lg">
+          <div v-if="notes.length === 0" class="text-neutral-500 text-xs font-mono py-8 text-center border border-dashed border-neutral-800 rounded-lg">
             No notes in database. Add one above or send via Telegram.
           </div>
 
-          <div v-else class="space-y-2 max-h-96 overflow-y-auto pr-1">
+          <div v-else class="space-y-2 max-h-[500px] overflow-y-auto pr-1">
             <div 
               v-for="note in notes" 
               :key="note.id" 
@@ -236,6 +566,366 @@
             </div>
           </div>
         </div>
+      </div>
+
+    <!-- =========================================================================
+         TAB 4: PHOTO GALLERY & SCREENSAVER
+         ========================================================================= -->
+    <div v-if="activeTab === 'photos'" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      
+      <!-- UPLOAD PHOTO FORM -->
+      <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg h-fit space-y-4">
+        <h2 class="font-mono text-xs font-bold uppercase tracking-wider text-sky-400 border-b border-neutral-800 pb-2">
+          UPLOAD PHOTO TO SCREENSAVER
+        </h2>
+        <p class="text-xs text-neutral-400 leading-relaxed">
+          Upload photos for the digital photo frame screensaver. You can also send photos directly to your Telegram bot!
+        </p>
+
+        <form @submit.prevent="uploadNewPhoto" class="space-y-4">
+          <div>
+            <label class="block text-neutral-400 text-[11px] font-mono mb-1">SELECT IMAGE</label>
+            <input 
+              type="file" 
+              ref="photoFileInputRef" 
+              @change="handlePhotoSelect" 
+              accept="image/*"
+              class="block w-full text-xs text-neutral-400 file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-xs file:font-mono file:bg-neutral-800 file:text-neutral-200 hover:file:bg-neutral-700 cursor-pointer"
+              required
+            />
+          </div>
+
+          <div v-if="photoPreviewUrl" class="rounded-lg overflow-hidden border border-neutral-800 bg-black aspect-video flex items-center justify-center">
+            <img :src="photoPreviewUrl" class="w-full h-full object-cover" />
+          </div>
+
+          <div>
+            <label class="block text-neutral-400 text-[11px] font-mono mb-1">CAPTION (OPTIONAL)</label>
+            <input 
+              v-model="newPhotoCaption" 
+              type="text" 
+              placeholder="e.g. Summer Vacation 2024" 
+              class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-lg p-2 text-xs text-neutral-100 outline-none"
+            />
+          </div>
+
+          <div class="flex items-center gap-2">
+            <input 
+              type="checkbox" 
+              id="showInSS" 
+              v-model="newPhotoInScreensaver"
+              class="w-4 h-4 rounded bg-neutral-950 border-neutral-800 text-sky-500 focus:ring-0 cursor-pointer"
+            />
+            <label for="showInSS" class="text-xs text-neutral-300 font-mono cursor-pointer">
+              Show in Photo Screensaver
+            </label>
+          </div>
+
+          <button 
+            type="submit" 
+            :disabled="uploadingPhoto || !photoUploadFile"
+            class="w-full font-mono text-xs bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white py-2 rounded-lg font-medium transition flex items-center justify-center gap-2"
+          >
+            <span v-if="uploadingPhoto">Uploading...</span>
+            <span v-else>+ Upload Photo</span>
+          </button>
+        </form>
+      </div>
+
+      <!-- PHOTOS GALLERY GRID -->
+      <div class="lg:col-span-2 space-y-4">
+        <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg">
+          <div class="flex items-center justify-between border-b border-neutral-800 pb-3 mb-4">
+            <div>
+              <h2 class="font-mono text-sm font-bold uppercase tracking-wider text-white">
+                PHOTO GALLERY ({{ photos.length }})
+              </h2>
+              <span class="text-xs text-neutral-500 font-mono">
+                {{ screensaverPhotosCount }} active in screensaver
+              </span>
+            </div>
+            <button 
+              @click="loadPhotos" 
+              class="text-xs font-mono bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 px-2.5 py-1 rounded transition"
+            >
+              Refresh
+            </button>
+          </div>
+
+          <div v-if="photos.length === 0" class="text-neutral-500 text-xs font-mono py-12 text-center border border-dashed border-neutral-800 rounded-lg">
+            No photos uploaded yet. Upload a photo above or send one via Telegram!
+          </div>
+
+          <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div 
+              v-for="p in photos" 
+              :key="p.id" 
+              class="bg-neutral-950 border border-neutral-800 rounded-xl overflow-hidden shadow group flex flex-col justify-between"
+            >
+              <div class="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
+                <img :src="'/uploads/photos/' + p.filename" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                <span 
+                  class="absolute top-2 right-2 text-[10px] font-mono px-2 py-0.5 rounded-full backdrop-blur-md"
+                  :class="p.show_in_screensaver ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800' : 'bg-neutral-900/80 text-neutral-400 border border-neutral-700'"
+                >
+                  {{ p.show_in_screensaver ? 'Screensaver ON' : 'Off' }}
+                </span>
+                <span 
+                  v-if="p.source === 'telegram'" 
+                  class="absolute top-2 left-2 text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-950/80 text-sky-400 border border-sky-800 backdrop-blur-md"
+                >
+                  Telegram
+                </span>
+              </div>
+
+              <div class="p-3 space-y-2">
+                <p v-if="p.caption" class="text-xs text-neutral-200 line-clamp-2">{{ p.caption }}</p>
+                <p v-else class="text-xs text-neutral-600 italic">No caption</p>
+                
+                <div class="flex items-center justify-between pt-2 border-t border-neutral-900 text-[11px] font-mono">
+                  <button 
+                    @click="togglePhotoScreensaver(p)" 
+                    class="text-neutral-400 hover:text-white transition"
+                  >
+                    {{ p.show_in_screensaver ? 'Hide' : 'Show' }}
+                  </button>
+                  <button 
+                    @click="deletePhoto(p.id)" 
+                    class="text-neutral-600 hover:text-red-400 transition"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    <!-- =========================================================================
+         TAB 5: CALENDAR & FEEDS
+         ========================================================================= -->
+    <div v-if="activeTab === 'calendar'" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      
+      <!-- LEFT COLUMN: ADD FEED & ADD MANUAL EVENT -->
+      <div class="space-y-6 lg:col-span-1">
+        
+        <!-- ADD GOOGLE CALENDAR / ICAL FEED -->
+        <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg space-y-4">
+          <div class="flex items-center justify-between border-b border-neutral-800 pb-2">
+            <h2 class="font-mono text-xs font-bold uppercase tracking-wider text-sky-400">
+              + GOOGLE CALENDAR / ICAL FEED
+            </h2>
+          </div>
+          <p class="text-[11px] text-neutral-400 leading-relaxed">
+            In Google Calendar &gt; Calendar Settings &gt; copy your <b>"Secret address in iCal format"</b> URL.
+          </p>
+
+          <form @submit.prevent="addFeed" class="space-y-3">
+            <div>
+              <label class="block text-neutral-400 text-[11px] font-mono mb-1">FEED NAME</label>
+              <input 
+                v-model="newFeed.name" 
+                type="text" 
+                placeholder="e.g. Family Calendar, Mom Work" 
+                class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-lg p-2 text-xs text-neutral-100 outline-none"
+                required
+              />
+            </div>
+
+            <div>
+              <label class="block text-neutral-400 text-[11px] font-mono mb-1">ICAL URL (.ICS)</label>
+              <input 
+                v-model="newFeed.ical_url" 
+                type="url" 
+                placeholder="https://calendar.google.com/.../basic.ics" 
+                class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-lg p-2 text-xs text-neutral-100 outline-none"
+                required
+              />
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-neutral-400 text-[11px] font-mono mb-1">COLOR</label>
+                <input 
+                  v-model="newFeed.color" 
+                  type="color" 
+                  class="w-full h-8 rounded bg-transparent border-0 cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <label class="block text-neutral-400 text-[11px] font-mono mb-1">ASSIGN TO</label>
+                <select 
+                  v-model="newFeed.profile_id" 
+                  class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 outline-none"
+                >
+                  <option :value="null">Shared (All Family)</option>
+                  <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+                </select>
+              </div>
+            </div>
+
+            <button 
+              type="submit" 
+              class="w-full font-mono text-xs bg-sky-600 hover:bg-sky-500 text-white py-2 rounded-lg font-medium transition"
+            >
+              + Subscribe Feed
+            </button>
+          </form>
+        </div>
+
+        <!-- QUICK ADD MANUAL EVENT -->
+        <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg space-y-3">
+          <h2 class="font-mono text-xs font-bold uppercase tracking-wider text-emerald-400 border-b border-neutral-800 pb-2">
+            + ADD MANUAL EVENT
+          </h2>
+          <form @submit.prevent="addEvent" class="space-y-3">
+            <div>
+              <label class="block text-neutral-400 text-[11px] font-mono mb-1">TITLE</label>
+              <input 
+                v-model="newEvent.title" 
+                type="text" 
+                placeholder="e.g. Dentist Appointment" 
+                class="w-full bg-neutral-950 border border-neutral-800 focus:border-emerald-500 rounded-lg p-2 text-xs text-neutral-100 outline-none"
+                required
+              />
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-neutral-400 text-[11px] font-mono mb-1">DATE</label>
+                <input 
+                  v-model="newEvent.date" 
+                  type="date" 
+                  class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-100 outline-none"
+                  required
+                />
+              </div>
+              <div>
+                <label class="block text-neutral-400 text-[11px] font-mono mb-1">TIME</label>
+                <input 
+                  v-model="newEvent.time" 
+                  type="time" 
+                  class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-100 outline-none"
+                />
+              </div>
+            </div>
+
+            <button 
+              type="submit" 
+              class="w-full font-mono text-xs bg-emerald-600 hover:bg-emerald-500 text-white py-1.5 rounded-lg transition"
+            >
+              + Save Event
+            </button>
+          </form>
+        </div>
+
+      </div>
+
+      <!-- RIGHT COLUMN: ACTIVE FEEDS & EVENTS AGENDA -->
+      <div class="lg:col-span-2 space-y-6">
+        
+        <!-- ACTIVE FEEDS LIST -->
+        <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg">
+          <div class="flex items-center justify-between border-b border-neutral-800 pb-3 mb-3">
+            <h2 class="font-mono text-xs font-bold uppercase tracking-wider text-white">
+              CONNECTED ICAL FEEDS ({{ feeds.length }})
+            </h2>
+            <button 
+              @click="syncFeeds" 
+              :disabled="syncingFeeds || feeds.length === 0"
+              class="text-xs font-mono bg-sky-950 border border-sky-800 text-sky-300 hover:bg-sky-900 disabled:opacity-50 px-2.5 py-1 rounded transition flex items-center gap-1.5"
+            >
+              <span>{{ syncingFeeds ? 'Syncing...' : '🔄 Sync Feeds Now' }}</span>
+            </button>
+          </div>
+
+          <div v-if="feeds.length === 0" class="text-neutral-500 text-xs font-mono py-4 text-center">
+            No external calendar feeds subscribed. Add one on the left.
+          </div>
+
+          <div v-else class="space-y-2">
+            <div 
+              v-for="f in feeds" 
+              :key="f.id" 
+              class="p-3 bg-neutral-950 border border-neutral-800/80 rounded-lg flex items-center justify-between gap-3"
+              :style="{ borderLeftColor: f.color || '#38bdf8', borderLeftWidth: '4px' }"
+            >
+              <div>
+                <h4 class="text-xs font-bold text-white">{{ f.name }}</h4>
+                <div class="text-[10px] font-mono text-neutral-500 flex items-center gap-2 mt-0.5">
+                  <span class="truncate max-w-[260px]">{{ f.ical_url }}</span>
+                  <span>•</span>
+                  <span>Last synced: {{ f.last_synced ? formatTime(f.last_synced) : 'Never' }}</span>
+                </div>
+              </div>
+
+              <button 
+                @click="deleteFeed(f.id)" 
+                class="text-neutral-600 hover:text-red-400 text-xs font-mono px-2 py-1 transition"
+                title="Delete feed"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- EVENTS AGENDA -->
+        <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg">
+          <div class="flex items-center justify-between border-b border-neutral-800 pb-3 mb-4">
+            <h2 class="font-mono text-sm font-bold uppercase tracking-wider text-white">
+              UPCOMING EVENTS ({{ events.length }})
+            </h2>
+            <button 
+              @click="loadData" 
+              class="text-xs font-mono bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 px-2.5 py-1 rounded transition"
+            >
+              Refresh
+            </button>
+          </div>
+
+          <div v-if="events.length === 0" class="text-neutral-500 text-xs font-mono py-12 text-center border border-dashed border-neutral-800 rounded-lg">
+            No upcoming events. Add a manual event or subscribe to your Google Calendar.
+          </div>
+
+          <div v-else class="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+            <div 
+              v-for="ev in events" 
+              :key="ev.id" 
+              class="p-3 bg-neutral-950 border border-neutral-800/80 rounded-lg flex items-center justify-between gap-3 hover:border-neutral-700 transition"
+              :style="{ borderLeftColor: ev.color || '#38bdf8', borderLeftWidth: '3px' }"
+            >
+              <div>
+                <div class="flex items-center gap-2">
+                  <h4 class="text-xs font-bold text-white">{{ ev.title }}</h4>
+                  <span 
+                    class="text-[9px] font-mono px-1.5 py-0.2 rounded border"
+                    :class="ev.source === 'google' ? 'bg-sky-950/60 border-sky-800 text-sky-400' : 'bg-neutral-900 border-neutral-800 text-neutral-400'"
+                  >
+                    {{ ev.source === 'google' ? 'Google Cal' : 'Manual' }}
+                  </span>
+                  <span v-if="ev.profile_name" class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-neutral-900 border border-neutral-800 text-neutral-400">
+                    @{{ ev.profile_name }}
+                  </span>
+                </div>
+                <div class="text-[11px] font-mono text-neutral-500 mt-0.5">
+                  <span>{{ formatEventDate(ev.start_datetime) }}</span>
+                  <span v-if="ev.description" class="ml-2 text-neutral-400 font-sans">• {{ ev.description }}</span>
+                </div>
+              </div>
+
+              <button 
+                @click="deleteEvent(ev.id)" 
+                class="text-neutral-600 hover:text-red-400 text-xs font-mono px-2 py-1 transition"
+                title="Delete event"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
 
       </div>
 
@@ -244,40 +934,322 @@
   </div>
 
   <script>
-    const { createApp, ref, onMounted } = Vue;
+    const { createApp, ref, computed, onMounted } = Vue;
 
     createApp({
       setup() {
-        const notes = ref([]);
-        const tasks = ref([]);
+        const activeTab = ref('profiles');
         const alertMessage = ref('');
         const alertSuccess = ref(true);
 
-        // Simulator
+        const profiles = ref([]);
+        const lists = ref([]);
+        const notes = ref([]);
+        const photos = ref([]);
+        const events = ref([]);
+        const feeds = ref([]);
+        const syncingFeeds = ref(false);
+        const selectedListId = ref(null);
+
+        const newFeed = ref({
+          name: '',
+          ical_url: '',
+          color: '#38bdf8',
+          profile_id: null
+        });
+
+        const newEvent = ref({
+          title: '',
+          date: new Date().toISOString().slice(0, 10),
+          time: '12:00'
+        });
+
+        // Photo form
+        const photoFileInputRef = ref(null);
+        const photoUploadFile = ref(null);
+        const photoPreviewUrl = ref(null);
+        const newPhotoCaption = ref('');
+        const newPhotoInScreensaver = ref(true);
+        const uploadingPhoto = ref(false);
+
+        const screensaverPhotosCount = computed(() => {
+          return photos.value.filter(p => p.show_in_screensaver === 1).length;
+        });
+
+        // Emoji presets gallery
+        const emojiGallery = [
+          '🦁', '🦄', '🚀', '🐼', '🦊', '🐱', '🐶', '🦖', 
+          '⚽', '🎮', '🎨', '🎸', '🦸', '🧙', '🌟', '🍕', 
+          '🧁', '🦔', '🐨', '🐬', '👑', '🌈', '🛹', '👾'
+        ];
+
+        // Profile Form
+        const newProfile = ref({
+          name: '',
+          color: '#38bdf8',
+          avatar_type: 'builtin',
+          avatar_value: '🦁'
+        });
+        const avatarFileInput = ref(null);
+        const avatarUploadFile = ref(null);
+        const avatarUploadPreview = ref(null);
+
+        // List Form
+        const newList = ref({
+          name: '',
+          type: 'tasks',
+          profile_id: null,
+          color: '#38bdf8',
+          icon: '✅'
+        });
+
+        // List Item Form
+        const newListItem = ref({
+          content: '',
+          assignee_profile_id: null,
+          reward: 0
+        });
+
+        // Notes & Simulator
+        const newNoteContent = ref('');
         const simText = ref('');
         const simLoading = ref(false);
         const simResult = ref(null);
 
-        // New Note & Task
-        const newNoteContent = ref('');
-        const newTask = ref({ title: '', assignee: '', reward: 0 });
+        const currentList = computed(() => {
+          return lists.value.find(l => l.id === selectedListId.value) || null;
+        });
+
+        function showAlert(msg, success = true) {
+          alertMessage.value = msg;
+          alertSuccess.value = success;
+          setTimeout(() => { if (alertMessage.value === msg) alertMessage.value = ''; }, 4000);
+        }
 
         async function loadData() {
           try {
             const res = await fetch('/api/admin/data');
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
+            profiles.value = data.profiles || [];
+            lists.value = data.lists || [];
             notes.value = data.notes || [];
-            tasks.value = data.tasks || [];
+            events.value = data.events || [];
+            feeds.value = data.feeds || [];
+
+            if (lists.value.length > 0 && (!selectedListId.value || !lists.value.some(l => l.id === selectedListId.value))) {
+              selectedListId.value = lists.value[0].id;
+            }
+            loadPhotos();
           } catch (err) {
             showAlert('Failed to load data: ' + err.message, false);
           }
         }
 
-        function showAlert(msg, success = true) {
-          alertMessage.value = msg;
-          alertSuccess.value = success;
-          setTimeout(() => { if (alertMessage.value === msg) alertMessage.value = ''; }, 4000);
+        async function loadPhotos() {
+          try {
+            const res = await fetch('/api/admin/photos');
+            if (res.ok) {
+              photos.value = await res.json();
+            }
+          } catch (e) {
+            console.warn('Failed to load photos', e);
+          }
+        }
+
+        function handlePhotoSelect(e) {
+          const file = e.target.files[0];
+          if (!file) return;
+          photoUploadFile.value = file;
+          photoPreviewUrl.value = URL.createObjectURL(file);
+        }
+
+        async function uploadNewPhoto() {
+          if (!photoUploadFile.value) return;
+          uploadingPhoto.value = true;
+          try {
+            const formData = new FormData();
+            formData.append('photo', photoUploadFile.value);
+            formData.append('caption', newPhotoCaption.value);
+            formData.append('show_in_screensaver', newPhotoInScreensaver.value ? '1' : '0');
+
+            const res = await fetch('/api/admin/upload/photo', {
+              method: 'POST',
+              body: formData
+            });
+            if (!res.ok) throw new Error('Failed to upload photo');
+            showAlert('Photo uploaded successfully!');
+            photoUploadFile.value = null;
+            photoPreviewUrl.value = null;
+            newPhotoCaption.value = '';
+            if (photoFileInputRef.value) photoFileInputRef.value.value = '';
+            loadPhotos();
+          } catch (err) {
+            showAlert('Error uploading photo: ' + err.message, false);
+          } finally {
+            uploadingPhoto.value = false;
+          }
+        }
+
+        async function togglePhotoScreensaver(p) {
+          try {
+            const nextVal = p.show_in_screensaver === 1 ? 0 : 1;
+            const res = await fetch('/api/admin/photos/' + p.id, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ show_in_screensaver: nextVal })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            p.show_in_screensaver = nextVal;
+            showAlert('Screensaver updated');
+          } catch (err) {
+            showAlert('Error: ' + err.message, false);
+          }
+        }
+
+        async function deletePhoto(id) {
+          if (!confirm('Delete this photo?')) return;
+          try {
+            const res = await fetch('/api/admin/photos/' + id, { method: 'DELETE' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            showAlert('Photo deleted');
+            loadPhotos();
+          } catch (err) {
+            showAlert('Error: ' + err.message, false);
+          }
+        }
+
+        function handleAvatarFileSelect(e) {
+          const file = e.target.files[0];
+          if (!file) return;
+          avatarUploadFile.value = file;
+          avatarUploadPreview.value = URL.createObjectURL(file);
+        }
+
+        async function createProfile() {
+          try {
+            let avatarVal = newProfile.value.avatar_value;
+
+            if (newProfile.value.avatar_type === 'upload' && avatarUploadFile.value) {
+              const formData = new FormData();
+              formData.append('avatar', avatarUploadFile.value);
+              const upRes = await fetch('/api/admin/upload/avatar', {
+                method: 'POST',
+                body: formData
+              });
+              if (!upRes.ok) throw new Error('Failed to upload avatar image');
+              const upData = await upRes.json();
+              avatarVal = upData.url;
+            }
+
+            const res = await fetch('/api/admin/profiles', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: newProfile.value.name,
+                color: newProfile.value.color,
+                avatar_type: newProfile.value.avatar_type,
+                avatar_value: avatarVal
+              })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            showAlert('Profile created successfully!');
+            newProfile.value.name = '';
+            avatarUploadFile.value = null;
+            avatarUploadPreview.value = null;
+            loadData();
+          } catch (err) {
+            showAlert('Error: ' + err.message, false);
+          }
+        }
+
+        async function deleteProfile(id) {
+          if (!confirm('Delete this profile? Assigned tasks will become unassigned.')) return;
+          try {
+            const res = await fetch('/api/admin/profiles/' + id, { method: 'DELETE' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            showAlert('Profile deleted');
+            loadData();
+          } catch (err) {
+            showAlert('Error: ' + err.message, false);
+          }
+        }
+
+        async function createList() {
+          try {
+            const res = await fetch('/api/admin/lists', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newList.value)
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            showAlert('List created!');
+            newList.value.name = '';
+            selectedListId.value = data.list.id;
+            loadData();
+          } catch (err) {
+            showAlert('Error: ' + err.message, false);
+          }
+        }
+
+        async function deleteList(id) {
+          if (!confirm('Delete this list and all its items?')) return;
+          try {
+            const res = await fetch('/api/admin/lists/' + id, { method: 'DELETE' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            showAlert('List deleted');
+            selectedListId.value = null;
+            loadData();
+          } catch (err) {
+            showAlert('Error: ' + err.message, false);
+          }
+        }
+
+        async function addListItem() {
+          if (!selectedListId.value) return;
+          try {
+            const res = await fetch(`/api/admin/lists/${selectedListId.value}/items`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newListItem.value)
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            newListItem.value.content = '';
+            newListItem.value.reward = 0;
+            showAlert('Item added!');
+            loadData();
+          } catch (err) {
+            showAlert('Error: ' + err.message, false);
+          }
+        }
+
+        async function toggleListItem(item) {
+          try {
+            const res = await fetch(`/api/admin/lists/${item.list_id}/items/${item.id}/toggle`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ checked: item.checked === 1 ? 0 : 1 })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            loadData();
+          } catch (err) {
+            showAlert('Error: ' + err.message, false);
+          }
+        }
+
+        async function deleteListItem(itemId) {
+          if (!selectedListId.value) return;
+          try {
+            const res = await fetch(`/api/admin/lists/${selectedListId.value}/items/${itemId}`, {
+              method: 'DELETE'
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            showAlert('Item deleted');
+            loadData();
+          } catch (err) {
+            showAlert('Error: ' + err.message, false);
+          }
         }
 
         async function addNote() {
@@ -289,7 +1261,7 @@
             });
             if (!res.ok) throw new Error('HTTP ' + res.status);
             newNoteContent.value = '';
-            showAlert('Note created & pushed to dashboard');
+            showAlert('Note saved!');
             loadData();
           } catch (err) {
             showAlert('Error: ' + err.message, false);
@@ -302,49 +1274,6 @@
             const res = await fetch('/api/admin/notes/' + id, { method: 'DELETE' });
             if (!res.ok) throw new Error('HTTP ' + res.status);
             showAlert('Note deleted');
-            loadData();
-          } catch (err) {
-            showAlert('Error: ' + err.message, false);
-          }
-        }
-
-        async function addTask() {
-          try {
-            const res = await fetch('/api/admin/tasks', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(newTask.value)
-            });
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            newTask.value = { title: '', assignee: '', reward: 0 };
-            showAlert('Task created & pushed to dashboard');
-            loadData();
-          } catch (err) {
-            showAlert('Error: ' + err.message, false);
-          }
-        }
-
-        async function toggleTaskStatus(task) {
-          const nextStatus = task.status === 'completed' ? 'pending' : 'completed';
-          try {
-            const res = await fetch('/api/admin/tasks/' + task.id, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ status: nextStatus })
-            });
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            task.status = nextStatus;
-          } catch (err) {
-            showAlert('Error: ' + err.message, false);
-          }
-        }
-
-        async function deleteTask(id) {
-          if (!confirm('Delete this task?')) return;
-          try {
-            const res = await fetch('/api/admin/tasks/' + id, { method: 'DELETE' });
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            showAlert('Task deleted');
             loadData();
           } catch (err) {
             showAlert('Error: ' + err.message, false);
@@ -364,7 +1293,7 @@
             if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
             simResult.value = data.parsed;
             simText.value = '';
-            showAlert('Message parsed with Gemini & broadcast to dashboard!');
+            showAlert('Parsed with Gemini & broadcast to dashboard!');
             loadData();
           } catch (err) {
             showAlert('Gemini parsing failed: ' + err.message, false);
@@ -373,27 +1302,152 @@
           }
         }
 
+        function formatEventDate(iso) {
+          if (!iso) return '';
+          try {
+            const d = new Date(iso);
+            return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+          } catch(e) { return iso; }
+        }
+
+        async function addFeed() {
+          try {
+            const res = await fetch('/api/admin/calendar/feeds', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newFeed.value)
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            showAlert('iCal feed subscribed & initial sync triggered!');
+            newFeed.value.name = '';
+            newFeed.value.ical_url = '';
+            loadData();
+          } catch (err) {
+            showAlert('Error adding feed: ' + err.message, false);
+          }
+        }
+
+        async function syncFeeds() {
+          syncingFeeds.value = true;
+          try {
+            const res = await fetch('/api/admin/calendar/sync', { method: 'POST' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            showAlert(`Synced ${data.result.syncedFeeds} feeds (${data.result.totalEvents} events)!`);
+            loadData();
+          } catch (err) {
+            showAlert('Sync failed: ' + err.message, false);
+          } finally {
+            syncingFeeds.value = false;
+          }
+        }
+
+        async function deleteFeed(id) {
+          if (!confirm('Delete this calendar feed and all its synced events?')) return;
+          try {
+            const res = await fetch('/api/admin/calendar/feeds/' + id, { method: 'DELETE' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            showAlert('Feed deleted');
+            loadData();
+          } catch (err) {
+            showAlert('Error: ' + err.message, false);
+          }
+        }
+
+        async function addEvent() {
+          try {
+            const startIso = newEvent.value.time 
+              ? `${newEvent.value.date}T${newEvent.value.time}:00` 
+              : `${newEvent.value.date}T00:00:00`;
+            const res = await fetch('/api/admin/calendar/events', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title: newEvent.value.title,
+                start_datetime: startIso,
+                all_day: newEvent.value.time ? 0 : 1
+              })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            showAlert('Event added!');
+            newEvent.value.title = '';
+            loadData();
+          } catch (err) {
+            showAlert('Error adding event: ' + err.message, false);
+          }
+        }
+
+        async function deleteEvent(id) {
+          if (!confirm('Delete this event?')) return;
+          try {
+            const res = await fetch('/api/admin/calendar/events/' + id, { method: 'DELETE' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            showAlert('Event deleted');
+            loadData();
+          } catch (err) {
+            showAlert('Error: ' + err.message, false);
+          }
+        }
+
         onMounted(() => {
           loadData();
         });
 
         return {
-          notes,
-          tasks,
+          activeTab,
           alertMessage,
           alertSuccess,
+          profiles,
+          lists,
+          notes,
+          photos,
+          events,
+          feeds,
+          syncingFeeds,
+          newFeed,
+          newEvent,
+          screensaverPhotosCount,
+          selectedListId,
+          currentList,
+          emojiGallery,
+          newProfile,
+          avatarFileInput,
+          avatarUploadPreview,
+          newList,
+          newListItem,
+          newNoteContent,
           simText,
           simLoading,
           simResult,
-          newNoteContent,
-          newTask,
+          photoFileInputRef,
+          photoUploadFile,
+          photoPreviewUrl,
+          newPhotoCaption,
+          newPhotoInScreensaver,
+          uploadingPhoto,
           loadData,
+          loadPhotos,
+          handlePhotoSelect,
+          uploadNewPhoto,
+          togglePhotoScreensaver,
+          deletePhoto,
+          handleAvatarFileSelect,
+          createProfile,
+          deleteProfile,
+          createList,
+          deleteList,
+          addListItem,
+          toggleListItem,
+          deleteListItem,
           addNote,
           deleteNote,
-          addTask,
-          toggleTaskStatus,
-          deleteTask,
-          simulateMessage
+          simulateMessage,
+          formatEventDate,
+          addFeed,
+          syncFeeds,
+          deleteFeed,
+          addEvent,
+          deleteEvent
         };
       }
     }).mount('#app');

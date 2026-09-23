@@ -9,45 +9,20 @@
   <meta name="theme-color" content="#000000">
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  
+  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            mono: {
-              50: '#f8fafc',
-              100: '#f1f5f9',
-              200: '#e2e8f0',
-              300: '#cbd5e1',
-              400: '#94a3b8',
-              500: '#64748b',
-              600: '#475569',
-              700: '#334155',
-              800: '#1e293b',
-              850: '#131926',
-              900: '#0f172a',
-              950: '#020617'
-            }
-          },
-          fontFamily: {
-            mono: ['SF Mono', 'Roboto Mono', 'Menlo', 'monospace'],
-            sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'sans-serif']
-          }
-        }
-      }
-    }
-  </script>
-
-  <!-- Vue 3 via CDN -->
+  
+  <!-- Vue 3 CDN -->
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 
-  <!-- Socket.IO via server path -->
+  <!-- SortableJS CDN (for drag-and-drop widget grid) -->
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+
+  <!-- Socket.IO client -->
   <script src="/socket.io/socket.io.js"></script>
 
   <style>
-    /* Prevent text selection and rubber-banding for kiosk mode */
     * {
       -webkit-touch-callout: none;
       -webkit-user-select: none;
@@ -57,9 +32,9 @@
     html, body {
       height: 100%;
       overflow: hidden;
-      touch-action: manipulation;
+      touch-action: pan-y;
     }
-    /* Smooth transitions for sleep mode */
+    /* Smooth transitions for sleep mode & photo frame */
     .fade-sleep-enter-active,
     .fade-sleep-leave-active {
       transition: all 1.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -69,198 +44,733 @@
       opacity: 0;
       transform: scale(0.98);
     }
+    /* Page slide transition */
+    .slide-page-enter-active,
+    .slide-page-leave-active {
+      transition: all 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .slide-page-enter-from {
+      opacity: 0;
+      transform: translateX(30px);
+    }
+    .slide-page-leave-to {
+      opacity: 0;
+      transform: translateX(-30px);
+    }
+    .sortable-ghost {
+      opacity: 0.3;
+      border: 2px dashed #38bdf8 !important;
+    }
+    @keyframes kenburns {
+      0% { transform: scale(1.0) translate(0, 0); }
+      50% { transform: scale(1.08) translate(-1%, -1%); }
+      100% { transform: scale(1.0) translate(0, 0); }
+    }
+    .ken-burns {
+      animation: kenburns 22s ease-in-out infinite alternate;
+    }
+    .fade-photo-enter-active,
+    .fade-photo-leave-active {
+      transition: opacity 1.5s ease-in-out;
+    }
+    .fade-photo-enter-from,
+    .fade-photo-leave-to {
+      opacity: 0;
+    }
   </style>
 </head>
-<body class="h-full bg-black text-white font-sans antialiased overflow-hidden">
-  <div id="app" class="h-full w-full relative flex flex-col justify-between" @touchstart="resetSleepTimer" @click="resetSleepTimer">
+<body class="h-full bg-black text-white font-sans antialiased overflow-hidden select-none">
+  <div 
+    id="app" 
+    class="h-full w-full relative flex flex-col justify-between overflow-hidden" 
+    @touchstart="handleTouchStart" 
+    @touchmove="handleTouchMove"
+    @touchend="handleTouchEnd"
+    @click="resetSleepTimer"
+  >
 
-    <!-- SLEEP SCREEN OVERLAY (Activated after 5 minutes of inactivity) -->
+    <!-- SLEEP / PHOTO FRAME SCREENSAVER OVERLAY -->
     <transition name="fade-sleep">
       <div 
         v-if="isSleeping" 
-        class="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center cursor-pointer select-none"
+        class="fixed inset-0 z-50 bg-black flex flex-col justify-between p-6 md:p-12 cursor-pointer select-none overflow-hidden"
         @touchstart.stop="wakeUp"
         @click.stop="wakeUp"
       >
-        <!-- Very Dim Ambient Clock for OLED protection & dark rooms -->
-        <div class="text-center opacity-30 transition-opacity duration-1000 hover:opacity-40">
-          <div class="font-mono text-7xl md:text-9xl font-light tracking-tight text-white mb-3">
+        <!-- Background Photo Slideshow (Ken Burns effect) -->
+        <div v-if="currentScreensaverPhoto" class="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+          <transition name="fade-photo" mode="out-in">
+            <img 
+              :key="currentScreensaverPhoto.id"
+              :src="'/uploads/photos/' + currentScreensaverPhoto.filename" 
+              class="w-full h-full object-cover ken-burns"
+            />
+          </transition>
+          <!-- Subtle dark vignette overlay for high-contrast clock readability -->
+          <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/60"></div>
+        </div>
+
+        <!-- Ambient OLED Black Fallback if no photos uploaded -->
+        <div v-else class="absolute inset-0 bg-black"></div>
+
+        <!-- Top Header in Screensaver: Photo Caption (if any) -->
+        <div class="relative z-10 flex items-center justify-between text-xs font-mono text-white/80">
+          <div v-if="currentScreensaverPhoto && currentScreensaverPhoto.caption" class="bg-black/50 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 shadow">
+            📷 {{ currentScreensaverPhoto.caption }}
+          </div>
+          <div v-else></div>
+
+          <div class="text-[11px] uppercase tracking-widest text-neutral-400 bg-black/50 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
+            TAP SCREEN TO WAKE
+          </div>
+        </div>
+
+        <!-- Bottom Overlay: Large Ambient Clock & Weather -->
+        <div class="relative z-10">
+          <div class="font-mono text-7xl md:text-8xl lg:text-9xl font-extralight tracking-tight text-white drop-shadow-2xl">
             {{ currentTime.hours }}<span class="animate-pulse">:</span>{{ currentTime.minutes }}
           </div>
-          <div class="text-lg md:text-xl uppercase tracking-widest text-neutral-400 font-mono">
-            {{ currentDate.short }}
+          <div class="text-base md:text-xl uppercase tracking-widest text-neutral-200 font-mono mt-1 drop-shadow-md">
+            {{ currentDate.weekday }}, {{ currentDate.monthDay }} {{ currentDate.year }}
           </div>
-          <div v-if="weather" class="mt-2 text-sm text-neutral-500 font-mono">
-            {{ weather.icon }} {{ weather.temperature }}°C • {{ weather.condition }}
-          </div>
-          <div class="mt-8 text-xs font-mono text-neutral-600 tracking-wider">
-            TAP SCREEN TO WAKE
+          <div v-if="weather" class="mt-2 text-sm text-neutral-300 font-mono flex items-center gap-2 drop-shadow">
+            <span>{{ weather.icon }}</span>
+            <span class="font-bold text-white">{{ weather.temperature }}°C</span>
+            <span>•</span>
+            <span>{{ weather.condition }}</span>
           </div>
         </div>
       </div>
     </transition>
 
-    <!-- MAIN ACTIVE DASHBOARD -->
+    <!-- MAIN DASHBOARD CONTENT -->
     <div 
-      class="h-full w-full flex flex-col justify-between p-6 md:p-10 transition-all duration-700"
+      class="h-full w-full flex flex-col justify-between p-4 md:p-6 transition-all duration-700 overflow-hidden"
       :class="{ 'opacity-0 scale-95 pointer-events-none': isSleeping }"
     >
-      <!-- HEADER BAR -->
-      <header class="flex items-center justify-between border-b border-neutral-900 pb-5">
-        <div class="flex items-center gap-3">
-          <!-- Connection Status Indicator -->
-          <span 
-            class="inline-block w-2.5 h-2.5 rounded-full transition-colors duration-500"
-            :class="isConnected ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'bg-neutral-600'"
-          ></span>
-          <span class="font-mono text-xs uppercase tracking-widest text-neutral-400">
-            {{ isConnected ? 'CONNECTED' : 'DISCONNECTED' }}
-          </span>
-          <span class="text-neutral-700">|</span>
-          <span class="font-mono text-xs uppercase tracking-wider text-neutral-500">
-            KIOSK MODE
-          </span>
+      
+      <!-- TOP NAVIGATION & STATUS BAR -->
+      <header class="border-b border-neutral-900 pb-2.5 mb-2.5 shrink-0">
+        <div class="flex items-center justify-between mb-2">
+          <!-- Connection badge & profile indicators -->
+          <div class="flex items-center gap-2.5">
+            <span 
+              class="w-2.5 h-2.5 rounded-full transition-colors duration-500"
+              :class="isConnected ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'bg-neutral-600'"
+            ></span>
+            <span class="font-mono text-xs uppercase tracking-widest text-neutral-400">
+              {{ isConnected ? 'CONNECTED' : 'DISCONNECTED' }}
+            </span>
+            <span class="text-neutral-800">|</span>
+            <span class="font-mono text-xs text-neutral-500">
+              PAGE {{ activePage + 1 }} / {{ totalPages }}
+            </span>
+          </div>
+
+          <!-- Controls: Edit Mode, Sleep Trigger, Countdown -->
+          <div class="flex items-center gap-2">
+            <!-- Edit Mode Toggle -->
+            <button 
+              @click.stop="toggleEditMode"
+              :class="isEditMode ? 'bg-sky-500 text-black font-bold border-sky-400' : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:text-white'"
+              class="text-[11px] font-mono border px-2.5 py-1 rounded transition flex items-center gap-1.5"
+            >
+              <span>{{ isEditMode ? '✓ DONE EDITING' : '⚙️ EDIT LAYOUT' }}</span>
+            </button>
+
+            <!-- Manual Sleep -->
+            <button 
+              @click.stop="isSleeping = true" 
+              class="text-[11px] font-mono border border-neutral-800 hover:border-neutral-600 text-neutral-400 hover:text-white px-2 py-1 rounded transition"
+            >
+              SLEEP
+            </button>
+          </div>
         </div>
 
-        <div class="flex items-center gap-4">
-          <!-- Inactivity countdown / manual sleep trigger for testing -->
-          <button 
-            @click.stop="isSleeping = true" 
-            title="Force Sleep Mode"
-            class="text-[11px] font-mono border border-neutral-800 hover:border-neutral-600 text-neutral-400 hover:text-white px-2.5 py-1 rounded transition-colors"
-          >
-            SLEEP NOW
-          </button>
-          <span class="font-mono text-xs text-neutral-500">
-            AUTO-SLEEP: {{ formatSleepCountdown }}
-          </span>
+        <!-- PROFILE SWITCHER BAR (FAMILY & KIDS) -->
+        <div class="flex items-center justify-between gap-2 overflow-x-auto scrollbar-none py-1">
+          <div class="flex items-center gap-2">
+            <button 
+              @click="selectProfile(null)"
+              :class="selectedProfileId === null ? 'bg-neutral-800 border-white text-white shadow-md' : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:border-neutral-700'"
+              class="px-2.5 py-1 rounded-full border text-xs font-mono flex items-center gap-1.5 shrink-0 transition"
+            >
+              <span>🏠</span>
+              <span>All Family</span>
+            </button>
+
+            <button 
+              v-for="p in profiles" 
+              :key="p.id"
+              @click="selectProfile(p.id)"
+              :style="{ borderColor: selectedProfileId === p.id ? p.color : '#262626' }"
+              :class="selectedProfileId === p.id ? 'bg-neutral-900 text-white shadow-lg' : 'bg-neutral-950 text-neutral-400 hover:border-neutral-700'"
+              class="px-2.5 py-1 rounded-full border text-xs flex items-center gap-1.5 shrink-0 transition"
+            >
+              <div class="w-4 h-4 rounded-full overflow-hidden flex items-center justify-center bg-neutral-900">
+                <img v-if="p.avatar_type === 'upload'" :src="p.avatar_value" class="w-full h-full object-cover" />
+                <span v-else class="text-xs">{{ p.avatar_value }}</span>
+              </div>
+              <span class="font-medium">{{ p.name }}</span>
+            </button>
+          </div>
+
+          <!-- Page Dots / Quick Jump -->
+          <div class="flex items-center gap-1.5 shrink-0 ml-2">
+            <button 
+              v-for="pIndex in totalPages" 
+              :key="pIndex"
+              @click="activePage = pIndex - 1"
+              :class="activePage === pIndex - 1 ? 'w-4 bg-white' : 'w-1.5 bg-neutral-700 hover:bg-neutral-500'"
+              class="h-1.5 rounded-full transition-all duration-300"
+            ></button>
+          </div>
+        </div>
+
+        <!-- EDIT MODE TOOLBAR (Visible only when editing) -->
+        <div v-if="isEditMode" class="mt-2.5 pt-2 border-t border-sky-950/60 bg-sky-950/20 px-3 py-2 rounded-lg flex items-center justify-between text-xs font-mono">
+          <div class="flex items-center gap-3">
+            <span class="text-sky-400 font-semibold">EDIT MODE ACTIVE:</span>
+            <span class="text-neutral-400">Drag widgets to reposition. Tap columns to resize.</span>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button 
+              @click="showAddWidgetDrawer = true" 
+              class="bg-sky-600 hover:bg-sky-500 text-white px-2.5 py-1 rounded font-semibold transition"
+            >
+              + Add Widget
+            </button>
+            <button 
+              @click="addNewPage" 
+              class="bg-neutral-800 hover:bg-neutral-700 text-neutral-200 px-2 py-1 rounded transition"
+            >
+              + Add Page
+            </button>
+            <button 
+              v-if="totalPages > 1"
+              @click="deleteCurrentPage" 
+              class="bg-red-950 hover:bg-red-900 border border-red-800 text-red-300 px-2 py-1 rounded transition"
+            >
+              Delete Page
+            </button>
+          </div>
         </div>
       </header>
 
-      <!-- CENTER HERO: LARGE CLOCK & DATE COMPONENT -->
-      <main class="flex-1 flex flex-col items-center justify-center my-auto py-8">
-        <div class="text-center select-none">
-          <!-- Time Display -->
-          <div class="font-mono text-8xl md:text-[11rem] lg:text-[13rem] font-extralight tracking-tighter text-white leading-none mb-4">
-            <span>{{ currentTime.hours }}</span>
-            <span class="inline-block transition-opacity duration-300" :class="isSecondTick ? 'opacity-100' : 'opacity-20'">:</span>
-            <span>{{ currentTime.minutes }}</span>
-            <span class="text-3xl md:text-5xl lg:text-6xl font-light text-neutral-500 ml-2 tracking-normal align-top">
-              {{ currentTime.seconds }}
-            </span>
+      <!-- CENTER: WIDGET GRID CONTAINER -->
+      <main class="flex-1 overflow-y-auto pr-1">
+        <div 
+          ref="widgetGridRef"
+          class="grid grid-cols-12 gap-3 min-h-full items-start"
+          :class="{ 'p-2 border-2 border-dashed border-sky-900/60 rounded-2xl': isEditMode }"
+        >
+          
+          <!-- WIDGET CARD LOOP -->
+          <div 
+            v-for="(w, idx) in activePageWidgets" 
+            :key="w.id || idx"
+            :data-id="w.id || idx"
+            :class="[
+              getColSpanClass(w.w),
+              isEditMode ? 'ring-1 ring-sky-500/50 bg-neutral-900/90' : 'bg-neutral-950 border border-neutral-900'
+            ]"
+            class="rounded-2xl p-4 relative flex flex-col justify-between transition-all duration-300 shadow-xl overflow-hidden min-h-[140px]"
+          >
+            <!-- EDIT MODE CONTROLS OVERLAY -->
+            <div v-if="isEditMode" class="absolute top-2 right-2 flex items-center gap-1 z-20 bg-neutral-900/90 border border-neutral-700 rounded-lg p-1">
+              <!-- Resize Button (Toggle width: 4 -> 6 -> 12) -->
+              <button 
+                @click.stop="cycleWidgetWidth(w)"
+                title="Change column width"
+                class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 text-neutral-300"
+              >
+                {{ w.w }}c
+              </button>
+              <!-- Drag Handle -->
+              <span class="cursor-move px-1 text-neutral-400 text-xs">⋮⋮</span>
+              <!-- Delete Widget -->
+              <button 
+                @click.stop="removeWidget(w)"
+                title="Remove widget"
+                class="px-1 text-red-400 hover:text-red-300 text-xs font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <!-- ================= WIDGET TYPE 1: CLOCK & DATE ================= -->
+            <div v-if="w.widget_type === 'clock'" class="flex flex-col items-center justify-center my-auto py-2 text-center">
+              <div class="font-mono text-6xl md:text-8xl lg:text-9xl font-extralight tracking-tighter text-white leading-none mb-2">
+                <span>{{ currentTime.hours }}</span>
+                <span :class="isSecondTick ? 'opacity-100' : 'opacity-20'">:</span>
+                <span>{{ currentTime.minutes }}</span>
+                <span class="text-2xl md:text-4xl font-light text-neutral-500 ml-1 align-top">{{ currentTime.seconds }}</span>
+              </div>
+              <div class="text-sm md:text-xl font-light tracking-wide text-neutral-300 uppercase">
+                {{ currentDate.weekday }}, <span class="text-white font-normal">{{ currentDate.monthDay }}</span> {{ currentDate.year }}
+              </div>
+              <div v-if="weather" class="mt-2.5 inline-flex items-center gap-2 px-3 py-1 rounded-full border border-neutral-800 bg-neutral-900/60 text-xs font-mono text-neutral-300">
+                <span>{{ weather.icon }}</span>
+                <span class="font-bold text-white">{{ weather.temperature }}°C</span>
+                <span class="text-neutral-600">•</span>
+                <span>{{ weather.condition }}</span>
+              </div>
+            </div>
+
+            <!-- ================= WIDGET TYPE 2: WEATHER ================= -->
+            <div v-else-if="w.widget_type === 'weather'" class="h-full flex flex-col justify-between">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+                <span class="font-mono text-xs uppercase tracking-widest text-sky-400 font-semibold">OUTDOOR WEATHER</span>
+                <span class="text-base">{{ weather ? weather.icon : '☀️' }}</span>
+              </div>
+              <div v-if="weather" class="flex items-center justify-between my-auto py-2">
+                <div>
+                  <div class="text-4xl md:text-5xl font-mono font-light text-white">{{ weather.temperature }}°C</div>
+                  <div class="text-xs text-neutral-400 font-sans mt-0.5">{{ weather.condition }}</div>
+                </div>
+                <div class="text-right font-mono text-xs text-neutral-400 space-y-1">
+                  <div>Low: {{ weather.tempMin }}°C / High: {{ weather.tempMax }}°C</div>
+                  <div>Humidity: {{ weather.humidity }}%</div>
+                  <div>Wind: {{ weather.windSpeed }} km/h</div>
+                </div>
+              </div>
+              <div v-else class="text-xs font-mono text-neutral-600 py-4 text-center">Loading live weather...</div>
+            </div>
+
+            <!-- ================= WIDGET TYPE 3: TASKS ================= -->
+            <div v-else-if="w.widget_type === 'tasks'" class="h-full flex flex-col justify-between">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+                <div class="flex items-center gap-2">
+                  <span class="font-mono text-xs uppercase tracking-widest text-emerald-400 font-semibold">
+                    {{ selectedProfile ? selectedProfile.name + "'s Tasks" : "Family Tasks" }}
+                  </span>
+                  <span class="text-[10px] font-mono text-neutral-500">({{ displayedTasks.length }})</span>
+                </div>
+              </div>
+              
+              <div v-if="displayedTasks.length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
+                No active tasks. Tap + to add.
+              </div>
+              <ul v-else class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                <li 
+                  v-for="item in displayedTasks" 
+                  :key="item.id"
+                  @click="toggleTaskItem(item)"
+                  class="text-neutral-300 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-1 px-1.5 rounded hover:bg-neutral-900/60"
+                >
+                  <div class="flex items-center gap-2">
+                    <span 
+                      class="w-3 h-3 rounded-full border transition-all duration-300 flex items-center justify-center text-[9px]"
+                      :class="item.checked === 1 ? 'bg-white border-white text-black font-bold' : 'border-neutral-600'"
+                    >
+                      <span v-if="item.checked === 1">✓</span>
+                    </span>
+                    <span :class="{ 'line-through text-neutral-600': item.checked === 1 }">{{ item.content }}</span>
+                    <span v-if="item.assignee_name && !selectedProfileId" class="text-[9px] font-mono px-1 rounded bg-neutral-900 text-neutral-400 border border-neutral-800">
+                      @{{ item.assignee_name }}
+                    </span>
+                  </div>
+                  <span v-if="item.reward" class="font-mono text-[11px] text-neutral-400 font-medium">+{{ item.reward }} pts</span>
+                </li>
+              </ul>
+            </div>
+
+            <!-- ================= WIDGET TYPE 4: LIST (CUSTOM/SHOPPING) ================= -->
+            <div v-else-if="w.widget_type === 'list'" class="h-full flex flex-col justify-between">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+                <div class="flex items-center gap-2">
+                  <span>{{ targetList(w)?.icon || '📋' }}</span>
+                  <span class="font-mono text-xs uppercase tracking-widest text-white font-semibold">
+                    {{ targetList(w)?.name || 'Shopping List' }}
+                  </span>
+                </div>
+                <button 
+                  @click.stop="openQuickAdd(targetList(w))" 
+                  class="text-[10px] font-mono bg-neutral-900 hover:bg-neutral-800 text-neutral-300 px-1.5 py-0.5 rounded border border-neutral-800"
+                >
+                  + Add
+                </button>
+              </div>
+
+              <div v-if="!targetList(w) || !targetList(w).items || targetList(w).items.length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
+                List is empty.
+              </div>
+              <ul v-else class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                <li 
+                  v-for="item in targetList(w).items" 
+                  :key="item.id"
+                  @click="toggleListItem(item)"
+                  class="text-neutral-300 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-1 px-1.5 rounded hover:bg-neutral-900/60"
+                >
+                  <div class="flex items-center gap-2">
+                    <span 
+                      class="w-3 h-3 rounded-full border transition-all duration-300 flex items-center justify-center text-[9px]"
+                      :class="item.checked === 1 ? 'bg-white border-white text-black font-bold' : 'border-neutral-600'"
+                    >
+                      <span v-if="item.checked === 1">✓</span>
+                    </span>
+                    <span :class="{ 'line-through text-neutral-600': item.checked === 1 }">{{ item.content }}</span>
+                  </div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- ================= WIDGET TYPE 5: NOTES ================= -->
+            <div v-else-if="w.widget_type === 'notes'" class="h-full flex flex-col justify-between">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+                <span class="font-mono text-xs uppercase tracking-widest text-neutral-400 font-semibold">RECENT NOTES</span>
+                <span class="text-[10px] font-mono text-neutral-600">{{ notes.length }} ITEMS</span>
+              </div>
+              <div v-if="notes.length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
+                No notes yet. Send notes from Telegram.
+              </div>
+              <ul v-else class="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                <li v-for="note in notes" :key="note.id" class="text-neutral-300 text-xs font-sans flex items-start justify-between py-0.5">
+                  <span>• {{ note.content }}</span>
+                  <span class="text-[10px] font-mono text-neutral-600 ml-2 whitespace-nowrap">{{ formatTime(note.timestamp) }}</span>
+                </li>
+              </ul>
+            </div>
+
+            <!-- ================= WIDGET TYPE 6: KITCHEN TIMER ================= -->
+            <div v-else-if="w.widget_type === 'timer'" class="h-full flex flex-col justify-between">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+                <span class="font-mono text-xs uppercase tracking-widest text-amber-400 font-semibold">KITCHEN TIMER</span>
+                <span class="font-mono text-xs text-neutral-500">{{ timerRunning ? '⏳ RUNNING' : 'IDLE' }}</span>
+              </div>
+
+              <div class="text-center my-auto py-2">
+                <div class="font-mono text-4xl md:text-5xl font-light text-white tracking-tight mb-2">
+                  {{ formatTimerDisplay }}
+                </div>
+
+                <!-- Quick Presets -->
+                <div class="flex items-center justify-center gap-1.5 mb-3">
+                  <button 
+                    v-for="min in [1, 3, 5, 10, 15]" 
+                    :key="min"
+                    @click="setTimerPreset(min)"
+                    class="px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 hover:border-neutral-600 text-[11px] font-mono text-neutral-300 transition"
+                  >
+                    +{{ min }}m
+                  </button>
+                </div>
+
+                <!-- Timer Controls -->
+                <div class="flex items-center justify-center gap-2">
+                  <button 
+                    @click="toggleTimer"
+                    :class="timerRunning ? 'bg-amber-600 hover:bg-amber-500' : 'bg-emerald-600 hover:bg-emerald-500'"
+                    class="px-4 py-1 rounded text-xs font-mono font-bold text-white transition"
+                  >
+                    {{ timerRunning ? 'PAUSE' : 'START' }}
+                  </button>
+                  <button 
+                    @click="resetTimer"
+                    class="px-3 py-1 rounded text-xs font-mono bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition"
+                  >
+                    RESET
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ================= WIDGET TYPE 7: PHOTO FRAME ================= -->
+            <div v-else-if="w.widget_type === 'photo'" class="h-full flex flex-col justify-between">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+                <span class="font-mono text-xs uppercase tracking-widest text-pink-400 font-semibold">PHOTO FRAME</span>
+                <span class="text-[10px] text-neutral-500 font-mono">{{ screensaverPhotos.length }} PHOTOS</span>
+              </div>
+              <div v-if="currentScreensaverPhoto" class="relative rounded-xl overflow-hidden aspect-video my-auto bg-black flex items-center justify-center">
+                <img :src="'/uploads/photos/' + currentScreensaverPhoto.filename" class="w-full h-full object-cover" />
+                <div v-if="currentScreensaverPhoto.caption" class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 to-transparent p-2 text-[11px] font-mono text-white text-center">
+                  {{ currentScreensaverPhoto.caption }}
+                </div>
+              </div>
+              <div v-else class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
+                No photos in screensaver yet.
+              </div>
+            </div>
+
+            <!-- ================= WIDGET TYPE 8: CALENDAR ================= -->
+            <div v-else-if="w.widget_type === 'calendar'" class="h-full flex flex-col justify-between overflow-hidden">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+                <div class="flex items-center gap-2">
+                  <span class="font-mono text-xs uppercase tracking-widest text-indigo-400 font-semibold">CALENDAR</span>
+                  <span class="text-[10px] text-neutral-500 font-mono">{{ calendarMonthLabel }}</span>
+                </div>
+                <span v-if="selectedProfile" class="text-[10px] font-mono px-2 py-0.5 rounded-full" :style="{ backgroundColor: selectedProfile.color + '22', color: selectedProfile.color }">
+                  {{ selectedProfile.name }}
+                </span>
+                <span v-else class="text-[10px] font-mono text-neutral-500">All Family</span>
+              </div>
+
+              <!-- Calendar Content Grid: Mini Month Grid (Left) + Upcoming Events List (Right) -->
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3 h-full overflow-hidden">
+                
+                <!-- Mini Month Grid -->
+                <div class="bg-neutral-950/80 border border-neutral-800/60 rounded-xl p-2.5 flex flex-col justify-between">
+                  <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-mono text-neutral-500 mb-1">
+                    <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+                  </div>
+                  <div class="grid grid-cols-7 gap-1 text-center text-xs font-mono">
+                    <span 
+                      v-for="(day, idx) in calendarMonthDays" 
+                      :key="idx" 
+                      class="h-6 flex flex-col items-center justify-center rounded relative"
+                      :class="{
+                        'text-neutral-600': !day.isCurrentMonth,
+                        'text-neutral-200': day.isCurrentMonth && !day.isToday,
+                        'bg-indigo-600 text-white font-bold': day.isToday
+                      }"
+                    >
+                      <span>{{ day.dayNumber }}</span>
+                      <span v-if="day.hasEvent" class="w-1 h-1 rounded-full bg-sky-400 -mt-0.5"></span>
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Upcoming Agenda List -->
+                <div class="flex flex-col justify-between overflow-hidden">
+                  <div class="text-[10px] font-mono uppercase tracking-wider text-neutral-500 mb-1">
+                    Upcoming Events
+                  </div>
+                  <div v-if="filteredEvents.length === 0" class="text-xs font-mono text-neutral-600 my-auto text-center py-4">
+                    No upcoming events
+                  </div>
+                  <div v-else class="space-y-1.5 overflow-y-auto max-h-[140px] pr-1">
+                    <div 
+                      v-for="ev in filteredEvents.slice(0, 4)" 
+                      :key="ev.id" 
+                      class="bg-neutral-950/90 border border-neutral-800/80 rounded-lg p-2 flex items-center justify-between gap-2"
+                      :style="{ borderLeftColor: ev.color || '#38bdf8', borderLeftWidth: '3px' }"
+                    >
+                      <div class="overflow-hidden">
+                        <div class="text-xs font-bold text-white truncate">{{ ev.title }}</div>
+                        <div class="text-[10px] font-mono text-neutral-500">{{ formatEventTimeDisplay(ev) }}</div>
+                      </div>
+                      <span v-if="ev.source === 'google'" class="text-[9px] font-mono text-sky-400 shrink-0">iCal</span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
           </div>
 
-          <!-- Date Display -->
-          <div class="text-xl md:text-3xl lg:text-4xl font-light tracking-wide text-neutral-300 uppercase">
-            {{ currentDate.weekday }}, <span class="text-white font-normal">{{ currentDate.monthDay }}</span> {{ currentDate.year }}
-          </div>
-
-          <!-- Weather Pill Badge -->
-          <div v-if="weather" class="mt-4 inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full border border-neutral-800 bg-neutral-950/80 text-neutral-300 font-mono text-xs shadow-inner">
-            <span class="text-base">{{ weather.icon }}</span>
-            <span class="font-semibold text-white">{{ weather.temperature }}°C</span>
-            <span class="text-neutral-600">•</span>
-            <span>{{ weather.condition }}</span>
-            <span v-if="weather.tempMax !== null" class="text-neutral-500 text-[11px] ml-1">
-              (L: {{ weather.tempMin }}° / H: {{ weather.tempMax }}°)
-            </span>
-          </div>
         </div>
       </main>
 
-      <!-- BOTTOM SECTION: NOTES & TASKS PREVIEW (Populated in Phase 2) -->
-      <footer class="border-t border-neutral-900 pt-6">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <!-- Live Notes Feed -->
-          <div class="bg-neutral-950 border border-neutral-900 rounded-xl p-4">
-            <div class="flex items-center justify-between mb-3 border-b border-neutral-900 pb-2">
-              <span class="font-mono text-xs uppercase tracking-widest text-neutral-400 font-semibold">
-                RECENT NOTES
-              </span>
-              <span class="font-mono text-[10px] text-neutral-600">
-                {{ notes.length }} ITEMS
-              </span>
-            </div>
-            <div v-if="notes.length === 0" class="text-neutral-600 text-xs font-mono py-3 text-center">
-              No notes yet. Incoming notes from Telegram will appear here.
-            </div>
-            <ul v-else class="space-y-2 max-h-32 overflow-y-auto pr-1">
-              <li v-for="note in notes" :key="note.id" class="text-neutral-300 text-sm font-sans flex items-start justify-between">
-                <span>• {{ note.content }}</span>
-                <span class="text-[10px] font-mono text-neutral-600 ml-2 whitespace-nowrap">{{ formatTime(note.timestamp) }}</span>
-              </li>
-            </ul>
-          </div>
+      <!-- BOTTOM PAGE SWIPER INDICATOR / DOTS -->
+      <footer class="pt-2 border-t border-neutral-900/60 flex items-center justify-between shrink-0 text-xs font-mono text-neutral-500">
+        <button 
+          @click="prevPage" 
+          :disabled="activePage === 0"
+          class="hover:text-white disabled:opacity-20 px-2 py-1 transition"
+        >
+          ← PREV PAGE
+        </button>
 
-          <!-- Live Tasks Feed -->
-          <div class="bg-neutral-950 border border-neutral-900 rounded-xl p-4">
-            <div class="flex items-center justify-between mb-3 border-b border-neutral-900 pb-2">
-              <span class="font-mono text-xs uppercase tracking-widest text-neutral-400 font-semibold">
-                ACTIVE TASKS
-              </span>
-              <span class="font-mono text-[10px] text-neutral-600">
-                {{ tasks.length }} ITEMS
-              </span>
-            </div>
-            <div v-if="tasks.length === 0" class="text-neutral-600 text-xs font-mono py-3 text-center">
-              No active tasks.
-            </div>
-            <ul v-else class="space-y-1.5 max-h-32 overflow-y-auto pr-1">
-              <li 
-                v-for="task in tasks" 
-                :key="task.id" 
-                @click="toggleTask(task)"
-                class="text-neutral-300 text-sm font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-1 px-1.5 rounded hover:bg-neutral-900/60 select-none"
-              >
-                <div class="flex items-center gap-2.5">
-                  <span 
-                    class="w-2.5 h-2.5 rounded-full border transition-all duration-300"
-                    :class="task.status === 'completed' ? 'bg-white border-white shadow-[0_0_6px_rgba(255,255,255,0.7)]' : 'border-neutral-600'"
-                  ></span>
-                  <span :class="{ 'line-through text-neutral-500': task.status === 'completed' }">
-                    {{ task.title }}
-                  </span>
-                  <span v-if="task.assignee" class="text-xs text-neutral-500 font-mono">(@{{ task.assignee }})</span>
-                </div>
-                <span v-if="task.reward" class="font-mono text-xs text-neutral-400 font-medium">+{{ task.reward }}</span>
-              </li>
-            </ul>
-          </div>
+        <div class="flex items-center gap-2">
+          <span 
+            v-for="pIndex in totalPages" 
+            :key="pIndex"
+            @click="activePage = pIndex - 1"
+            :class="activePage === pIndex - 1 ? 'w-5 bg-white' : 'w-2 bg-neutral-800 hover:bg-neutral-600'"
+            class="h-2 rounded-full cursor-pointer transition-all duration-300"
+          ></span>
         </div>
+
+        <button 
+          @click="nextPage" 
+          :disabled="activePage >= totalPages - 1"
+          class="hover:text-white disabled:opacity-20 px-2 py-1 transition"
+        >
+          NEXT PAGE →
+        </button>
       </footer>
 
+    </div>
+
+    <!-- ADD WIDGET DRAWER (POPUP) -->
+    <div 
+      v-if="showAddWidgetDrawer" 
+      class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+      @click.self="showAddWidgetDrawer = false"
+    >
+      <div class="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 max-w-md w-full shadow-2xl">
+        <h3 class="text-sm font-mono font-bold text-white mb-3 flex items-center justify-between">
+          <span>ADD WIDGET TO PAGE {{ activePage + 1 }}</span>
+          <button @click="showAddWidgetDrawer = false" class="text-neutral-500 hover:text-white">✕</button>
+        </h3>
+        
+        <div class="grid grid-cols-2 gap-2.5 mb-4">
+          <button 
+            v-for="wt in availableWidgetTypes" 
+            :key="wt.type"
+            @click="addWidget(wt.type)"
+            class="p-3 rounded-xl border border-neutral-800 hover:border-sky-500 bg-neutral-950 text-left transition"
+          >
+            <div class="text-xl mb-1">{{ wt.icon }}</div>
+            <div class="text-xs font-bold text-white">{{ wt.name }}</div>
+            <div class="text-[10px] text-neutral-400 font-mono">{{ wt.desc }}</div>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- QUICK ADD ITEM MODAL -->
+    <div 
+      v-if="showQuickAddModal" 
+      class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+      @click.self="showQuickAddModal = false"
+    >
+      <div class="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl">
+        <h3 class="text-sm font-mono font-bold text-white mb-3">Add Item</h3>
+        <form @submit.prevent="submitQuickAdd" class="space-y-3">
+          <input 
+            v-model="quickAddContent" 
+            type="text" 
+            placeholder="Item description..." 
+            class="w-full bg-neutral-950 border border-neutral-800 focus:border-white rounded-lg p-2.5 text-xs text-white outline-none"
+            autofocus
+            required
+          />
+          <div class="flex items-center gap-2">
+            <button 
+              type="submit" 
+              class="flex-1 bg-white hover:bg-neutral-200 text-black font-mono text-xs font-semibold py-2 rounded-lg transition"
+            >
+              Add Item
+            </button>
+            <button 
+              type="button" 
+              @click="showQuickAddModal = false" 
+              class="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-mono text-xs py-2 px-3 rounded-lg transition"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
 
   </div>
 
   <script>
-    const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
+    const { createApp, ref, computed, onMounted, onUnmounted, nextTick } = Vue;
 
     createApp({
       setup() {
-        // State
         const isConnected = ref(false);
         const isSleeping = ref(false);
         const isSecondTick = ref(true);
         const now = ref(new Date());
-        
-        // Notes and Tasks (for Phase 2 real-time sync)
+
+        // Data Models
         const notes = ref([]);
         const tasks = ref([]);
+        const profiles = ref([]);
+        const lists = ref([]);
+        const layouts = ref([]);
+        const photos = ref([]);
+        const events = ref([]);
         const weather = ref(null);
 
-        async function fetchWeather() {
-          try {
-            const res = await fetch('/api/weather');
-            if (res.ok) {
-              weather.value = await res.json();
-            }
-          } catch (e) {
-            console.warn('[Kiosk] Weather fetch failed', e);
+        // Screensaver Photo State
+        const currentPhotoIndex = ref(0);
+        let photoInterval = null;
+
+        const screensaverPhotos = computed(() => {
+          return photos.value.filter(p => p.show_in_screensaver === 1);
+        });
+
+        const currentScreensaverPhoto = computed(() => {
+          if (screensaverPhotos.value.length === 0) return null;
+          return screensaverPhotos.value[currentPhotoIndex.value % screensaverPhotos.value.length];
+        });
+
+        // Calendar computed helpers
+        const calendarMonthLabel = computed(() => {
+          return now.value.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+        });
+
+        const filteredEvents = computed(() => {
+          const nowIso = now.value.toISOString();
+          return events.value.filter(e => e.start_datetime >= nowIso.slice(0, 10)).slice(0, 20);
+        });
+
+        const calendarMonthDays = computed(() => {
+          const today = now.value;
+          const year = today.getFullYear();
+          const month = today.getMonth();
+          const firstDay = new Date(year, month, 1).getDay();
+          const daysInMonth = new Date(year, month + 1, 0).getDate();
+          const daysInPrev = new Date(year, month, 0).getDate();
+
+          // Dates that have events for dot indicator
+          const eventDates = new Set(events.value.map(e => e.start_datetime ? e.start_datetime.slice(0, 10) : null).filter(Boolean));
+
+          const days = [];
+          // Padding days from previous month
+          for (let i = firstDay - 1; i >= 0; i--) {
+            const d = daysInPrev - i;
+            const dayStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            days.push({ dayNumber: d, isCurrentMonth: false, isToday: false, hasEvent: eventDates.has(dayStr) });
           }
+          // Days in current month
+          const todayStr = today.toISOString().slice(0, 10);
+          for (let d = 1; d <= daysInMonth; d++) {
+            const dayStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            days.push({
+              dayNumber: d,
+              isCurrentMonth: true,
+              isToday: dayStr === todayStr,
+              hasEvent: eventDates.has(dayStr)
+            });
+          }
+          // Padding days from next month
+          const remaining = 42 - days.length;
+          for (let d = 1; d <= remaining; d++) {
+            const dayStr = `${year}-${String(month + 2).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            days.push({ dayNumber: d, isCurrentMonth: false, isToday: false, hasEvent: eventDates.has(dayStr) });
+          }
+          return days;
+        });
+
+        function formatEventTimeDisplay(ev) {
+          if (!ev.start_datetime) return '';
+          try {
+            const d = new Date(ev.start_datetime);
+            if (ev.all_day) {
+              return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+            }
+            return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+          } catch (e) { return ev.start_datetime; }
         }
 
-        // Inactivity timeout: 5 minutes (300,000 ms)
+        // Active State
+        const selectedProfileId = ref(null);
+        const activePage = ref(0);
+        const isEditMode = ref(false);
+        const showAddWidgetDrawer = ref(false);
+        const showQuickAddModal = ref(false);
+        const quickAddContent = ref('');
+        const quickAddTargetList = ref(null);
+
+        // SortableJS instance
+        let sortableInstance = null;
+        const widgetGridRef = ref(null);
+
+        // Kitchen Timer State
+        const timerSeconds = ref(300); // 5 min default
+        const timerRunning = ref(false);
+        let timerInterval = null;
+
+        // Inactivity timeout: 5 minutes
         const SLEEP_TIMEOUT_MS = 5 * 60 * 1000;
         const remainingSeconds = ref(Math.floor(SLEEP_TIMEOUT_MS / 1000));
         let sleepTimer = null;
@@ -268,23 +778,39 @@
         let clockInterval = null;
         let socket = null;
 
-        // Formatted Clock
+        // Touch Swipe tracking
+        let touchStartX = 0;
+        let touchStartY = 0;
+
+        const availableWidgetTypes = [
+          { type: 'clock', name: 'Clock & Weather', icon: '🕒', desc: 'Hero digital clock with date' },
+          { type: 'weather', name: 'Weather Forecast', icon: '☀️', desc: 'Detailed temperature & forecast' },
+          { type: 'tasks', name: 'Chores & Tasks', icon: '✅', desc: 'Family & kids task checklist' },
+          { type: 'list', name: 'Custom List', icon: '🛒', desc: 'Shopping or custom checklist' },
+          { type: 'notes', name: 'Recent Notes', icon: '📝', desc: 'Family message stream' },
+          { type: 'timer', name: 'Kitchen Timer', icon: '⏳', desc: 'Quick countdown presets' },
+          { type: 'photo', name: 'Photo Frame', icon: '🖼️', desc: 'Rotating photo slideshow widget' },
+          { type: 'calendar', name: 'Calendar', icon: '📅', desc: 'Mini month + upcoming events' }
+        ];
+
+        // Computed Time & Date
         const currentTime = computed(() => {
           const d = now.value;
-          const hours = String(d.getHours()).padStart(2, '0');
-          const minutes = String(d.getMinutes()).padStart(2, '0');
-          const seconds = String(d.getSeconds()).padStart(2, '0');
-          return { hours, minutes, seconds };
+          return {
+            hours: String(d.getHours()).padStart(2, '0'),
+            minutes: String(d.getMinutes()).padStart(2, '0'),
+            seconds: String(d.getSeconds()).padStart(2, '0')
+          };
         });
 
-        // Formatted Date
         const currentDate = computed(() => {
           const d = now.value;
-          const weekday = d.toLocaleDateString(undefined, { weekday: 'long' });
-          const monthDay = d.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
-          const year = d.getFullYear();
-          const short = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-          return { weekday, monthDay, year, short };
+          return {
+            weekday: d.toLocaleDateString(undefined, { weekday: 'long' }),
+            monthDay: d.toLocaleDateString(undefined, { month: 'long', day: 'numeric' }),
+            year: d.getFullYear(),
+            short: d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+          };
         });
 
         const formatSleepCountdown = computed(() => {
@@ -293,17 +819,249 @@
           return `${m}:${String(s).padStart(2, '0')}`;
         });
 
-        function formatTime(ts) {
-          if (!ts) return '';
-          try {
-            const d = new Date(ts);
-            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          } catch(e) {
-            return '';
+        const formatTimerDisplay = computed(() => {
+          const m = Math.floor(timerSeconds.value / 60);
+          const s = timerSeconds.value % 60;
+          return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        });
+
+        const selectedProfile = computed(() => {
+          return profiles.value.find(p => p.id === selectedProfileId.value) || null;
+        });
+
+        // Compute total pages from layout
+        const totalPages = computed(() => {
+          if (layouts.value.length === 0) return 2;
+          const maxP = Math.max(...layouts.value.map(l => l.page || 0));
+          return Math.max(maxP + 1, 1);
+        });
+
+        // Active page widgets
+        const activePageWidgets = computed(() => {
+          return layouts.value.filter(w => (w.page || 0) === activePage.value);
+        });
+
+        // Filtered tasks based on active profile
+        const displayedTasks = computed(() => {
+          const taskList = lists.value.find(l => l.type === 'tasks') || lists.value[0];
+          if (!taskList || !taskList.items) return [];
+          if (!selectedProfileId.value) return taskList.items;
+          return taskList.items.filter(i => i.assignee_profile_id === selectedProfileId.value);
+        });
+
+        function targetList(widget) {
+          if (widget.config && widget.config.listId) {
+            return lists.value.find(l => l.id === widget.config.listId) || lists.value[0];
+          }
+          // Default to shopping or second list
+          return lists.value.find(l => l.type === 'shopping') || lists.value[0];
+        }
+
+        function getColSpanClass(w) {
+          const width = Number(w) || 6;
+          if (width >= 12) return 'col-span-12';
+          if (width >= 8) return 'col-span-12 md:col-span-8';
+          if (width >= 6) return 'col-span-12 md:col-span-6';
+          return 'col-span-12 md:col-span-4';
+        }
+
+        // Swipe Navigation
+        function handleTouchStart(e) {
+          touchStartX = e.touches[0].clientX;
+          touchStartY = e.touches[0].clientY;
+          resetSleepTimer();
+        }
+
+        function handleTouchMove(e) {
+          // Keep active
+        }
+
+        function handleTouchEnd(e) {
+          if (isEditMode.value) return; // Do not swipe during edit mode
+          const deltaX = e.changedTouches[0].clientX - touchStartX;
+          const deltaY = e.changedTouches[0].clientY - touchStartY;
+
+          // If horizontal swipe exceeds 45px and dominant over vertical
+          if (Math.abs(deltaX) > 45 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+            if (deltaX < 0) {
+              nextPage();
+            } else {
+              prevPage();
+            }
           }
         }
 
-        // Sleep management
+        function nextPage() {
+          if (activePage.value < totalPages.value - 1) {
+            activePage.value++;
+            reinitSortable();
+          }
+        }
+
+        function prevPage() {
+          if (activePage.value > 0) {
+            activePage.value--;
+            reinitSortable();
+          }
+        }
+
+        // Profiles
+        function selectProfile(pId) {
+          selectedProfileId.value = pId;
+          if (pId) localStorage.setItem('kiosk_profile_id', pId);
+          else localStorage.removeItem('kiosk_profile_id');
+        }
+
+        // Interactive List Item Toggles
+        function toggleListItem(item) {
+          const nextChecked = item.checked === 1 ? 0 : 1;
+          item.checked = nextChecked;
+          if (socket && socket.connected) {
+            socket.emit('list:item:toggle', { id: item.id, checked: nextChecked === 1 });
+          }
+        }
+
+        function toggleTaskItem(item) {
+          toggleListItem(item);
+        }
+
+        function openQuickAdd(list) {
+          quickAddTargetList.value = list;
+          showQuickAddModal.value = true;
+        }
+
+        function submitQuickAdd() {
+          if (!quickAddContent.value.trim() || !quickAddTargetList.value) return;
+          if (socket && socket.connected) {
+            socket.emit('list:item:add', {
+              listId: quickAddTargetList.value.id,
+              content: quickAddContent.value.trim(),
+              assigneeProfileId: selectedProfileId.value,
+              reward: 0
+            });
+          }
+          quickAddContent.value = '';
+          showQuickAddModal.value = false;
+        }
+
+        // Kitchen Timer
+        function setTimerPreset(mins) {
+          timerSeconds.value = mins * 60;
+        }
+
+        function toggleTimer() {
+          timerRunning.value = !timerRunning.value;
+          if (timerRunning.value) {
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+              if (timerSeconds.value > 0) {
+                timerSeconds.value--;
+              } else {
+                timerRunning.value = false;
+                clearInterval(timerInterval);
+              }
+            }, 1000);
+          } else {
+            if (timerInterval) clearInterval(timerInterval);
+          }
+        }
+
+        function resetTimer() {
+          timerRunning.value = false;
+          if (timerInterval) clearInterval(timerInterval);
+          timerSeconds.value = 300;
+        }
+
+        // Edit Mode & Layout Management
+        function toggleEditMode() {
+          isEditMode.value = !isEditMode.value;
+          if (isEditMode.value) {
+            nextTick(reinitSortable);
+          } else {
+            if (sortableInstance) {
+              sortableInstance.destroy();
+              sortableInstance = null;
+            }
+            saveCurrentLayout();
+          }
+        }
+
+        function reinitSortable() {
+          if (!isEditMode.value || !widgetGridRef.value) return;
+          if (sortableInstance) sortableInstance.destroy();
+
+          sortableInstance = new Sortable(widgetGridRef.value, {
+            animation: 180,
+            ghostClass: 'sortable-ghost',
+            handle: '.cursor-move',
+            onEnd: () => {
+              // Read DOM order and reassign positions
+              const domIds = Array.from(widgetGridRef.value.children).map(c => c.getAttribute('data-id'));
+              const pageWidgets = layouts.value.filter(w => (w.page || 0) === activePage.value);
+              pageWidgets.sort((a, b) => domIds.indexOf(String(a.id)) - domIds.indexOf(String(b.id)));
+              pageWidgets.forEach((w, idx) => w.position = idx);
+              saveCurrentLayout();
+            }
+          });
+        }
+
+        function cycleWidgetWidth(w) {
+          if (w.w === 12) w.w = 4;
+          else if (w.w === 4) w.w = 6;
+          else w.w = 12;
+          saveCurrentLayout();
+        }
+
+        function removeWidget(w) {
+          const idx = layouts.value.indexOf(w);
+          if (idx !== -1) {
+            layouts.value.splice(idx, 1);
+            saveCurrentLayout();
+          }
+        }
+
+        function addWidget(type) {
+          const newW = {
+            id: Date.now(),
+            page: activePage.value,
+            widget_type: type,
+            x: 0,
+            y: 0,
+            w: type === 'clock' || type === 'notes' ? 12 : 6,
+            h: 2,
+            config: {},
+            position: activePageWidgets.value.length
+          };
+          layouts.value.push(newW);
+          showAddWidgetDrawer.value = false;
+          saveCurrentLayout();
+          nextTick(reinitSortable);
+        }
+
+        function addNewPage() {
+          activePage.value = totalPages.value;
+          // Add default widget to new page
+          addWidget('tasks');
+        }
+
+        function deleteCurrentPage() {
+          if (!confirm(`Delete Page ${activePage.value + 1}? All widgets on this page will be removed.`)) return;
+          layouts.value = layouts.value.filter(w => (w.page || 0) !== activePage.value);
+          // Re-index remaining pages
+          layouts.value.forEach(w => {
+            if ((w.page || 0) > activePage.value) w.page--;
+          });
+          if (activePage.value > 0) activePage.value--;
+          saveCurrentLayout();
+        }
+
+        function saveCurrentLayout() {
+          if (socket && socket.connected) {
+            socket.emit('layout:save', layouts.value);
+          }
+        }
+
+        // Sleep Management
         function resetSleepTimer() {
           if (isSleeping.value) {
             wakeUp();
@@ -321,98 +1079,82 @@
           resetSleepTimer();
         }
 
-        // Socket.IO Initialization
+        // Weather Fetch
+        async function fetchWeather() {
+          try {
+            const res = await fetch('/api/weather');
+            if (res.ok) weather.value = await res.json();
+          } catch(e) {}
+        }
+
+        function formatTime(ts) {
+          if (!ts) return '';
+          try {
+            return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          } catch(e) { return ''; }
+        }
+
+        // Socket.IO Setup
         function initSocket() {
-          // Retrieve token from URL parameter or localStorage
           const urlParams = new URLSearchParams(window.location.search);
-          let token = urlParams.get('token');
-          if (token) {
-            localStorage.setItem('dashboard_token', token);
-          } else {
-            token = localStorage.getItem('dashboard_token') || 'your_secret_token';
-          }
+          let token = urlParams.get('token') || localStorage.getItem('dashboard_token') || 'your_secret_token';
+          localStorage.setItem('dashboard_token', token);
 
           socket = io({
             auth: { token },
             query: { token },
             reconnection: true,
-            reconnectionDelay: 2000,
-            reconnectionAttempts: Infinity
+            reconnectionDelay: 2000
           });
 
-          socket.on('connect', () => {
-            isConnected.value = true;
-            console.log('[Kiosk] Socket connected successfully');
-          });
+          socket.on('connect', () => isConnected.value = true);
+          socket.on('disconnect', () => isConnected.value = false);
 
-          socket.on('disconnect', () => {
-            isConnected.value = false;
-            console.log('[Kiosk] Socket disconnected');
-          });
-
-          socket.on('connect_error', (err) => {
-            isConnected.value = false;
-            console.warn('[Kiosk] Socket connection error:', err.message);
-          });
-
-          // Listen to dashboard_update event (for Phase 2)
           socket.on('dashboard_update', (data) => {
-            console.log('[Kiosk] dashboard_update received:', data);
-            if (data.notes && Array.isArray(data.notes)) {
-              notes.value = data.notes;
-            }
-            if (data.tasks && Array.isArray(data.tasks)) {
-              tasks.value = data.tasks;
-            }
+            if (data.notes) notes.value = data.notes;
+            if (data.tasks) tasks.value = data.tasks;
+            if (data.profiles) profiles.value = data.profiles;
+            if (data.lists) lists.value = data.lists;
+            if (data.layouts) layouts.value = data.layouts;
+            if (data.photos && Array.isArray(data.photos)) photos.value = data.photos;
+            if (data.events && Array.isArray(data.events)) events.value = data.events;
           });
         }
 
         onMounted(() => {
-          // Clock ticker
+          const savedProf = localStorage.getItem('kiosk_profile_id');
+          if (savedProf) selectedProfileId.value = parseInt(savedProf, 10);
+
           clockInterval = setInterval(() => {
             now.value = new Date();
             isSecondTick.value = !isSecondTick.value;
           }, 1000);
 
-          // Sleep countdown ticker
           countdownTimer = setInterval(() => {
-            if (!isSleeping.value && remainingSeconds.value > 0) {
-              remainingSeconds.value--;
-            }
+            if (!isSleeping.value && remainingSeconds.value > 0) remainingSeconds.value--;
           }, 1000);
 
-          // Global interaction listeners
-          window.addEventListener('touchstart', resetSleepTimer, { passive: true });
-          window.addEventListener('click', resetSleepTimer, { passive: true });
+          // Screensaver slideshow rotation timer (every 8 seconds)
+          photoInterval = setInterval(() => {
+            if (screensaverPhotos.value.length > 1) {
+              currentPhotoIndex.value++;
+            }
+          }, 8000);
 
-          // Start initial sleep timer
           resetSleepTimer();
-
-          // Connect Socket.IO
           initSocket();
-
-          // Fetch Weather
           fetchWeather();
-          const weatherInterval = setInterval(fetchWeather, 15 * 60 * 1000);
-          onUnmounted(() => clearInterval(weatherInterval));
+          setInterval(fetchWeather, 15 * 60 * 1000);
         });
 
         onUnmounted(() => {
           if (clockInterval) clearInterval(clockInterval);
           if (countdownTimer) clearInterval(countdownTimer);
           if (sleepTimer) clearTimeout(sleepTimer);
-          window.removeEventListener('touchstart', resetSleepTimer);
-          window.removeEventListener('click', resetSleepTimer);
+          if (timerInterval) clearInterval(timerInterval);
+          if (photoInterval) clearInterval(photoInterval);
           if (socket) socket.disconnect();
         });
-
-        function toggleTask(task) {
-          const nextStatus = task.status === 'completed' ? 'pending' : 'completed';
-          task.status = nextStatus;
-          if (socket && socket.connected) {
-            socket.emit('task:toggle', { id: task.id, status: nextStatus });
-          }
-        }
 
         return {
           isConnected,
@@ -422,13 +1164,57 @@
           currentDate,
           remainingSeconds,
           formatSleepCountdown,
-          resetSleepTimer,
-          wakeUp,
           notes,
           tasks,
+          profiles,
+          lists,
+          layouts,
+          photos,
+          screensaverPhotos,
+          currentScreensaverPhoto,
+          events,
+          calendarMonthLabel,
+          filteredEvents,
+          calendarMonthDays,
+          formatEventTimeDisplay,
+          weather,
+          selectedProfileId,
+          selectedProfile,
+          activePage,
+          totalPages,
+          activePageWidgets,
+          displayedTasks,
+          targetList,
+          isEditMode,
+          showAddWidgetDrawer,
+          availableWidgetTypes,
+          showQuickAddModal,
+          quickAddContent,
+          widgetGridRef,
+          timerSeconds,
+          timerRunning,
+          formatTimerDisplay,
           formatTime,
-          toggleTask,
-          weather
+          getColSpanClass,
+          handleTouchStart,
+          handleTouchMove,
+          handleTouchEnd,
+          nextPage,
+          prevPage,
+          selectProfile,
+          toggleListItem,
+          toggleTaskItem,
+          openQuickAdd,
+          submitQuickAdd,
+          setTimerPreset,
+          toggleTimer,
+          resetTimer,
+          toggleEditMode,
+          cycleWidgetWidth,
+          removeWidget,
+          addWidget,
+          addNewPage,
+          deleteCurrentPage
         };
       }
     }).mount('#app');

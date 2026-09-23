@@ -13,11 +13,39 @@ const {
   deleteTask,
   getDashboardData,
   getNotes,
-  getTasks
+  getTasks,
+  getProfiles,
+  getProfileById,
+  insertProfile,
+  updateProfile,
+  deleteProfile,
+  getLists,
+  getListById,
+  insertList,
+  updateList,
+  deleteList,
+  insertListItem,
+  toggleListItemChecked,
+  updateListItem,
+  deleteListItem,
+  getWidgetLayouts,
+  saveWidgetLayouts,
+  getPhotos,
+  insertPhoto,
+  updatePhoto,
+  deletePhoto,
+  getCalendarFeeds,
+  insertCalendarFeed,
+  deleteCalendarFeed,
+  getCalendarEvents,
+  insertCalendarEvent,
+  deleteCalendarEvent
 } = require('./db');
 const { parseTextWithGemini } = require('./services/gemini');
 const { getWeather } = require('./services/weather');
 const { initBot } = require('./bot');
+const { uploadAvatar, uploadPhoto } = require('./middleware/upload');
+const { syncFeed, syncAllFeeds, startCalendarSyncCron } = require('./services/calendar');
 
 const app = express();
 const server = http.createServer(app);
@@ -53,12 +81,35 @@ io.on('connection', (socket) => {
     time: new Date().toISOString()
   });
 
-  // Push current notes and tasks upon connection
+  // Push current full state upon connection
   socket.emit('dashboard_update', getDashboardData());
 
-  // Interactive task completion from tablet
+  // Interactive task completion from tablet (legacy task)
   socket.on('task:toggle', ({ id, status }) => {
     updateTaskStatus(id, status);
+    io.emit('dashboard_update', getDashboardData());
+  });
+
+  // Interactive list item toggle from tablet
+  socket.on('list:item:toggle', ({ id, checked }) => {
+    toggleListItemChecked(id, checked);
+    io.emit('dashboard_update', getDashboardData());
+  });
+
+  // Interactive list item addition from tablet
+  socket.on('list:item:add', ({ listId, content, assigneeProfileId, reward }) => {
+    insertListItem({
+      list_id: listId,
+      content,
+      assignee_profile_id: assigneeProfileId,
+      reward
+    });
+    io.emit('dashboard_update', getDashboardData());
+  });
+
+  // Save widget layouts from kiosk
+  socket.on('layout:save', (layouts) => {
+    saveWidgetLayouts(layouts);
     io.emit('dashboard_update', getDashboardData());
   });
 
@@ -136,6 +187,223 @@ app.delete('/api/admin/tasks/:id', (req, res) => {
   deleteTask(req.params.id);
   io.emit('dashboard_update', getDashboardData());
   res.json({ ok: true });
+});
+
+// Profiles API
+app.get('/api/admin/profiles', (req, res) => {
+  res.json(getProfiles());
+});
+
+app.post('/api/admin/profiles', (req, res) => {
+  const { name, color, avatar_type, avatar_value } = req.body;
+  if (!name) return res.status(400).json({ error: 'name is required' });
+  const profile = insertProfile({ name, color, avatar_type, avatar_value });
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, profile });
+});
+
+app.patch('/api/admin/profiles/:id', (req, res) => {
+  const profile = updateProfile(req.params.id, req.body);
+  if (!profile) return res.status(404).json({ error: 'Profile not found' });
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, profile });
+});
+
+app.delete('/api/admin/profiles/:id', (req, res) => {
+  deleteProfile(req.params.id);
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/upload/avatar', uploadAvatar.single('avatar'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
+  const url = `/uploads/avatars/${req.file.filename}`;
+  res.json({ ok: true, url, filename: req.file.filename });
+});
+
+// Lists API
+app.get('/api/admin/lists', (req, res) => {
+  res.json(getLists());
+});
+
+app.post('/api/admin/lists', (req, res) => {
+  const { name, type, profile_id, color, icon } = req.body;
+  if (!name) return res.status(400).json({ error: 'name is required' });
+  const list = insertList({ name, type, profile_id, color, icon });
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, list });
+});
+
+app.patch('/api/admin/lists/:id', (req, res) => {
+  const list = updateList(req.params.id, req.body);
+  if (!list) return res.status(404).json({ error: 'List not found' });
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, list });
+});
+
+app.delete('/api/admin/lists/:id', (req, res) => {
+  deleteList(req.params.id);
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true });
+});
+
+// List items API
+app.post('/api/admin/lists/:id/items', (req, res) => {
+  const { content, assignee_profile_id, reward, position } = req.body;
+  if (!content) return res.status(400).json({ error: 'content is required' });
+  const item = insertListItem({
+    list_id: req.params.id,
+    content,
+    assignee_profile_id,
+    reward,
+    position
+  });
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, item });
+});
+
+app.patch('/api/admin/lists/:listId/items/:itemId', (req, res) => {
+  const item = updateListItem(req.params.itemId, req.body);
+  if (!item) return res.status(404).json({ error: 'Item not found' });
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, item });
+});
+
+app.patch('/api/admin/lists/:listId/items/:itemId/toggle', (req, res) => {
+  const item = toggleListItemChecked(req.params.itemId, req.body.checked);
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, item });
+});
+
+app.delete('/api/admin/lists/:listId/items/:itemId', (req, res) => {
+  deleteListItem(req.params.itemId);
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true });
+});
+
+// Layouts API
+app.get('/api/layouts', (req, res) => {
+  res.json(getWidgetLayouts());
+});
+
+app.post('/api/admin/layouts', (req, res) => {
+  const { layouts } = req.body;
+  if (!Array.isArray(layouts)) return res.status(400).json({ error: 'layouts must be an array' });
+  const saved = saveWidgetLayouts(layouts);
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, layouts: saved });
+});
+
+// Photos API (admin)
+app.get('/api/admin/photos', (req, res) => {
+  res.json(getPhotos());
+});
+
+app.post('/api/admin/upload/photo', uploadPhoto.single('photo'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
+  const { caption, show_in_screensaver } = req.body;
+  const url = `/uploads/photos/${req.file.filename}`;
+  const photo = insertPhoto({
+    filename: req.file.filename,
+    original_name: req.file.originalname,
+    source: 'upload',
+    caption: caption || null,
+    show_in_screensaver: show_in_screensaver !== '0'
+  });
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, url, photo });
+});
+
+app.patch('/api/admin/photos/:id', (req, res) => {
+  const photo = updatePhoto(req.params.id, req.body);
+  if (!photo) return res.status(404).json({ error: 'Photo not found' });
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, photo });
+});
+
+app.delete('/api/admin/photos/:id', (req, res) => {
+  const fs = require('fs');
+  const path = require('path');
+  const photo = require('./db').getPhotoById(req.params.id);
+  if (photo) {
+    const filePath = path.join(__dirname, '../public/uploads/photos', photo.filename);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  }
+  deletePhoto(req.params.id);
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true });
+});
+
+// Public photos endpoint (token-guarded for kiosk)
+app.get('/api/photos', (req, res) => {
+  const expectedToken = process.env.DASHBOARD_TOKEN || 'your_secret_token';
+  if (req.query.token !== expectedToken) return res.status(403).json({ error: 'Forbidden' });
+  res.json(getPhotos({ screensaverOnly: true }));
+});
+
+// Calendar API (admin)
+app.get('/api/admin/calendar/feeds', (req, res) => {
+  res.json(getCalendarFeeds());
+});
+
+app.post('/api/admin/calendar/feeds', async (req, res) => {
+  const { name, ical_url, color, profile_id } = req.body;
+  if (!name || !ical_url) return res.status(400).json({ error: 'name and ical_url are required' });
+  const feed = insertCalendarFeed({ name, ical_url, color, profile_id });
+  // Initial sync in background
+  syncFeed(feed).then(() => io.emit('dashboard_update', getDashboardData())).catch(e => console.warn(e));
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, feed });
+});
+
+app.delete('/api/admin/calendar/feeds/:id', (req, res) => {
+  deleteCalendarFeed(req.params.id);
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/calendar/sync', async (req, res) => {
+  try {
+    const result = await syncAllFeeds(io);
+    res.json({ ok: true, result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/calendar/events', (req, res) => {
+  res.json(getCalendarEvents());
+});
+
+app.post('/api/admin/calendar/events', (req, res) => {
+  const { title, description, start_datetime, end_datetime, all_day, profile_id, color } = req.body;
+  if (!title || !start_datetime) return res.status(400).json({ error: 'title and start_datetime are required' });
+  const event = insertCalendarEvent({
+    title,
+    description,
+    start_datetime,
+    end_datetime,
+    all_day,
+    profile_id,
+    color,
+    source: 'manual'
+  });
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, event });
+});
+
+app.delete('/api/admin/calendar/events/:id', (req, res) => {
+  deleteCalendarEvent(req.params.id);
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true });
+});
+
+// Public calendar events endpoint (token-guarded for kiosk)
+app.get('/api/calendar/events', (req, res) => {
+  const expectedToken = process.env.DASHBOARD_TOKEN || 'your_secret_token';
+  if (req.query.token !== expectedToken) return res.status(403).json({ error: 'Forbidden' });
+  const events = getCalendarEvents({ profileId: req.query.profileId });
+  res.json(events);
 });
 
 app.post('/api/admin/simulate-message', async (req, res) => {
@@ -228,6 +496,9 @@ app.post('/api/message', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Start background calendar sync cron (15 min)
+startCalendarSyncCron(io);
 
 // Initialize Telegraf Bot
 const bot = initBot(io);
