@@ -493,14 +493,29 @@ function getSettings() {
   const rows = db.prepare('SELECT * FROM settings').all();
   const settings = {
     sleep_timeout: 300,
+    sleep_timeout_day: 300,
+    sleep_timeout_night: 60,
+    screensaver_mode: 'photos',
+    screensaver_mode_day: 'photos',
+    screensaver_mode_night: 'clock',
     photo_interval: 8,
+    photo_interval_day: 8,
+    photo_interval_night: 15,
     night_mode_enabled: 0,
     night_mode_start: '22:00',
-    night_mode_end: '07:00',
-    screensaver_mode: 'photos'
+    night_mode_end: '07:00'
   };
+  const numericKeys = [
+    'sleep_timeout',
+    'sleep_timeout_day',
+    'sleep_timeout_night',
+    'photo_interval',
+    'photo_interval_day',
+    'photo_interval_night',
+    'night_mode_enabled'
+  ];
   for (const r of rows) {
-    if (r.key === 'sleep_timeout' || r.key === 'photo_interval' || r.key === 'night_mode_enabled') {
+    if (numericKeys.includes(r.key)) {
       settings[r.key] = Number(r.value);
     } else {
       settings[r.key] = r.value;

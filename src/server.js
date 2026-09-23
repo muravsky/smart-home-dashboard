@@ -344,6 +344,23 @@ app.post('/api/admin/upload/photo', uploadPhoto.single('photo'), (req, res) => {
   res.json({ ok: true, url, photo });
 });
 
+// Multi-photo upload API (batch upload up to 50 photos)
+app.post('/api/admin/upload/photos', uploadPhoto.array('photos', 50), (req, res) => {
+  if (!req.files || req.files.length === 0) return res.status(400).json({ error: 'No images uploaded' });
+  const { caption, show_in_screensaver } = req.body;
+  const insertedPhotos = req.files.map((file) => {
+    return insertPhoto({
+      filename: file.filename,
+      original_name: file.originalname,
+      source: 'upload',
+      caption: caption || null,
+      show_in_screensaver: show_in_screensaver !== '0'
+    });
+  });
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, count: insertedPhotos.length, photos: insertedPhotos });
+});
+
 app.patch('/api/admin/photos/:id', (req, res) => {
   const photo = updatePhoto(req.params.id, req.body);
   if (!photo) return res.status(404).json({ error: 'Photo not found' });

@@ -249,15 +249,141 @@
                 </div>
               </div>
 
-              <button 
-                @click="deleteProfile(prof.id)" 
-                class="text-neutral-600 hover:text-red-400 text-xs font-mono px-2 py-1 transition"
-                title="Delete profile"
-              >
-                ✕
-              </button>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <button 
+                  @click="startEditProfile(prof)" 
+                  class="text-neutral-400 hover:text-sky-300 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-neutral-800 hover:border-sky-500/50 hover:bg-sky-950/40 transition flex items-center gap-1"
+                  title="Edit profile"
+                >
+                  <span>✏️</span>
+                  <span class="hidden sm:inline">Edit</span>
+                </button>
+                <button 
+                  @click="deleteProfile(prof.id)" 
+                  class="text-neutral-500 hover:text-red-400 text-xs font-mono px-2 py-1.5 rounded-lg border border-neutral-800 hover:border-red-500/50 hover:bg-red-950/30 transition"
+                  title="Delete profile"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- EDIT PROFILE MODAL -->
+      <div v-if="editingProfile" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-neutral-900 border border-neutral-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+          <div class="flex items-center justify-between border-b border-neutral-800 pb-3">
+            <h3 class="font-mono text-sm font-bold uppercase tracking-wider text-sky-400 flex items-center gap-2">
+              <span>✏️</span> EDIT PROFILE: {{ editingProfile.name }}
+            </h3>
+            <button @click="cancelEditProfile" class="text-neutral-400 hover:text-white text-lg">✕</button>
+          </div>
+
+          <form @submit.prevent="saveEditProfile" class="space-y-4">
+            <div>
+              <label class="block text-neutral-300 text-xs font-mono mb-1">NAME</label>
+              <input 
+                v-model="editingProfile.name" 
+                type="text" 
+                required 
+                class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-lg p-2.5 text-xs text-neutral-100 outline-none"
+              />
+            </div>
+
+            <div>
+              <label class="block text-neutral-300 text-xs font-mono mb-1">PROFILE ACCENT COLOR</label>
+              <div class="flex items-center gap-3">
+                <input 
+                  v-model="editingProfile.color" 
+                  type="color" 
+                  class="w-10 h-10 rounded border-0 bg-transparent cursor-pointer"
+                />
+                <span class="font-mono text-xs text-neutral-300">{{ editingProfile.color }}</span>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-neutral-300 text-xs font-mono mb-2">AVATAR STYLE</label>
+              <div class="grid grid-cols-2 gap-2 mb-3">
+                <button 
+                  type="button" 
+                  @click="editingProfile.avatar_type = 'builtin'"
+                  :class="editingProfile.avatar_type === 'builtin' ? 'bg-sky-950 border-sky-600 text-sky-300 font-semibold' : 'bg-neutral-950 border-neutral-800 text-neutral-400'"
+                  class="py-1.5 px-3 rounded-lg border text-xs font-mono transition text-center"
+                >
+                  Emoji Avatar
+                </button>
+                <button 
+                  type="button" 
+                  @click="editingProfile.avatar_type = 'upload'"
+                  :class="editingProfile.avatar_type === 'upload' ? 'bg-sky-950 border-sky-600 text-sky-300 font-semibold' : 'bg-neutral-950 border-neutral-800 text-neutral-400'"
+                  class="py-1.5 px-3 rounded-lg border text-xs font-mono transition text-center"
+                >
+                  Upload Photo
+                </button>
+              </div>
+
+              <div v-if="editingProfile.avatar_type === 'builtin'">
+                <div class="grid grid-cols-8 gap-1.5 bg-neutral-950 p-2 rounded-lg border border-neutral-800">
+                  <button 
+                    type="button" 
+                    v-for="em in sampleEmojis" 
+                    :key="em" 
+                    @click="editingProfile.avatar_value = em"
+                    :class="editingProfile.avatar_value === em ? 'ring-2 ring-sky-500 bg-sky-950/50' : 'hover:bg-neutral-900'"
+                    class="h-8 rounded flex items-center justify-center text-lg transition"
+                  >
+                    {{ em }}
+                  </button>
+                </div>
+              </div>
+
+              <div v-if="editingProfile.avatar_type === 'upload'" class="space-y-2">
+                <div v-if="editAvatarUploadPreview || (editingProfile.avatar_value && editingProfile.avatar_value.startsWith('/'))" class="w-16 h-16 rounded-full overflow-hidden border border-neutral-700 bg-black">
+                  <img :src="editAvatarUploadPreview || editingProfile.avatar_value" class="w-full h-full object-cover" />
+                </div>
+                <input 
+                  type="file" 
+                  ref="editAvatarFileInput" 
+                  @change="handleEditAvatarFileSelect" 
+                  accept="image/*"
+                  class="block w-full text-xs text-neutral-400 file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-xs file:font-mono file:bg-neutral-800 file:text-neutral-200 hover:file:bg-neutral-700 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-neutral-300 text-xs font-mono mb-1">
+                TELEGRAM USER ID
+                <span class="text-neutral-500 font-normal ml-1">(Optional - for auto-assigning bot voice/text notes)</span>
+              </label>
+              <input 
+                v-model="editingProfile.telegram_id" 
+                type="text" 
+                placeholder="e.g. 123456789" 
+                class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-lg p-2.5 text-xs text-neutral-100 outline-none"
+              />
+            </div>
+
+            <div class="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
+              <button 
+                type="button" 
+                @click="cancelEditProfile" 
+                class="font-mono text-xs bg-neutral-800 hover:bg-neutral-700 text-neutral-300 py-2 px-4 rounded-lg font-medium transition"
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit" 
+                :disabled="savingEditProfile"
+                class="font-mono text-xs bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white py-2 px-5 rounded-lg font-semibold transition"
+              >
+                {{ savingEditProfile ? 'Saving...' : 'Save Profile Changes' }}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
 
@@ -595,34 +721,64 @@
          ========================================================================= -->
     <div v-if="activeTab === 'photos'" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
       
-      <!-- UPLOAD PHOTO FORM -->
+      <!-- UPLOAD PHOTO FORM (MULTI-PICTURE SUPPORT) -->
       <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg h-fit space-y-4">
-        <h2 class="font-mono text-xs font-bold uppercase tracking-wider text-sky-400 border-b border-neutral-800 pb-2">
-          UPLOAD PHOTO TO SCREENSAVER
-        </h2>
+        <div class="flex items-center justify-between border-b border-neutral-800 pb-2">
+          <h2 class="font-mono text-xs font-bold uppercase tracking-wider text-sky-400">
+            UPLOAD PHOTOS TO SCREENSAVER
+          </h2>
+          <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-950/70 border border-sky-800/60 text-sky-300">
+            MULTI-FILE SUPPORT
+          </span>
+        </div>
         <p class="text-xs text-neutral-400 leading-relaxed">
-          Upload photos for the digital photo frame screensaver. You can also send photos directly to your Telegram bot!
+          Upload single or multiple photos at once for the digital photo frame screensaver. You can also send photos directly via Telegram!
         </p>
 
         <form @submit.prevent="uploadNewPhoto" class="space-y-4">
           <div>
-            <label class="block text-neutral-400 text-[11px] font-mono mb-1">SELECT IMAGE</label>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-neutral-400 text-[11px] font-mono">SELECT IMAGE(S)</label>
+              <span v-if="photoUploadFiles.length > 0" class="text-[11px] font-mono text-sky-400 font-semibold">
+                {{ photoUploadFiles.length }} file{{ photoUploadFiles.length > 1 ? 's' : '' }} selected
+              </span>
+            </div>
             <input 
               type="file" 
+              multiple
               ref="photoFileInputRef" 
               @change="handlePhotoSelect" 
               accept="image/*"
               class="block w-full text-xs text-neutral-400 file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-xs file:font-mono file:bg-neutral-800 file:text-neutral-200 hover:file:bg-neutral-700 cursor-pointer"
-              required
             />
           </div>
 
-          <div v-if="photoPreviewUrl" class="rounded-lg overflow-hidden border border-neutral-800 bg-black aspect-video flex items-center justify-center">
-            <img :src="photoPreviewUrl" class="w-full h-full object-cover" />
+          <!-- Single preview -->
+          <div v-if="photoPreviewUrls.length === 1" class="rounded-lg overflow-hidden border border-neutral-800 bg-black aspect-video flex items-center justify-center relative group">
+            <img :src="photoPreviewUrls[0]" class="w-full h-full object-cover" />
+            <button 
+              type="button" 
+              @click="clearPhotoSelection" 
+              class="absolute top-2 right-2 bg-black/70 hover:bg-black text-white rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-80 hover:opacity-100 transition"
+              title="Remove"
+            >✕</button>
+          </div>
+
+          <!-- Multi-preview grid -->
+          <div v-else-if="photoPreviewUrls.length > 1" class="space-y-2">
+            <div class="flex items-center justify-between text-[11px] font-mono text-neutral-400">
+              <span>PREVIEWS ({{ photoPreviewUrls.length }})</span>
+              <button type="button" @click="clearPhotoSelection" class="text-neutral-500 hover:text-red-400 transition">Clear all</button>
+            </div>
+            <div class="grid grid-cols-3 gap-1.5 max-h-44 overflow-y-auto p-1.5 bg-neutral-950 rounded-lg border border-neutral-800">
+              <div v-for="(pUrl, idx) in photoPreviewUrls" :key="idx" class="aspect-square rounded overflow-hidden bg-neutral-900 border border-neutral-800">
+                <img :src="pUrl" class="w-full h-full object-cover" />
+              </div>
+            </div>
           </div>
 
           <div>
-            <label class="block text-neutral-400 text-[11px] font-mono mb-1">CAPTION (OPTIONAL)</label>
+            <label class="block text-neutral-400 text-[11px] font-mono mb-1">CAPTION (OPTIONAL - APPLIED TO SELECTED PHOTOS)</label>
             <input 
               v-model="newPhotoCaption" 
               type="text" 
@@ -645,11 +801,11 @@
 
           <button 
             type="submit" 
-            :disabled="uploadingPhoto || !photoUploadFile"
+            :disabled="uploadingPhoto || photoUploadFiles.length === 0"
             class="w-full font-mono text-xs bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white py-2 rounded-lg font-medium transition flex items-center justify-center gap-2"
           >
-            <span v-if="uploadingPhoto">Uploading...</span>
-            <span v-else>+ Upload Photo</span>
+            <span v-if="uploadingPhoto">Uploading {{ photoUploadFiles.length }} photo{{ photoUploadFiles.length > 1 ? 's' : '' }}...</span>
+            <span v-else>+ Upload {{ photoUploadFiles.length > 1 ? photoUploadFiles.length + ' Photos' : 'Photo' }}</span>
           </button>
         </form>
       </div>
@@ -955,106 +1111,187 @@
     </div>
 
     <!-- =========================================================================
-         TAB 6: SCREENSAVER & NIGHT MODE SETTINGS
+         TAB 6: SCREENSAVER & NIGHT MODE SETTINGS (DAY & NIGHT SEPARATED)
          ========================================================================= -->
-    <div v-if="activeTab === 'settings'" class="max-w-3xl bg-neutral-900/80 border border-neutral-800 rounded-xl p-6 shadow-lg space-y-6">
+    <div v-if="activeTab === 'settings'" class="max-w-4xl bg-neutral-900/80 border border-neutral-800 rounded-xl p-6 shadow-lg space-y-6">
       <div class="border-b border-neutral-800 pb-3">
-        <h2 class="font-mono text-sm font-bold uppercase tracking-wider text-sky-400">
-          ⚙️ SCREENSAVER & NIGHT MODE CONTROLS
+        <h2 class="font-mono text-sm font-bold uppercase tracking-wider text-sky-400 flex items-center gap-2">
+          <span>⚙️</span> SCREENSAVER & DISPLAY CONTROLS
         </h2>
         <p class="text-xs text-neutral-400 mt-1">
-          Configure kiosk inactivity sleep delays, screensaver modes, photo intervals, and night mode schedule.
+          Configure independent daytime and nighttime screensaver modes, sleep timeouts, rotation intervals, and schedule.
         </p>
       </div>
 
-      <form @submit.prevent="saveSettings" class="space-y-5">
-        <!-- Sleep Timeout -->
-        <div>
-          <label class="block text-neutral-300 text-xs font-mono mb-1 font-semibold">INACTIVITY SLEEP DELAY</label>
-          <p class="text-[11px] text-neutral-500 mb-2">How long without touch before the dashboard enters screensaver / sleep mode.</p>
-          <select 
-            v-model.number="settings.sleep_timeout" 
-            class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2.5 text-xs text-neutral-200 outline-none"
-          >
-            <option :value="60">1 Minute</option>
-            <option :value="120">2 Minutes</option>
-            <option :value="300">5 Minutes (Recommended)</option>
-            <option :value="600">10 Minutes</option>
-            <option :value="900">15 Minutes</option>
-            <option :value="1800">30 Minutes</option>
-            <option :value="0">Never Sleep (Always On)</option>
-          </select>
-        </div>
-
-        <!-- Screensaver Mode -->
-        <div>
-          <label class="block text-neutral-300 text-xs font-mono mb-1 font-semibold">SCREENSAVER DISPLAY MODE</label>
-          <select 
-            v-model="settings.screensaver_mode" 
-            class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2.5 text-xs text-neutral-200 outline-none"
-          >
-            <option value="photos">Photo Slideshow with Ambient Clock</option>
-            <option value="clock">Minimalist OLED Digital Clock</option>
-            <option value="black">Pure Black (Lowest power / burn-in protection)</option>
-          </select>
-        </div>
-
-        <!-- Photo Slideshow Interval -->
-        <div v-if="settings.screensaver_mode === 'photos'">
-          <label class="block text-neutral-300 text-xs font-mono mb-1 font-semibold">PHOTO SLIDESHOW ROTATION INTERVAL</label>
-          <select 
-            v-model.number="settings.photo_interval" 
-            class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2.5 text-xs text-neutral-200 outline-none"
-          >
-            <option :value="5">5 Seconds</option>
-            <option :value="8">8 Seconds (Default)</option>
-            <option :value="15">15 Seconds</option>
-            <option :value="30">30 Seconds</option>
-            <option :value="60">1 Minute</option>
-          </select>
-        </div>
-
-        <!-- Night Mode Section -->
-        <div class="pt-4 border-t border-neutral-800 space-y-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <h3 class="text-xs font-mono font-bold text-amber-400 uppercase">🌙 NIGHT MODE</h3>
-              <p class="text-[11px] text-neutral-500">Dims screen to ultra-low amber/red glow and disables photo slideshow during sleeping hours.</p>
-            </div>
-            <input 
-              type="checkbox" 
-              v-model="settings.night_mode_enabled" 
-              :true-value="1" 
-              :false-value="0"
-              class="w-5 h-5 rounded bg-neutral-950 border-neutral-800 text-amber-500 focus:ring-0 cursor-pointer"
-            />
+      <form @submit.prevent="saveSettings" class="space-y-6">
+        
+        <!-- SECTION 1: DAYTIME SETTINGS -->
+        <div class="bg-neutral-950/70 border border-neutral-800/80 rounded-xl p-4 md:p-5 space-y-4">
+          <div class="flex items-center gap-2 border-b border-neutral-800/80 pb-2">
+            <span class="text-base">☀️</span>
+            <h3 class="font-mono text-xs font-bold uppercase tracking-wider text-amber-300">
+              DAYTIME SCREENSAVER SETTINGS
+            </h3>
           </div>
 
-          <div v-if="settings.night_mode_enabled" class="grid grid-cols-2 gap-4 bg-neutral-950 p-3.5 rounded-lg border border-neutral-800">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Day Sleep Timeout -->
             <div>
-              <label class="block text-neutral-400 text-[11px] font-mono mb-1">NIGHT MODE START</label>
+              <label class="block text-neutral-300 text-xs font-mono mb-1 font-semibold">DAY INACTIVITY SLEEP DELAY</label>
+              <p class="text-[11px] text-neutral-500 mb-2">Time before entering screensaver during day hours.</p>
+              <select 
+                v-model.number="settings.sleep_timeout_day" 
+                class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2.5 text-xs text-neutral-200 outline-none focus:border-amber-400"
+              >
+                <option :value="60">1 Minute</option>
+                <option :value="120">2 Minutes</option>
+                <option :value="300">5 Minutes (Recommended)</option>
+                <option :value="600">10 Minutes</option>
+                <option :value="900">15 Minutes</option>
+                <option :value="1800">30 Minutes</option>
+                <option :value="0">Never Sleep (Always On)</option>
+              </select>
+            </div>
+
+            <!-- Day Screensaver Mode -->
+            <div>
+              <label class="block text-neutral-300 text-xs font-mono mb-1 font-semibold">DAY SCREENSAVER MODE</label>
+              <p class="text-[11px] text-neutral-500 mb-2">Visual style for daytime idle screen.</p>
+              <select 
+                v-model="settings.screensaver_mode_day" 
+                class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2.5 text-xs text-neutral-200 outline-none focus:border-amber-400"
+              >
+                <option value="pure_photos">🖼️ Pure Picture Slideshow (Edge-to-edge full photo)</option>
+                <option value="photos">📷 Photo Slideshow with Ambient Clock & Weather</option>
+                <option value="clock">🕒 Minimalist Digital Clock</option>
+                <option value="black">⬛ Pure Black (Lowest power / OLED protection)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Day Photo Interval -->
+          <div v-if="settings.screensaver_mode_day === 'photos' || settings.screensaver_mode_day === 'pure_photos'">
+            <label class="block text-neutral-300 text-xs font-mono mb-1 font-semibold">DAY PHOTO ROTATION SPEED</label>
+            <select 
+              v-model.number="settings.photo_interval_day" 
+              class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2.5 text-xs text-neutral-200 outline-none focus:border-amber-400"
+            >
+              <option :value="5">5 Seconds (Fast)</option>
+              <option :value="8">8 Seconds (Default)</option>
+              <option :value="15">15 Seconds</option>
+              <option :value="30">30 Seconds</option>
+              <option :value="60">1 Minute</option>
+              <option :value="120">2 Minutes</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- SECTION 2: NIGHTTIME SETTINGS -->
+        <div class="bg-neutral-950/70 border border-neutral-800/80 rounded-xl p-4 md:p-5 space-y-4">
+          <div class="flex items-center justify-between border-b border-neutral-800/80 pb-2">
+            <div class="flex items-center gap-2">
+              <span class="text-base">🌙</span>
+              <div>
+                <h3 class="font-mono text-xs font-bold uppercase tracking-wider text-indigo-300">
+                  NIGHTTIME SCREENSAVER & SCHEDULE
+                </h3>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <label for="nightToggle" class="text-xs font-mono text-neutral-400 cursor-pointer">
+                {{ settings.night_mode_enabled ? 'ENABLED' : 'DISABLED' }}
+              </label>
               <input 
-                v-model="settings.night_mode_start" 
-                type="time" 
-                class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 outline-none"
+                id="nightToggle"
+                type="checkbox" 
+                v-model="settings.night_mode_enabled" 
+                :true-value="1" 
+                :false-value="0"
+                class="w-5 h-5 rounded bg-neutral-900 border-neutral-800 text-indigo-500 focus:ring-0 cursor-pointer"
               />
             </div>
-            <div>
-              <label class="block text-neutral-400 text-[11px] font-mono mb-1">NIGHT MODE END</label>
-              <input 
-                v-model="settings.night_mode_end" 
-                type="time" 
-                class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 outline-none"
-              />
+          </div>
+
+          <p class="text-[11px] text-neutral-400">
+            Automatically switches dashboard display to sleep-friendly settings during designated sleeping hours.
+          </p>
+
+          <div v-if="settings.night_mode_enabled" class="space-y-4">
+            <!-- Schedule times -->
+            <div class="grid grid-cols-2 gap-4 bg-neutral-900/60 p-3.5 rounded-lg border border-neutral-800">
+              <div>
+                <label class="block text-neutral-400 text-[11px] font-mono mb-1">NIGHT MODE STARTS</label>
+                <input 
+                  v-model="settings.night_mode_start" 
+                  type="time" 
+                  class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 outline-none focus:border-indigo-400"
+                />
+              </div>
+              <div>
+                <label class="block text-neutral-400 text-[11px] font-mono mb-1">NIGHT MODE ENDS</label>
+                <input 
+                  v-model="settings.night_mode_end" 
+                  type="time" 
+                  class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 outline-none focus:border-indigo-400"
+                />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- Night Sleep Timeout -->
+              <div>
+                <label class="block text-neutral-300 text-xs font-mono mb-1 font-semibold">NIGHT INACTIVITY SLEEP DELAY</label>
+                <p class="text-[11px] text-neutral-500 mb-2">Faster timeout recommended at night.</p>
+                <select 
+                  v-model.number="settings.sleep_timeout_night" 
+                  class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2.5 text-xs text-neutral-200 outline-none focus:border-indigo-400"
+                >
+                  <option :value="30">30 Seconds</option>
+                  <option :value="60">1 Minute (Default)</option>
+                  <option :value="120">2 Minutes</option>
+                  <option :value="300">5 Minutes</option>
+                  <option :value="0">Never Sleep</option>
+                </select>
+              </div>
+
+              <!-- Night Screensaver Mode -->
+              <div>
+                <label class="block text-neutral-300 text-xs font-mono mb-1 font-semibold">NIGHT SCREENSAVER MODE</label>
+                <p class="text-[11px] text-neutral-500 mb-2">Display behavior during nighttime hours.</p>
+                <select 
+                  v-model="settings.screensaver_mode_night" 
+                  class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2.5 text-xs text-neutral-200 outline-none focus:border-indigo-400"
+                >
+                  <option value="clock">🕒 Dim Amber/Red Digital Clock (Sleep-friendly)</option>
+                  <option value="black">⬛ Pure Blackout (Screen completely dark until touched)</option>
+                  <option value="pure_photos">🖼️ Pure Picture Slideshow</option>
+                  <option value="photos">📷 Photo Slideshow with Clock</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Night Photo Interval (if photos enabled at night) -->
+            <div v-if="settings.screensaver_mode_night === 'photos' || settings.screensaver_mode_night === 'pure_photos'">
+              <label class="block text-neutral-300 text-xs font-mono mb-1 font-semibold">NIGHT PHOTO ROTATION SPEED</label>
+              <select 
+                v-model.number="settings.photo_interval_night" 
+                class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2.5 text-xs text-neutral-200 outline-none focus:border-indigo-400"
+              >
+                <option :value="10">10 Seconds</option>
+                <option :value="15">15 Seconds (Default)</option>
+                <option :value="30">30 Seconds</option>
+                <option :value="60">1 Minute</option>
+              </select>
             </div>
           </div>
         </div>
 
         <button 
           type="submit" 
-          class="w-full font-mono text-xs bg-sky-600 hover:bg-sky-500 text-white py-2.5 rounded-lg font-semibold transition"
+          class="w-full font-mono text-xs bg-sky-600 hover:bg-sky-500 text-white py-2.5 rounded-lg font-semibold transition flex items-center justify-center gap-2"
         >
-          ✓ Save Settings & Apply to Kiosk
+          <span>✓</span>
+          <span>Save Settings & Apply to Dashboard Kiosk</span>
         </button>
       </form>
     </div>
@@ -1092,10 +1329,10 @@
           time: '12:00'
         });
 
-        // Photo form
+        // Photo form (Multi-file upload support)
         const photoFileInputRef = ref(null);
-        const photoUploadFile = ref(null);
-        const photoPreviewUrl = ref(null);
+        const photoUploadFiles = ref([]);
+        const photoPreviewUrls = ref([]);
         const newPhotoCaption = ref('');
         const newPhotoInScreensaver = ref(true);
         const uploadingPhoto = ref(false);
@@ -1110,8 +1347,9 @@
           '⚽', '🎮', '🎨', '🎸', '🦸', '🧙', '🌟', '🍕', 
           '🧁', '🦔', '🐨', '🐬', '👑', '🌈', '🛹', '👾'
         ];
+        const sampleEmojis = emojiGallery;
 
-        // Profile Form
+        // Profile Form (Create)
         const newProfile = ref({
           name: '',
           color: '#38bdf8',
@@ -1123,11 +1361,24 @@
         const avatarUploadFile = ref(null);
         const avatarUploadPreview = ref(null);
 
-        // Settings State
+        // Profile Form (Edit)
+        const editingProfile = ref(null);
+        const savingEditProfile = ref(false);
+        const editAvatarFileInput = ref(null);
+        const editAvatarUploadFile = ref(null);
+        const editAvatarUploadPreview = ref(null);
+
+        // Settings State (Day & Night separated)
         const settings = ref({
           sleep_timeout: 300,
+          sleep_timeout_day: 300,
+          sleep_timeout_night: 60,
           screensaver_mode: 'photos',
+          screensaver_mode_day: 'photos',
+          screensaver_mode_night: 'clock',
           photo_interval: 8,
+          photo_interval_day: 8,
+          photo_interval_night: 15,
           night_mode_enabled: 0,
           night_mode_start: '22:00',
           night_mode_end: '07:00'
@@ -1200,36 +1451,110 @@
         }
 
         function handlePhotoSelect(e) {
-          const file = e.target.files[0];
-          if (!file) return;
-          photoUploadFile.value = file;
-          photoPreviewUrl.value = URL.createObjectURL(file);
+          const files = Array.from(e.target.files || []);
+          if (files.length === 0) return;
+          photoUploadFiles.value = files;
+          photoPreviewUrls.value = files.map(f => URL.createObjectURL(f));
+        }
+
+        function clearPhotoSelection() {
+          photoUploadFiles.value = [];
+          photoPreviewUrls.value = [];
+          if (photoFileInputRef.value) photoFileInputRef.value.value = '';
         }
 
         async function uploadNewPhoto() {
-          if (!photoUploadFile.value) return;
+          if (!photoUploadFiles.value || photoUploadFiles.value.length === 0) return;
           uploadingPhoto.value = true;
           try {
             const formData = new FormData();
-            formData.append('photo', photoUploadFile.value);
+            for (const file of photoUploadFiles.value) {
+              formData.append('photos', file);
+            }
             formData.append('caption', newPhotoCaption.value);
             formData.append('show_in_screensaver', newPhotoInScreensaver.value ? '1' : '0');
 
-            const res = await fetch('/api/admin/upload/photo', {
+            const res = await fetch('/api/admin/upload/photos', {
               method: 'POST',
               body: formData
             });
-            if (!res.ok) throw new Error('Failed to upload photo');
-            showAlert('Photo uploaded successfully!');
-            photoUploadFile.value = null;
-            photoPreviewUrl.value = null;
+            if (!res.ok) throw new Error('Failed to upload photo(s)');
+            const data = await res.json();
+            const count = data.count || photoUploadFiles.value.length;
+            showAlert(`Successfully uploaded ${count} photo${count > 1 ? 's' : ''}!`);
+            clearPhotoSelection();
             newPhotoCaption.value = '';
-            if (photoFileInputRef.value) photoFileInputRef.value.value = '';
             loadPhotos();
           } catch (err) {
-            showAlert('Error uploading photo: ' + err.message, false);
+            showAlert('Error uploading photo(s): ' + err.message, false);
           } finally {
             uploadingPhoto.value = false;
+          }
+        }
+
+        // Profile Editing Handlers
+        function startEditProfile(prof) {
+          editingProfile.value = {
+            id: prof.id,
+            name: prof.name,
+            color: prof.color || '#38bdf8',
+            avatar_type: prof.avatar_type || 'builtin',
+            avatar_value: prof.avatar_value || '🙂',
+            telegram_id: prof.telegram_id || ''
+          };
+          editAvatarUploadFile.value = null;
+          editAvatarUploadPreview.value = prof.avatar_type === 'upload' ? prof.avatar_value : null;
+        }
+
+        function cancelEditProfile() {
+          editingProfile.value = null;
+          editAvatarUploadFile.value = null;
+          editAvatarUploadPreview.value = null;
+        }
+
+        function handleEditAvatarFileSelect(e) {
+          const file = e.target.files[0];
+          if (!file) return;
+          editAvatarUploadFile.value = file;
+          editAvatarUploadPreview.value = URL.createObjectURL(file);
+        }
+
+        async function saveEditProfile() {
+          if (!editingProfile.value) return;
+          savingEditProfile.value = true;
+          try {
+            let avatarVal = editingProfile.value.avatar_value;
+            if (editingProfile.value.avatar_type === 'upload' && editAvatarUploadFile.value) {
+              const formData = new FormData();
+              formData.append('avatar', editAvatarUploadFile.value);
+              const upRes = await fetch('/api/admin/upload/avatar', {
+                method: 'POST',
+                body: formData
+              });
+              if (!upRes.ok) throw new Error('Failed to upload new avatar image');
+              const upData = await upRes.json();
+              avatarVal = upData.url;
+            }
+
+            const res = await fetch('/api/admin/profiles/' + editingProfile.value.id, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: editingProfile.value.name,
+                color: editingProfile.value.color,
+                avatar_type: editingProfile.value.avatar_type,
+                avatar_value: avatarVal,
+                telegram_id: editingProfile.value.telegram_id || null
+              })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            showAlert('Profile updated successfully!');
+            cancelEditProfile();
+            loadData();
+          } catch (err) {
+            showAlert('Error updating profile: ' + err.message, false);
+          } finally {
+            savingEditProfile.value = false;
           }
         }
 
@@ -1572,9 +1897,18 @@
           selectedListId,
           currentList,
           emojiGallery,
+          sampleEmojis,
           newProfile,
           avatarFileInput,
           avatarUploadPreview,
+          editingProfile,
+          savingEditProfile,
+          editAvatarFileInput,
+          editAvatarUploadPreview,
+          startEditProfile,
+          cancelEditProfile,
+          handleEditAvatarFileSelect,
+          saveEditProfile,
           newList,
           newListItem,
           newNoteContent,
@@ -1582,8 +1916,9 @@
           simLoading,
           simResult,
           photoFileInputRef,
-          photoUploadFile,
-          photoPreviewUrl,
+          photoUploadFiles,
+          photoPreviewUrls,
+          clearPhotoSelection,
           newPhotoCaption,
           newPhotoInScreensaver,
           uploadingPhoto,

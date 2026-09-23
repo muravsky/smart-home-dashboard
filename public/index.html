@@ -106,7 +106,7 @@
         @click.stop="wakeUp"
       >
         <!-- Background Photo Slideshow (Ken Burns effect) -->
-        <div v-if="shouldShowScreensaverPhotos && currentScreensaverPhoto" class="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+        <div v-if="shouldShowScreensaverPhotos && currentScreensaverPhoto && activeScreensaverMode !== 'black'" class="absolute inset-0 z-0 overflow-hidden pointer-events-none">
           <transition name="fade-photo" mode="out-in">
             <img 
               :key="currentScreensaverPhoto.id"
@@ -114,15 +114,15 @@
               class="w-full h-full object-cover ken-burns"
             />
           </transition>
-          <!-- Subtle dark vignette overlay for high-contrast clock readability -->
-          <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/65"></div>
+          <!-- Subtle dark vignette overlay ONLY when clock/text overlay is active -->
+          <div v-if="!isPurePhotoSlideshow" class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/65"></div>
         </div>
 
-        <!-- Ambient OLED Black Fallback or Night Mode -->
+        <!-- Ambient OLED Black Fallback or Pure Black Mode -->
         <div v-else class="absolute inset-0 bg-black pointer-events-none"></div>
 
-        <!-- Top Header in Screensaver -->
-        <div class="relative z-10 flex items-center justify-between text-xs font-mono text-white/80 pointer-events-none">
+        <!-- Top Header in Screensaver (Hidden in Pure Picture Slideshow) -->
+        <div v-if="!isPurePhotoSlideshow && activeScreensaverMode !== 'black'" class="relative z-10 flex items-center justify-between text-xs font-mono text-white/80 pointer-events-none">
           <div v-if="shouldShowScreensaverPhotos && currentScreensaverPhoto && currentScreensaverPhoto.caption" class="bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 shadow">
             📷 {{ currentScreensaverPhoto.caption }}
           </div>
@@ -137,8 +137,8 @@
           </div>
         </div>
 
-        <!-- Bottom Overlay: Scalable Clock & Weather -->
-        <div class="relative z-10 pointer-events-none" :class="{ 'night-glow': isNightModeActive }">
+        <!-- Bottom Overlay: Scalable Clock & Weather (Hidden in Pure Picture Slideshow) -->
+        <div v-if="!isPurePhotoSlideshow && activeScreensaverMode !== 'black'" class="relative z-10 pointer-events-none" :class="{ 'night-glow': isNightModeActive }">
           <div class="font-mono font-extralight tracking-tight text-white drop-shadow-2xl responsive-screensaver-clock" :class="{ 'text-amber-500': isNightModeActive }">
             {{ currentTime.hours }}<span class="animate-pulse">:</span>{{ currentTime.minutes }}
           </div>
@@ -150,6 +150,14 @@
             <span class="font-bold text-white">{{ weather.temperature }}°C</span>
             <span>•</span>
             <span>{{ weather.condition }}</span>
+          </div>
+        </div>
+
+        <!-- Minimal Subtle Photo Caption for Pure Picture Slideshow -->
+        <div v-if="isPurePhotoSlideshow && currentScreensaverPhoto && currentScreensaverPhoto.caption" class="relative z-10 pointer-events-none self-start">
+          <div class="bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-full text-xs font-mono text-white/90 shadow border border-white/10 flex items-center gap-1.5">
+            <span>📷</span>
+            <span>{{ currentScreensaverPhoto.caption }}</span>
           </div>
         </div>
       </div>
@@ -941,11 +949,17 @@
         const weather = ref(null);
         const settings = ref({
           sleep_timeout: 300,
+          sleep_timeout_day: 300,
+          sleep_timeout_night: 60,
+          screensaver_mode: 'photos',
+          screensaver_mode_day: 'photos',
+          screensaver_mode_night: 'clock',
           photo_interval: 8,
+          photo_interval_day: 8,
+          photo_interval_night: 15,
           night_mode_enabled: 0,
           night_mode_start: '22:00',
-          night_mode_end: '07:00',
-          screensaver_mode: 'photos'
+          night_mode_end: '07:00'
         });
 
         // Screensaver Photo State
@@ -982,9 +996,34 @@
           return curMinutes >= startMinutes && curMinutes < endMinutes;
         });
 
+        // Active screensaver mode based on day vs night
+        const activeScreensaverMode = computed(() => {
+          if (isNightModeActive.value) {
+            return settings.value.screensaver_mode_night || 'clock';
+          }
+          return settings.value.screensaver_mode_day || settings.value.screensaver_mode || 'photos';
+        });
+
+        const isPurePhotoSlideshow = computed(() => {
+          return activeScreensaverMode.value === 'pure_photos';
+        });
+
         const shouldShowScreensaverPhotos = computed(() => {
-          if (isNightModeActive.value) return false;
-          return settings.value.screensaver_mode === 'photos';
+          return activeScreensaverMode.value === 'photos' || activeScreensaverMode.value === 'pure_photos';
+        });
+
+        const activeSleepTimeout = computed(() => {
+          if (isNightModeActive.value) {
+            return Number(settings.value.sleep_timeout_night ?? 60);
+          }
+          return Number(settings.value.sleep_timeout_day ?? settings.value.sleep_timeout ?? 300);
+        });
+
+        const activePhotoInterval = computed(() => {
+          if (isNightModeActive.value) {
+            return Number(settings.value.photo_interval_night ?? 15);
+          }
+          return Number(settings.value.photo_interval_day ?? settings.value.photo_interval ?? 8);
         });
 
         // Calendar computed helpers
@@ -1554,7 +1593,7 @@
 
         // Sleep Management & Reliable Touch Wake
         function resetSleepTimer() {
-          const timeoutSec = settings.value.sleep_timeout !== undefined ? Number(settings.value.sleep_timeout) : 300;
+          const timeoutSec = activeSleepTimeout.value;
           if (timeoutSec <= 0) {
             // Never sleep
             if (sleepTimer) clearTimeout(sleepTimer);
@@ -1744,12 +1783,12 @@
             if (!isSleeping.value && remainingSeconds.value > 0) remainingSeconds.value--;
           }, 1000);
 
-          // Screensaver slideshow rotation timer
+          // Screensaver slideshow rotation timer (respecting active day/night interval)
           photoInterval = setInterval(() => {
             if (screensaverPhotos.value.length > 1) {
               currentPhotoIndex.value++;
             }
-          }, (settings.value.photo_interval || 8) * 1000);
+          }, (activePhotoInterval.value || 8) * 1000);
 
           // GLOBAL CAPTURING LISTENER: Guarantee that ANY touch, tap, click wakes up the dashboard immediately!
           ['pointerdown', 'touchstart', 'mousedown'].forEach(evt => {
@@ -1768,16 +1807,16 @@
           setInterval(fetchWeather, 15 * 60 * 1000);
         });
 
-
-        // Restart photo interval when photo_interval setting changes (e.g. after server settings load)
-        watch(() => settings.value.photo_interval, (newVal) => {
+        // Watch active intervals, timeouts, and night mode transitions to dynamically reconfigure kiosk
+        watch([() => activePhotoInterval.value, () => activeSleepTimeout.value, () => isNightModeActive.value], ([newInterval]) => {
           if (photoInterval) clearInterval(photoInterval);
-          const ms = (newVal || 8) * 1000;
+          const ms = (newInterval || 8) * 1000;
           photoInterval = setInterval(() => {
             if (screensaverPhotos.value.length > 1) {
               currentPhotoIndex.value++;
             }
           }, ms);
+          resetSleepTimer();
         });
 
         onUnmounted(() => {
@@ -1812,7 +1851,11 @@
           weather,
           settings,
           isNightModeActive,
+          activeScreensaverMode,
+          isPurePhotoSlideshow,
           shouldShowScreensaverPhotos,
+          activeSleepTimeout,
+          activePhotoInterval,
           leaderboardProfiles,
           selectedProfileId,
           selectedProfile,
