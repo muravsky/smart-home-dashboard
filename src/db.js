@@ -36,6 +36,7 @@ db.exec(`
     color TEXT DEFAULT '#38bdf8',
     avatar_type TEXT DEFAULT 'builtin',
     avatar_value TEXT DEFAULT '🙂',
+    telegram_id TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -72,7 +73,14 @@ db.exec(`
     w INTEGER NOT NULL DEFAULT 6,
     h INTEGER NOT NULL DEFAULT 2,
     config TEXT DEFAULT '{}',
-    position INTEGER DEFAULT 0
+    position INTEGER DEFAULT 0,
+    profile_id INTEGER,
+    FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
   );
 
   CREATE TABLE IF NOT EXISTS photos (
@@ -114,6 +122,37 @@ db.exec(`
     FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE SET NULL
   );
 `);
+
+// Non-destructive column migrations for existing databases
+try {
+  const profCols = db.pragma('table_info(profiles)').map(c => c.name);
+  if (!profCols.includes('telegram_id')) {
+    db.exec('ALTER TABLE profiles ADD COLUMN telegram_id TEXT');
+  }
+} catch (e) {
+  console.warn('Migration profiles telegram_id check:', e.message);
+}
+
+try {
+  const layoutCols = db.pragma('table_info(widget_layouts)').map(c => c.name);
+  if (!layoutCols.includes('profile_id')) {
+    db.exec('ALTER TABLE widget_layouts ADD COLUMN profile_id INTEGER REFERENCES profiles(id) ON DELETE CASCADE');
+  }
+} catch (e) {
+  console.warn('Migration widget_layouts profile_id check:', e.message);
+}
+
+// Seed default settings if empty
+const existingSettingsCount = db.prepare('SELECT COUNT(*) as count FROM settings').get();
+if (existingSettingsCount.count === 0) {
+  const insertSetting = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)');
+  insertSetting.run('sleep_timeout', '300');
+  insertSetting.run('photo_interval', '8');
+  insertSetting.run('night_mode_enabled', '0');
+  insertSetting.run('night_mode_start', '22:00');
+  insertSetting.run('night_mode_end', '07:00');
+  insertSetting.run('screensaver_mode', 'photos');
+}
 
 // Seed default layouts if empty
 const existingLayouts = db.prepare('SELECT COUNT(*) as count FROM widget_layouts').get();
@@ -224,18 +263,23 @@ function getProfileById(id) {
   return db.prepare('SELECT * FROM profiles WHERE id = ?').get(id);
 }
 
-function insertProfile({ name, color = '#38bdf8', avatar_type = 'builtin', avatar_value = '🙂' }) {
-  const stmt = db.prepare('INSERT INTO profiles (name, color, avatar_type, avatar_value) VALUES (?, ?, ?, ?)');
-  const info = stmt.run(name.trim(), color, avatar_type, avatar_value);
+function getProfileByTelegramId(telegramId) {
+  if (!telegramId) return null;
+  return db.prepare('SELECT * FROM profiles WHERE telegram_id = ?').get(String(telegramId).trim());
+}
+
+function insertProfile({ name, color = '#38bdf8', avatar_type = 'builtin', avatar_value = '🙂', telegram_id = null }) {
+  const stmt = db.prepare('INSERT INTO profiles (name, color, avatar_type, avatar_value, telegram_id) VALUES (?, ?, ?, ?, ?)');
+  const info = stmt.run(name.trim(), color, avatar_type, avatar_value, telegram_id ? String(telegram_id).trim() : null);
   return getProfileById(info.lastInsertRowid);
 }
 
-function updateProfile(id, { name, color, avatar_type, avatar_value }) {
+function updateProfile(id, { name, color, avatar_type, avatar_value, telegram_id }) {
   const current = getProfileById(id);
   if (!current) return null;
   const stmt = db.prepare(`
     UPDATE profiles 
-    SET name = ?, color = ?, avatar_type = ?, avatar_value = ? 
+    SET name = ?, color = ?, avatar_type = ?, avatar_value = ?, telegram_id = ? 
     WHERE id = ?
   `);
   stmt.run(
@@ -243,6 +287,7 @@ function updateProfile(id, { name, color, avatar_type, avatar_value }) {
     color !== undefined ? color : current.color,
     avatar_type !== undefined ? avatar_type : current.avatar_type,
     avatar_value !== undefined ? avatar_value : current.avatar_value,
+    telegram_id !== undefined ? (telegram_id ? String(telegram_id).trim() : null) : current.telegram_id,
     id
   );
   return getProfileById(id);
@@ -366,8 +411,18 @@ function deleteListItem(id) {
 /* ==========================================================================
    Widget Layouts Methods
    ========================================================================== */
-function getWidgetLayouts() {
-  const rows = db.prepare('SELECT * FROM widget_layouts ORDER BY page ASC, position ASC, id ASC').all();
+function getWidgetLayouts(profileId = null) {
+  let rows = [];
+  if (profileId) {
+    rows = db.prepare('SELECT * FROM widget_layouts WHERE profile_id = ? ORDER BY page ASC, position ASC, id ASC').all(profileId);
+    if (rows.length === 0) {
+      // Fallback to shared family layout (profile_id IS NULL)
+      rows = db.prepare('SELECT * FROM widget_layouts WHERE profile_id IS NULL ORDER BY page ASC, position ASC, id ASC').all();
+    }
+  } else {
+    rows = db.prepare('SELECT * FROM widget_layouts WHERE profile_id IS NULL ORDER BY page ASC, position ASC, id ASC').all();
+  }
+
   return rows.map(r => {
     let cfg = {};
     try {
@@ -380,14 +435,35 @@ function getWidgetLayouts() {
   });
 }
 
-function saveWidgetLayouts(layouts) {
-  if (!Array.isArray(layouts)) return getWidgetLayouts();
+function getAllProfileLayouts() {
+  const rows = db.prepare('SELECT * FROM widget_layouts ORDER BY profile_id ASC, page ASC, position ASC, id ASC').all();
+  const byProfile = {};
+  for (const r of rows) {
+    let cfg = {};
+    try { cfg = JSON.parse(r.config); } catch(e) {}
+    const pKey = r.profile_id !== null ? String(r.profile_id) : 'family';
+    if (!byProfile[pKey]) byProfile[pKey] = [];
+    byProfile[pKey].push({
+      ...r,
+      config: cfg
+    });
+  }
+  return byProfile;
+}
+
+function saveWidgetLayouts(layouts, profileId = null) {
+  if (!Array.isArray(layouts)) return getWidgetLayouts(profileId);
 
   const tx = db.transaction((items) => {
-    db.prepare('DELETE FROM widget_layouts').run();
+    if (profileId) {
+      db.prepare('DELETE FROM widget_layouts WHERE profile_id = ?').run(profileId);
+    } else {
+      db.prepare('DELETE FROM widget_layouts WHERE profile_id IS NULL').run();
+    }
+
     const insertStmt = db.prepare(`
-      INSERT INTO widget_layouts (page, widget_type, x, y, w, h, config, position)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO widget_layouts (page, widget_type, x, y, w, h, config, position, profile_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (let i = 0; i < items.length; i++) {
@@ -400,13 +476,48 @@ function saveWidgetLayouts(layouts) {
         it.w !== undefined ? Number(it.w) : 6,
         it.h !== undefined ? Number(it.h) : 2,
         typeof it.config === 'object' ? JSON.stringify(it.config) : (it.config || '{}'),
-        it.position !== undefined ? Number(it.position) : i
+        it.position !== undefined ? Number(it.position) : i,
+        profileId || null
       );
     }
   });
 
   tx(layouts);
-  return getWidgetLayouts();
+  return getWidgetLayouts(profileId);
+}
+
+/* ==========================================================================
+   Settings Methods
+   ========================================================================== */
+function getSettings() {
+  const rows = db.prepare('SELECT * FROM settings').all();
+  const settings = {
+    sleep_timeout: 300,
+    photo_interval: 8,
+    night_mode_enabled: 0,
+    night_mode_start: '22:00',
+    night_mode_end: '07:00',
+    screensaver_mode: 'photos'
+  };
+  for (const r of rows) {
+    if (r.key === 'sleep_timeout' || r.key === 'photo_interval' || r.key === 'night_mode_enabled') {
+      settings[r.key] = Number(r.value);
+    } else {
+      settings[r.key] = r.value;
+    }
+  }
+  return settings;
+}
+
+function updateSettings(newSettings) {
+  const insertOrReplace = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+  const tx = db.transaction((obj) => {
+    for (const [k, v] of Object.entries(obj)) {
+      insertOrReplace.run(k, String(v));
+    }
+  });
+  tx(newSettings);
+  return getSettings();
 }
 
 /* ==========================================================================
@@ -555,10 +666,12 @@ function getDashboardData() {
     tasks: getTasks(),
     profiles: getProfiles(),
     lists: getLists(),
-    layouts: getWidgetLayouts(),
+    layouts: getWidgetLayouts(null),
+    profile_layouts: getAllProfileLayouts(),
     photos: getPhotos({ screensaverOnly: true }),
     events: getCalendarEvents({ limit: 50 }),
-    feeds: getCalendarFeeds()
+    feeds: getCalendarFeeds(),
+    settings: getSettings()
   };
 }
 
@@ -573,6 +686,7 @@ module.exports = {
   getTasks,
   getProfiles,
   getProfileById,
+  getProfileByTelegramId,
   insertProfile,
   updateProfile,
   deleteProfile,
@@ -586,7 +700,10 @@ module.exports = {
   updateListItem,
   deleteListItem,
   getWidgetLayouts,
+  getAllProfileLayouts,
   saveWidgetLayouts,
+  getSettings,
+  updateSettings,
   getPhotos,
   getPhotoById,
   insertPhoto,

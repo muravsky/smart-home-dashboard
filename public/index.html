@@ -32,38 +32,28 @@
     html, body {
       height: 100%;
       overflow: hidden;
-      touch-action: pan-y;
+      touch-action: pan-y pinch-zoom;
+    }
+    .widget-touch-handle {
+      touch-action: none !important;
     }
     /* Smooth transitions for sleep mode & photo frame */
     .fade-sleep-enter-active,
     .fade-sleep-leave-active {
-      transition: all 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+      transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .fade-sleep-enter-from,
     .fade-sleep-leave-to {
       opacity: 0;
       transform: scale(0.98);
     }
-    /* Page slide transition */
-    .slide-page-enter-active,
-    .slide-page-leave-active {
-      transition: all 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
-    }
-    .slide-page-enter-from {
-      opacity: 0;
-      transform: translateX(30px);
-    }
-    .slide-page-leave-to {
-      opacity: 0;
-      transform: translateX(-30px);
-    }
     .sortable-ghost {
-      opacity: 0.3;
+      opacity: 0.25;
       border: 2px dashed #38bdf8 !important;
     }
     @keyframes kenburns {
       0% { transform: scale(1.0) translate(0, 0); }
-      50% { transform: scale(1.08) translate(-1%, -1%); }
+      50% { transform: scale(1.06) translate(-1%, -1%); }
       100% { transform: scale(1.0) translate(0, 0); }
     }
     .ken-burns {
@@ -71,11 +61,27 @@
     }
     .fade-photo-enter-active,
     .fade-photo-leave-active {
-      transition: opacity 1.5s ease-in-out;
+      transition: opacity 1.2s ease-in-out;
     }
     .fade-photo-enter-from,
     .fade-photo-leave-to {
       opacity: 0;
+    }
+    /* Responsive fluid clock typography */
+    .responsive-clock-text {
+      font-size: clamp(2.8rem, 8vw, 7.5rem);
+      line-height: 1;
+    }
+    .responsive-clock-seconds {
+      font-size: clamp(1rem, 2.5vw, 2.5rem);
+    }
+    .responsive-screensaver-clock {
+      font-size: clamp(4rem, 15vw, 11rem);
+      line-height: 0.95;
+    }
+    .night-glow {
+      color: #f97316 !important;
+      text-shadow: 0 0 35px rgba(249, 115, 22, 0.45);
     }
   </style>
 </head>
@@ -86,7 +92,8 @@
     @touchstart="handleTouchStart" 
     @touchmove="handleTouchMove"
     @touchend="handleTouchEnd"
-    @click="resetSleepTimer"
+    @mousedown="handleMouseDown"
+    @mouseup="handleMouseUp"
   >
 
     <!-- SLEEP / PHOTO FRAME SCREENSAVER OVERLAY -->
@@ -94,11 +101,12 @@
       <div 
         v-if="isSleeping" 
         class="fixed inset-0 z-50 bg-black flex flex-col justify-between p-6 md:p-12 cursor-pointer select-none overflow-hidden"
+        @pointerdown.stop="wakeUp"
         @touchstart.stop="wakeUp"
         @click.stop="wakeUp"
       >
         <!-- Background Photo Slideshow (Ken Burns effect) -->
-        <div v-if="currentScreensaverPhoto" class="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+        <div v-if="shouldShowScreensaverPhotos && currentScreensaverPhoto" class="absolute inset-0 z-0 overflow-hidden pointer-events-none">
           <transition name="fade-photo" mode="out-in">
             <img 
               :key="currentScreensaverPhoto.id"
@@ -107,33 +115,37 @@
             />
           </transition>
           <!-- Subtle dark vignette overlay for high-contrast clock readability -->
-          <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/60"></div>
+          <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/65"></div>
         </div>
 
-        <!-- Ambient OLED Black Fallback if no photos uploaded -->
-        <div v-else class="absolute inset-0 bg-black"></div>
+        <!-- Ambient OLED Black Fallback or Night Mode -->
+        <div v-else class="absolute inset-0 bg-black pointer-events-none"></div>
 
-        <!-- Top Header in Screensaver: Photo Caption (if any) -->
-        <div class="relative z-10 flex items-center justify-between text-xs font-mono text-white/80">
-          <div v-if="currentScreensaverPhoto && currentScreensaverPhoto.caption" class="bg-black/50 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 shadow">
+        <!-- Top Header in Screensaver -->
+        <div class="relative z-10 flex items-center justify-between text-xs font-mono text-white/80 pointer-events-none">
+          <div v-if="shouldShowScreensaverPhotos && currentScreensaverPhoto && currentScreensaverPhoto.caption" class="bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 shadow">
             📷 {{ currentScreensaverPhoto.caption }}
+          </div>
+          <div v-else-if="isNightModeActive" class="text-amber-500 font-mono flex items-center gap-1.5 bg-black/70 px-3 py-1 rounded-full border border-amber-900/50">
+            <span>🌙</span>
+            <span>NIGHT MODE ACTIVE</span>
           </div>
           <div v-else></div>
 
-          <div class="text-[11px] uppercase tracking-widest text-neutral-400 bg-black/50 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
-            TAP SCREEN TO WAKE
+          <div class="text-[11px] uppercase tracking-widest text-neutral-400 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10">
+            TAP ANYWHERE TO WAKE
           </div>
         </div>
 
-        <!-- Bottom Overlay: Large Ambient Clock & Weather -->
-        <div class="relative z-10">
-          <div class="font-mono text-7xl md:text-8xl lg:text-9xl font-extralight tracking-tight text-white drop-shadow-2xl">
+        <!-- Bottom Overlay: Scalable Clock & Weather -->
+        <div class="relative z-10 pointer-events-none" :class="{ 'night-glow': isNightModeActive }">
+          <div class="font-mono font-extralight tracking-tight text-white drop-shadow-2xl responsive-screensaver-clock" :class="{ 'text-amber-500': isNightModeActive }">
             {{ currentTime.hours }}<span class="animate-pulse">:</span>{{ currentTime.minutes }}
           </div>
-          <div class="text-base md:text-xl uppercase tracking-widest text-neutral-200 font-mono mt-1 drop-shadow-md">
+          <div class="text-base md:text-2xl uppercase tracking-widest font-mono mt-1 drop-shadow-md" :class="isNightModeActive ? 'text-amber-400/80' : 'text-neutral-200'">
             {{ currentDate.weekday }}, {{ currentDate.monthDay }} {{ currentDate.year }}
           </div>
-          <div v-if="weather" class="mt-2 text-sm text-neutral-300 font-mono flex items-center gap-2 drop-shadow">
+          <div v-if="weather && !isNightModeActive" class="mt-2 text-sm text-neutral-300 font-mono flex items-center gap-2 drop-shadow">
             <span>{{ weather.icon }}</span>
             <span class="font-bold text-white">{{ weather.temperature }}°C</span>
             <span>•</span>
@@ -145,113 +157,128 @@
 
     <!-- MAIN DASHBOARD CONTENT -->
     <div 
-      class="h-full w-full flex flex-col justify-between p-4 md:p-6 transition-all duration-700 overflow-hidden"
-      :class="{ 'opacity-0 scale-95 pointer-events-none': isSleeping }"
+      class="h-full w-full flex flex-col justify-between p-3 md:p-5 transition-all duration-500 overflow-hidden"
+      :class="{ 'opacity-0 scale-95 pointer-events-none': isSleeping, 'night-mode-glow': isNightModeActive }"
     >
       
       <!-- TOP NAVIGATION & STATUS BAR -->
-      <header class="border-b border-neutral-900 pb-2.5 mb-2.5 shrink-0">
+      <header class="border-b border-neutral-900 pb-2 mb-2 shrink-0">
         <div class="flex items-center justify-between mb-2">
-          <!-- Connection badge & profile indicators -->
+          <!-- Connection badge & page indicators -->
           <div class="flex items-center gap-2.5">
             <span 
               class="w-2.5 h-2.5 rounded-full transition-colors duration-500"
-              :class="isConnected ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'bg-neutral-600'"
+              :class="isConnected ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-red-500'"
             ></span>
             <span class="font-mono text-xs uppercase tracking-widest text-neutral-400">
-              {{ isConnected ? 'CONNECTED' : 'DISCONNECTED' }}
+              {{ isConnected ? 'ONLINE' : 'OFFLINE' }}
             </span>
             <span class="text-neutral-800">|</span>
             <span class="font-mono text-xs text-neutral-500">
               PAGE {{ activePage + 1 }} / {{ totalPages }}
             </span>
+            <span v-if="isNightModeActive" class="text-xs text-amber-500 font-mono ml-2">🌙 Night</span>
           </div>
 
-          <!-- Controls: Edit Mode, Sleep Trigger, Countdown -->
+          <!-- Controls: Voice Dictation, Edit Mode, Sleep Trigger -->
           <div class="flex items-center gap-2">
-            <!-- Edit Mode Toggle -->
+            <!-- Voice Dictation Button -->
             <button 
-              @click.stop="toggleEditMode"
+              @click.stop="startVoiceDictation"
+              :class="isListening ? 'bg-red-600 animate-pulse text-white border-red-500' : 'bg-neutral-950 text-neutral-300 border-neutral-800 hover:text-white hover:border-neutral-600'"
+              class="text-xs font-mono border px-3 py-1 rounded-full transition flex items-center gap-1.5 shadow"
+              title="Dictate to Gemini AI"
+            >
+              <span>🎙️</span>
+              <span class="hidden sm:inline">{{ isListening ? 'LISTENING...' : 'DICTATE' }}</span>
+            </button>
+
+            <!-- Edit Mode Toggle (Password Protected) -->
+            <button 
+              @click.stop="handleEditModeClick"
               :class="isEditMode ? 'bg-sky-500 text-black font-bold border-sky-400' : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:text-white'"
-              class="text-[11px] font-mono border px-2.5 py-1 rounded transition flex items-center gap-1.5"
+              class="text-xs font-mono border px-3 py-1 rounded-full transition flex items-center gap-1.5"
             >
               <span>{{ isEditMode ? '✓ DONE EDITING' : '⚙️ EDIT LAYOUT' }}</span>
             </button>
 
             <!-- Manual Sleep -->
             <button 
-              @click.stop="isSleeping = true" 
-              class="text-[11px] font-mono border border-neutral-800 hover:border-neutral-600 text-neutral-400 hover:text-white px-2 py-1 rounded transition"
+              @click.stop="triggerManualSleep" 
+              class="text-xs font-mono border border-neutral-800 hover:border-neutral-600 text-neutral-400 hover:text-white px-2.5 py-1 rounded-full transition"
             >
               SLEEP
             </button>
           </div>
         </div>
 
-        <!-- PROFILE SWITCHER BAR (FAMILY & KIDS) -->
-        <div class="flex items-center justify-between gap-2 overflow-x-auto scrollbar-none py-1">
-          <div class="flex items-center gap-2">
-            <button 
-              @click="selectProfile(null)"
-              :class="selectedProfileId === null ? 'bg-neutral-800 border-white text-white shadow-md' : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:border-neutral-700'"
-              class="px-2.5 py-1 rounded-full border text-xs font-mono flex items-center gap-1.5 shrink-0 transition"
-            >
-              <span>🏠</span>
-              <span>All Family</span>
-            </button>
+        <!-- PROFILE SWITCHER BAR (FAMILY & KIDS - CENTERED & LARGE AVATARS) -->
+        <div class="flex items-center justify-center gap-3 md:gap-5 overflow-x-auto scrollbar-none py-1">
+          <!-- All Family Profile -->
+          <button 
+            @click="selectProfile(null)"
+            :class="selectedProfileId === null ? 'ring-2 ring-white scale-105 bg-neutral-800 text-white shadow-xl' : 'bg-neutral-950/80 border border-neutral-800/80 text-neutral-400 hover:border-neutral-700'"
+            class="px-3.5 py-1.5 rounded-2xl flex items-center gap-2.5 shrink-0 transition-all duration-200"
+          >
+            <div class="w-10 h-10 md:w-11 md:h-11 rounded-full bg-neutral-900 border border-neutral-700 flex items-center justify-center text-xl shrink-0">
+              🏠
+            </div>
+            <div class="text-left">
+              <div class="text-xs font-bold leading-tight">All Family</div>
+              <div class="text-[10px] font-mono text-neutral-500">Shared Hub</div>
+            </div>
+          </button>
 
-            <button 
-              v-for="p in profiles" 
-              :key="p.id"
-              @click="selectProfile(p.id)"
-              :style="{ borderColor: selectedProfileId === p.id ? p.color : '#262626' }"
-              :class="selectedProfileId === p.id ? 'bg-neutral-900 text-white shadow-lg' : 'bg-neutral-950 text-neutral-400 hover:border-neutral-700'"
-              class="px-2.5 py-1 rounded-full border text-xs flex items-center gap-1.5 shrink-0 transition"
+          <!-- Individual Family / Kid Profiles -->
+          <button 
+            v-for="p in profiles" 
+            :key="p.id"
+            @click="selectProfile(p.id)"
+            :style="{ 
+              borderColor: selectedProfileId === p.id ? p.color : '#262626',
+              boxShadow: selectedProfileId === p.id ? `0 0 16px ${p.color}44` : 'none'
+            }"
+            :class="selectedProfileId === p.id ? 'ring-2 ring-offset-2 ring-offset-black ring-white scale-105 bg-neutral-900 text-white' : 'bg-neutral-950/80 border text-neutral-400 hover:border-neutral-700'"
+            class="px-3.5 py-1.5 rounded-2xl flex items-center gap-2.5 shrink-0 transition-all duration-200"
+          >
+            <div 
+              class="w-10 h-10 md:w-11 md:h-11 rounded-full overflow-hidden flex items-center justify-center bg-neutral-900 border-2 shrink-0"
+              :style="{ borderColor: p.color }"
             >
-              <div class="w-4 h-4 rounded-full overflow-hidden flex items-center justify-center bg-neutral-900">
-                <img v-if="p.avatar_type === 'upload'" :src="p.avatar_value" class="w-full h-full object-cover" />
-                <span v-else class="text-xs">{{ p.avatar_value }}</span>
-              </div>
-              <span class="font-medium">{{ p.name }}</span>
-            </button>
-          </div>
-
-          <!-- Page Dots / Quick Jump -->
-          <div class="flex items-center gap-1.5 shrink-0 ml-2">
-            <button 
-              v-for="pIndex in totalPages" 
-              :key="pIndex"
-              @click="activePage = pIndex - 1"
-              :class="activePage === pIndex - 1 ? 'w-4 bg-white' : 'w-1.5 bg-neutral-700 hover:bg-neutral-500'"
-              class="h-1.5 rounded-full transition-all duration-300"
-            ></button>
-          </div>
+              <img v-if="p.avatar_type === 'upload'" :src="p.avatar_value" class="w-full h-full object-cover" />
+              <span v-else class="text-2xl">{{ p.avatar_value }}</span>
+            </div>
+            <div class="text-left">
+              <div class="text-xs font-bold leading-tight text-white">{{ p.name }}</div>
+              <div class="text-[10px] font-mono" :style="{ color: p.color }">Profile</div>
+            </div>
+          </button>
         </div>
 
-        <!-- EDIT MODE TOOLBAR (Visible only when editing) -->
-        <div v-if="isEditMode" class="mt-2.5 pt-2 border-t border-sky-950/60 bg-sky-950/20 px-3 py-2 rounded-lg flex items-center justify-between text-xs font-mono">
+        <!-- EDIT MODE TOOLBAR (Visible ONLY when edit mode is unlocked) -->
+        <div v-if="isEditMode && isAdminUnlocked" class="mt-2.5 pt-2 border-t border-sky-950/60 bg-sky-950/20 px-3.5 py-2.5 rounded-xl flex items-center justify-between text-xs font-mono">
           <div class="flex items-center gap-3">
-            <span class="text-sky-400 font-semibold">EDIT MODE ACTIVE:</span>
-            <span class="text-neutral-400">Drag widgets to reposition. Tap columns to resize.</span>
+            <span class="text-sky-400 font-bold">LAYOUT EDITING ({{ selectedProfile ? selectedProfile.name : 'All Family' }}):</span>
+            <span class="text-neutral-400 hidden md:inline">Use drag handle to reposition. Tap width & height buttons to resize.</span>
           </div>
 
           <div class="flex items-center gap-2">
             <button 
               @click="showAddWidgetDrawer = true" 
-              class="bg-sky-600 hover:bg-sky-500 text-white px-2.5 py-1 rounded font-semibold transition"
+              class="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1 rounded-lg font-bold transition"
             >
               + Add Widget
             </button>
             <button 
               @click="addNewPage" 
-              class="bg-neutral-800 hover:bg-neutral-700 text-neutral-200 px-2 py-1 rounded transition"
+              class="bg-neutral-800 hover:bg-neutral-700 text-neutral-200 px-2.5 py-1 rounded-lg transition"
             >
               + Add Page
             </button>
             <button 
               v-if="totalPages > 1"
               @click="deleteCurrentPage" 
-              class="bg-red-950 hover:bg-red-900 border border-red-800 text-red-300 px-2 py-1 rounded transition"
+              class="bg-red-950 hover:bg-red-900 border border-red-800 text-red-300 px-2.5 py-1 rounded-lg transition"
             >
               Delete Page
             </button>
@@ -264,7 +291,7 @@
         <div 
           ref="widgetGridRef"
           class="grid grid-cols-12 gap-3 min-h-full items-start"
-          :class="{ 'p-2 border-2 border-dashed border-sky-900/60 rounded-2xl': isEditMode }"
+          :class="{ 'p-2 border-2 border-dashed border-sky-500/40 rounded-2xl bg-sky-950/10': isEditMode && isAdminUnlocked }"
         >
           
           <!-- WIDGET CARD LOOP -->
@@ -274,44 +301,62 @@
             :data-id="w.id || idx"
             :class="[
               getColSpanClass(w.w),
-              isEditMode ? 'ring-1 ring-sky-500/50 bg-neutral-900/90' : 'bg-neutral-950 border border-neutral-900'
+              getHeightClass(w.h),
+              isEditMode && isAdminUnlocked ? 'ring-2 ring-sky-500/60 bg-neutral-900/90 shadow-2xl' : 'bg-neutral-950 border border-neutral-900 shadow-xl'
             ]"
-            class="rounded-2xl p-4 relative flex flex-col justify-between transition-all duration-300 shadow-xl overflow-hidden min-h-[140px]"
+            class="rounded-2xl p-4 relative flex flex-col justify-between transition-all duration-300 overflow-hidden"
           >
-            <!-- EDIT MODE CONTROLS OVERLAY -->
-            <div v-if="isEditMode" class="absolute top-2 right-2 flex items-center gap-1 z-20 bg-neutral-900/90 border border-neutral-700 rounded-lg p-1">
-              <!-- Resize Button (Toggle width: 4 -> 6 -> 12) -->
+            <!-- EDIT MODE CONTROLS OVERLAY (Only visible when unlocked) -->
+            <div v-if="isEditMode && isAdminUnlocked" class="absolute top-2 right-2 flex items-center gap-1.5 z-30 bg-neutral-900 border border-neutral-700 rounded-lg p-1 shadow-lg">
+              <!-- Drag Handle with touch-action: none -->
+              <div 
+                class="widget-touch-handle cursor-move px-2 py-1 bg-sky-950 border border-sky-800 hover:bg-sky-900 text-sky-300 rounded text-[10px] font-mono font-bold flex items-center gap-1 select-none"
+                title="Drag to reposition widget"
+              >
+                <span>⠿</span>
+                <span>MOVE</span>
+              </div>
+              
+              <!-- Resize Width Button (cycles: 4 -> 6 -> 8 -> 12) -->
               <button 
                 @click.stop="cycleWidgetWidth(w)"
-                title="Change column width"
-                class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 text-neutral-300"
+                title="Cycle column width (4, 6, 8, 12 columns)"
+                class="px-2 py-1 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-semibold"
               >
-                {{ w.w }}c
+                {{ w.w || 6 }}c
               </button>
-              <!-- Drag Handle -->
-              <span class="cursor-move px-1 text-neutral-400 text-xs">⋮⋮</span>
+
+              <!-- Resize Height Button (cycles: 1h -> 2h -> 3h) -->
+              <button 
+                @click.stop="cycleWidgetHeight(w)"
+                title="Cycle card height (1=compact, 2=standard, 3=tall)"
+                class="px-2 py-1 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 text-emerald-400 font-semibold"
+              >
+                {{ w.h || 2 }}h
+              </button>
+
               <!-- Delete Widget -->
               <button 
                 @click.stop="removeWidget(w)"
                 title="Remove widget"
-                class="px-1 text-red-400 hover:text-red-300 text-xs font-bold"
+                class="px-2 py-1 text-red-400 hover:text-red-300 hover:bg-red-950 rounded text-xs font-bold"
               >
                 ✕
               </button>
             </div>
 
             <!-- ================= WIDGET TYPE 1: CLOCK & DATE ================= -->
-            <div v-if="w.widget_type === 'clock'" class="flex flex-col items-center justify-center my-auto py-2 text-center">
-              <div class="font-mono text-6xl md:text-8xl lg:text-9xl font-extralight tracking-tighter text-white leading-none mb-2">
+            <div v-if="w.widget_type === 'clock'" class="flex flex-col items-center justify-center my-auto py-2 text-center w-full overflow-hidden">
+              <div class="font-mono font-extralight tracking-tight text-white leading-none mb-1 flex items-baseline justify-center responsive-clock-text">
                 <span>{{ currentTime.hours }}</span>
-                <span :class="isSecondTick ? 'opacity-100' : 'opacity-20'">:</span>
+                <span :class="isSecondTick ? 'opacity-100' : 'opacity-20'" class="transition-opacity">:</span>
                 <span>{{ currentTime.minutes }}</span>
-                <span class="text-2xl md:text-4xl font-light text-neutral-500 ml-1 align-top">{{ currentTime.seconds }}</span>
+                <span class="font-light text-neutral-500 ml-1.5 responsive-clock-seconds">{{ currentTime.seconds }}</span>
               </div>
-              <div class="text-sm md:text-xl font-light tracking-wide text-neutral-300 uppercase">
+              <div class="text-sm md:text-lg font-light tracking-wide text-neutral-300 uppercase">
                 {{ currentDate.weekday }}, <span class="text-white font-normal">{{ currentDate.monthDay }}</span> {{ currentDate.year }}
               </div>
-              <div v-if="weather" class="mt-2.5 inline-flex items-center gap-2 px-3 py-1 rounded-full border border-neutral-800 bg-neutral-900/60 text-xs font-mono text-neutral-300">
+              <div v-if="weather" class="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full border border-neutral-800 bg-neutral-900/60 text-xs font-mono text-neutral-300">
                 <span>{{ weather.icon }}</span>
                 <span class="font-bold text-white">{{ weather.temperature }}°C</span>
                 <span class="text-neutral-600">•</span>
@@ -344,7 +389,7 @@
               <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
                 <div class="flex items-center gap-2">
                   <span class="font-mono text-xs uppercase tracking-widest text-emerald-400 font-semibold">
-                    {{ selectedProfile ? selectedProfile.name + "'s Tasks" : "Family Tasks" }}
+                    {{ selectedProfile ? selectedProfile.name + "'s Chores" : "Family Chores" }}
                   </span>
                   <span class="text-[10px] font-mono text-neutral-500">({{ displayedTasks.length }})</span>
                 </div>
@@ -353,17 +398,17 @@
               <div v-if="displayedTasks.length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
                 No active tasks. Tap + to add.
               </div>
-              <ul v-else class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+              <ul v-else class="space-y-1.5 overflow-y-auto pr-1 flex-1">
                 <li 
                   v-for="item in displayedTasks" 
                   :key="item.id"
                   @click="toggleTaskItem(item)"
-                  class="text-neutral-300 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-1 px-1.5 rounded hover:bg-neutral-900/60"
+                  class="text-neutral-300 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-1.5 px-2 rounded-lg hover:bg-neutral-900/60"
                 >
-                  <div class="flex items-center gap-2">
+                  <div class="flex items-center gap-2.5">
                     <span 
-                      class="w-3 h-3 rounded-full border transition-all duration-300 flex items-center justify-center text-[9px]"
-                      :class="item.checked === 1 ? 'bg-white border-white text-black font-bold' : 'border-neutral-600'"
+                      class="w-4 h-4 rounded-full border transition-all duration-300 flex items-center justify-center text-[10px] shrink-0"
+                      :class="item.checked === 1 ? 'bg-emerald-500 border-emerald-500 text-black font-bold' : 'border-neutral-600'"
                     >
                       <span v-if="item.checked === 1">✓</span>
                     </span>
@@ -372,7 +417,7 @@
                       @{{ item.assignee_name }}
                     </span>
                   </div>
-                  <span v-if="item.reward" class="font-mono text-[11px] text-neutral-400 font-medium">+{{ item.reward }} pts</span>
+                  <span v-if="item.reward" class="font-mono text-xs text-amber-400 font-bold shrink-0">+{{ item.reward }} pts</span>
                 </li>
               </ul>
             </div>
@@ -388,7 +433,7 @@
                 </div>
                 <button 
                   @click.stop="openQuickAdd(targetList(w))" 
-                  class="text-[10px] font-mono bg-neutral-900 hover:bg-neutral-800 text-neutral-300 px-1.5 py-0.5 rounded border border-neutral-800"
+                  class="text-xs font-mono bg-neutral-900 hover:bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded border border-neutral-800"
                 >
                   + Add
                 </button>
@@ -397,16 +442,16 @@
               <div v-if="!targetList(w) || !targetList(w).items || targetList(w).items.length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
                 List is empty.
               </div>
-              <ul v-else class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+              <ul v-else class="space-y-1.5 overflow-y-auto pr-1 flex-1">
                 <li 
                   v-for="item in targetList(w).items" 
                   :key="item.id"
                   @click="toggleListItem(item)"
-                  class="text-neutral-300 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-1 px-1.5 rounded hover:bg-neutral-900/60"
+                  class="text-neutral-300 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-1.5 px-2 rounded-lg hover:bg-neutral-900/60"
                 >
-                  <div class="flex items-center gap-2">
+                  <div class="flex items-center gap-2.5">
                     <span 
-                      class="w-3 h-3 rounded-full border transition-all duration-300 flex items-center justify-center text-[9px]"
+                      class="w-4 h-4 rounded-full border transition-all duration-300 flex items-center justify-center text-[10px] shrink-0"
                       :class="item.checked === 1 ? 'bg-white border-white text-black font-bold' : 'border-neutral-600'"
                     >
                       <span v-if="item.checked === 1">✓</span>
@@ -424,10 +469,10 @@
                 <span class="text-[10px] font-mono text-neutral-600">{{ notes.length }} ITEMS</span>
               </div>
               <div v-if="notes.length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
-                No notes yet. Send notes from Telegram.
+                No notes yet. Send notes from Telegram or voice dictation.
               </div>
-              <ul v-else class="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                <li v-for="note in notes" :key="note.id" class="text-neutral-300 text-xs font-sans flex items-start justify-between py-0.5">
+              <ul v-else class="space-y-1.5 overflow-y-auto pr-1 flex-1">
+                <li v-for="note in notes" :key="note.id" class="text-neutral-300 text-xs font-sans flex items-start justify-between py-1 border-b border-neutral-900/50">
                   <span>• {{ note.content }}</span>
                   <span class="text-[10px] font-mono text-neutral-600 ml-2 whitespace-nowrap">{{ formatTime(note.timestamp) }}</span>
                 </li>
@@ -438,23 +483,37 @@
             <div v-else-if="w.widget_type === 'timer'" class="h-full flex flex-col justify-between">
               <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
                 <span class="font-mono text-xs uppercase tracking-widest text-amber-400 font-semibold">KITCHEN TIMER</span>
-                <span class="font-mono text-xs text-neutral-500">{{ timerRunning ? '⏳ RUNNING' : 'IDLE' }}</span>
+                <div class="flex items-center gap-2">
+                  <button @click="testTimerAlarm" class="text-[10px] font-mono text-neutral-500 hover:text-white">🔔 Test</button>
+                  <span class="font-mono text-xs" :class="timerRunning ? 'text-amber-400 animate-pulse' : 'text-neutral-500'">
+                    {{ timerRunning ? '⏳ RUNNING' : 'IDLE' }}
+                  </span>
+                </div>
               </div>
 
-              <div class="text-center my-auto py-2">
-                <div class="font-mono text-4xl md:text-5xl font-light text-white tracking-tight mb-2">
+              <div class="text-center my-auto py-1">
+                <div class="font-mono text-5xl md:text-6xl font-light text-white tracking-tight mb-2">
                   {{ formatTimerDisplay }}
                 </div>
 
-                <!-- Quick Presets -->
+                <!-- Touch Stepper & Custom Buttons -->
+                <div class="flex items-center justify-center gap-1.5 mb-2">
+                  <button @click="adjustTimerSeconds(-60)" class="px-2 py-1 rounded bg-neutral-900 border border-neutral-800 text-xs font-mono text-neutral-300">-1m</button>
+                  <button @click="adjustTimerSeconds(30)" class="px-2 py-1 rounded bg-neutral-900 border border-neutral-800 text-xs font-mono text-neutral-300">+30s</button>
+                  <button @click="adjustTimerSeconds(60)" class="px-2 py-1 rounded bg-neutral-900 border border-neutral-800 text-xs font-mono text-neutral-300">+1m</button>
+                  <button @click="adjustTimerSeconds(300)" class="px-2 py-1 rounded bg-neutral-900 border border-neutral-800 text-xs font-mono text-neutral-300">+5m</button>
+                  <button @click="showCustomTimerModal = true" class="px-2.5 py-1 rounded bg-sky-950/60 border border-sky-800 text-xs font-mono text-sky-300">Set Time</button>
+                </div>
+
+                <!-- Presets -->
                 <div class="flex items-center justify-center gap-1.5 mb-3">
                   <button 
                     v-for="min in [1, 3, 5, 10, 15]" 
                     :key="min"
                     @click="setTimerPreset(min)"
-                    class="px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 hover:border-neutral-600 text-[11px] font-mono text-neutral-300 transition"
+                    class="px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 hover:border-neutral-600 text-[11px] font-mono text-neutral-400 transition"
                   >
-                    +{{ min }}m
+                    {{ min }}m
                   </button>
                 </div>
 
@@ -463,13 +522,13 @@
                   <button 
                     @click="toggleTimer"
                     :class="timerRunning ? 'bg-amber-600 hover:bg-amber-500' : 'bg-emerald-600 hover:bg-emerald-500'"
-                    class="px-4 py-1 rounded text-xs font-mono font-bold text-white transition"
+                    class="px-5 py-1.5 rounded-lg text-xs font-mono font-bold text-white transition shadow"
                   >
                     {{ timerRunning ? 'PAUSE' : 'START' }}
                   </button>
                   <button 
                     @click="resetTimer"
-                    class="px-3 py-1 rounded text-xs font-mono bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition"
+                    class="px-3.5 py-1.5 rounded-lg text-xs font-mono bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition"
                   >
                     RESET
                   </button>
@@ -509,7 +568,6 @@
 
               <!-- Calendar Content Grid: Mini Month Grid (Left) + Upcoming Events List (Right) -->
               <div class="grid grid-cols-1 md:grid-cols-2 gap-3 h-full overflow-hidden">
-                
                 <!-- Mini Month Grid -->
                 <div class="bg-neutral-950/80 border border-neutral-800/60 rounded-xl p-2.5 flex flex-col justify-between">
                   <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-mono text-neutral-500 mb-1">
@@ -555,7 +613,83 @@
                     </div>
                   </div>
                 </div>
+              </div>
+            </div>
 
+            <!-- ================= WIDGET TYPE 9: LEADERBOARD & REWARDS ================= -->
+            <div v-else-if="w.widget_type === 'leaderboard'" class="h-full flex flex-col justify-between">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+                <span class="font-mono text-xs uppercase tracking-widest text-amber-400 font-semibold">🏆 CHORES & REWARDS</span>
+                <span class="text-[10px] font-mono text-neutral-500">POINTS BOARD</span>
+              </div>
+              <div class="space-y-2 my-auto overflow-y-auto max-h-48 pr-1">
+                <div v-for="(p, rank) in leaderboardProfiles" :key="p.id" class="flex items-center justify-between p-2.5 rounded-xl bg-neutral-900/60 border border-neutral-800/80">
+                  <div class="flex items-center gap-2.5">
+                    <span class="text-sm font-mono font-bold w-5 text-center">
+                      {{ rank === 0 ? '🥇' : rank === 1 ? '🥈' : rank === 2 ? '🥉' : '#' + (rank + 1) }}
+                    </span>
+                    <div class="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-neutral-950 border-2" :style="{ borderColor: p.color }">
+                      <img v-if="p.avatar_type === 'upload'" :src="p.avatar_value" class="w-full h-full object-cover" />
+                      <span v-else class="text-base">{{ p.avatar_value }}</span>
+                    </div>
+                    <div>
+                      <div class="text-xs font-bold text-white">{{ p.name }}</div>
+                      <div class="text-[10px] text-neutral-500 font-mono">{{ p.completedTasksCount }} chores completed</div>
+                    </div>
+                  </div>
+                  <div class="font-mono text-xs font-bold text-amber-400 px-2.5 py-1 rounded-lg bg-amber-950/40 border border-amber-900/60">
+                    {{ p.totalPoints }} pts
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ================= WIDGET TYPE 10: QUICK SCENES / ACTIONS ================= -->
+            <div v-else-if="w.widget_type === 'quick_actions'" class="h-full flex flex-col justify-between">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+                <span class="font-mono text-xs uppercase tracking-widest text-cyan-400 font-semibold">⚡ QUICK SCENES</span>
+                <span class="text-[10px] font-mono text-neutral-500">ONE TAP</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2 my-auto py-1">
+                <button @click="quickStartTimer(5)" class="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-amber-500 flex items-center gap-2 text-left transition">
+                  <span class="text-xl">⏳</span>
+                  <div>
+                    <div class="text-xs font-bold text-white">5m Timer</div>
+                    <div class="text-[10px] text-neutral-500 font-mono">Kitchen quick run</div>
+                  </div>
+                </button>
+                <button @click="toggleNightModeManual" :class="isNightModeActive ? 'border-amber-500 bg-amber-950/30' : 'border-neutral-800 bg-neutral-900'" class="p-2.5 rounded-xl border flex items-center gap-2 text-left transition">
+                  <span class="text-xl">🌙</span>
+                  <div>
+                    <div class="text-xs font-bold text-white">Night Glow</div>
+                    <div class="text-[10px] text-neutral-500 font-mono">{{ isNightModeActive ? 'Active' : 'Off' }}</div>
+                  </div>
+                </button>
+                <button @click="startVoiceDictation" class="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-purple-500 flex items-center gap-2 text-left transition">
+                  <span class="text-xl">🎙️</span>
+                  <div>
+                    <div class="text-xs font-bold text-white">Dictate</div>
+                    <div class="text-[10px] text-neutral-500 font-mono">Voice to Gemini</div>
+                  </div>
+                </button>
+                <button @click="isSleeping = true" class="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-neutral-600 flex items-center gap-2 text-left transition">
+                  <span class="text-xl">💤</span>
+                  <div>
+                    <div class="text-xs font-bold text-white">Sleep</div>
+                    <div class="text-[10px] text-neutral-500 font-mono">OLED ambient</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <!-- ================= WIDGET TYPE 11: FAMILY MEMO / BANNER ================= -->
+            <div v-else-if="w.widget_type === 'memo'" class="h-full flex flex-col justify-between">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+                <span class="font-mono text-xs uppercase tracking-widest text-yellow-300 font-semibold">📌 FAMILY MEMO</span>
+                <span class="text-[10px] font-mono text-neutral-500">ANNOUNCEMENT</span>
+              </div>
+              <div class="p-3 my-auto rounded-xl bg-amber-950/20 border border-amber-900/40 text-amber-200/90 text-xs font-sans leading-relaxed">
+                {{ w.config?.text || 'Welcome home! Remember to wash your hands, check off today\'s chores, and drink plenty of water.' }}
               </div>
             </div>
 
@@ -569,7 +703,7 @@
         <button 
           @click="prevPage" 
           :disabled="activePage === 0"
-          class="hover:text-white disabled:opacity-20 px-2 py-1 transition"
+          class="hover:text-white disabled:opacity-20 px-3 py-1.5 transition"
         >
           ← PREV PAGE
         </button>
@@ -579,7 +713,7 @@
             v-for="pIndex in totalPages" 
             :key="pIndex"
             @click="activePage = pIndex - 1"
-            :class="activePage === pIndex - 1 ? 'w-5 bg-white' : 'w-2 bg-neutral-800 hover:bg-neutral-600'"
+            :class="activePage === pIndex - 1 ? 'w-6 bg-white' : 'w-2 bg-neutral-800 hover:bg-neutral-600'"
             class="h-2 rounded-full cursor-pointer transition-all duration-300"
           ></span>
         </div>
@@ -587,12 +721,137 @@
         <button 
           @click="nextPage" 
           :disabled="activePage >= totalPages - 1"
-          class="hover:text-white disabled:opacity-20 px-2 py-1 transition"
+          class="hover:text-white disabled:opacity-20 px-3 py-1.5 transition"
         >
           NEXT PAGE →
         </button>
       </footer>
 
+    </div>
+
+    <!-- ADMIN PASSWORD AUTH MODAL FOR EDIT MODE -->
+    <div 
+      v-if="showPasswordModal" 
+      class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+      @click.self="showPasswordModal = false"
+    >
+      <div class="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+        <div class="text-center mb-4">
+          <div class="w-12 h-12 rounded-full bg-sky-950 border border-sky-800 text-sky-400 flex items-center justify-center text-xl mx-auto mb-2">
+            🔒
+          </div>
+          <h3 class="text-sm font-mono font-bold text-white">ADMIN AUTHENTICATION</h3>
+          <p class="text-xs text-neutral-400 mt-1">Enter admin password to unlock layout editing.</p>
+        </div>
+
+        <form @submit.prevent="verifyAdminPassword" class="space-y-4">
+          <div>
+            <input 
+              v-model="adminPasswordInput" 
+              type="password" 
+              placeholder="Admin password..." 
+              class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-xl p-3 text-center text-base tracking-widest text-white outline-none"
+              autofocus
+              required
+            />
+            <p v-if="passwordError" class="text-xs text-red-400 mt-1.5 text-center font-mono">{{ passwordError }}</p>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button 
+              type="submit" 
+              class="flex-1 bg-sky-600 hover:bg-sky-500 text-white font-mono text-xs font-bold py-2.5 rounded-xl transition"
+            >
+              Unlock Editor
+            </button>
+            <button 
+              type="button" 
+              @click="showPasswordModal = false" 
+              class="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-mono text-xs py-2.5 px-4 rounded-xl transition"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- CUSTOM TIMER TOUCH MODAL -->
+    <div 
+      v-if="showCustomTimerModal" 
+      class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+      @click.self="showCustomTimerModal = false"
+    >
+      <div class="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 max-w-xs w-full shadow-2xl">
+        <h3 class="text-sm font-mono font-bold text-white mb-3 text-center">SET KITCHEN TIMER</h3>
+        
+        <div class="text-center font-mono text-4xl font-light text-white mb-4 bg-neutral-950 p-3 rounded-xl border border-neutral-800">
+          {{ formatCustomTimerDisplay }}
+        </div>
+
+        <!-- Touch presets -->
+        <div class="grid grid-cols-3 gap-2 mb-4">
+          <button @click="addCustomSeconds(60)" class="p-2 rounded-lg bg-neutral-950 border border-neutral-800 text-xs font-mono text-neutral-300 hover:border-amber-500">+1 Min</button>
+          <button @click="addCustomSeconds(300)" class="p-2 rounded-lg bg-neutral-950 border border-neutral-800 text-xs font-mono text-neutral-300 hover:border-amber-500">+5 Min</button>
+          <button @click="addCustomSeconds(600)" class="p-2 rounded-lg bg-neutral-950 border border-neutral-800 text-xs font-mono text-neutral-300 hover:border-amber-500">+10 Min</button>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button 
+            @click="applyCustomTimer" 
+            class="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-mono text-xs font-bold py-2.5 rounded-xl transition"
+          >
+            Start Timer
+          </button>
+          <button 
+            @click="customTimerSeconds = 0" 
+            class="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-mono text-xs py-2.5 px-3 rounded-xl transition"
+          >
+            Clear
+          </button>
+          <button 
+            @click="showCustomTimerModal = false" 
+            class="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-mono text-xs py-2.5 px-3 rounded-xl transition"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- VOICE DICTATION MODAL -->
+    <div 
+      v-if="isListening || showDictationModal" 
+      class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+    >
+      <div class="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center space-y-4">
+        <div class="w-16 h-16 rounded-full bg-red-950 border-2 border-red-500 flex items-center justify-center text-3xl mx-auto animate-pulse">
+          🎙️
+        </div>
+        <div>
+          <h3 class="text-sm font-mono font-bold text-white uppercase tracking-wider">Listening to Voice...</h3>
+          <p class="text-xs text-neutral-400 mt-1">Speak chores, shopping items, calendar events, or timer commands.</p>
+        </div>
+
+        <div class="p-3 bg-neutral-950 rounded-xl border border-neutral-800 min-h-[60px] text-xs font-mono text-emerald-400 flex items-center justify-center">
+          <span>{{ liveTranscript || 'Listening for speech...' }}</span>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button 
+            @click="stopVoiceDictation" 
+            class="flex-1 bg-red-600 hover:bg-red-500 text-white font-mono text-xs font-bold py-2.5 rounded-xl transition"
+          >
+            Stop & Process
+          </button>
+          <button 
+            @click="cancelVoiceDictation" 
+            class="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-mono text-xs py-2.5 px-4 rounded-xl transition"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- ADD WIDGET DRAWER (POPUP) -->
@@ -607,14 +866,14 @@
           <button @click="showAddWidgetDrawer = false" class="text-neutral-500 hover:text-white">✕</button>
         </h3>
         
-        <div class="grid grid-cols-2 gap-2.5 mb-4">
+        <div class="grid grid-cols-2 gap-2.5 mb-4 max-h-[400px] overflow-y-auto pr-1">
           <button 
             v-for="wt in availableWidgetTypes" 
             :key="wt.type"
             @click="addWidget(wt.type)"
             class="p-3 rounded-xl border border-neutral-800 hover:border-sky-500 bg-neutral-950 text-left transition"
           >
-            <div class="text-xl mb-1">{{ wt.icon }}</div>
+            <div class="text-2xl mb-1">{{ wt.icon }}</div>
             <div class="text-xs font-bold text-white">{{ wt.name }}</div>
             <div class="text-[10px] text-neutral-400 font-mono">{{ wt.desc }}</div>
           </button>
@@ -661,7 +920,7 @@
   </div>
 
   <script>
-    const { createApp, ref, computed, onMounted, onUnmounted, nextTick } = Vue;
+    const { createApp, ref, computed, watch, onMounted, onUnmounted, nextTick } = Vue;
 
     createApp({
       setup() {
@@ -676,9 +935,18 @@
         const profiles = ref([]);
         const lists = ref([]);
         const layouts = ref([]);
+        const profileLayouts = ref({});
         const photos = ref([]);
         const events = ref([]);
         const weather = ref(null);
+        const settings = ref({
+          sleep_timeout: 300,
+          photo_interval: 8,
+          night_mode_enabled: 0,
+          night_mode_start: '22:00',
+          night_mode_end: '07:00',
+          screensaver_mode: 'photos'
+        });
 
         // Screensaver Photo State
         const currentPhotoIndex = ref(0);
@@ -693,6 +961,32 @@
           return screensaverPhotos.value[currentPhotoIndex.value % screensaverPhotos.value.length];
         });
 
+        // Night Mode computation
+        const manualNightMode = ref(false);
+        const isNightModeActive = computed(() => {
+          if (manualNightMode.value) return true;
+          if (!settings.value.night_mode_enabled) return false;
+          const currentHour = now.value.getHours();
+          const currentMin = now.value.getMinutes();
+          const curMinutes = currentHour * 60 + currentMin;
+
+          const [sH, sM] = (settings.value.night_mode_start || '22:00').split(':').map(Number);
+          const [eH, eM] = (settings.value.night_mode_end || '07:00').split(':').map(Number);
+          const startMinutes = sH * 60 + (sM || 0);
+          const endMinutes = eH * 60 + (eM || 0);
+
+          if (startMinutes > endMinutes) {
+            // Over midnight (e.g. 22:00 to 07:00)
+            return curMinutes >= startMinutes || curMinutes < endMinutes;
+          }
+          return curMinutes >= startMinutes && curMinutes < endMinutes;
+        });
+
+        const shouldShowScreensaverPhotos = computed(() => {
+          if (isNightModeActive.value) return false;
+          return settings.value.screensaver_mode === 'photos';
+        });
+
         // Calendar computed helpers
         const calendarMonthLabel = computed(() => {
           return now.value.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
@@ -700,7 +994,11 @@
 
         const filteredEvents = computed(() => {
           const nowIso = now.value.toISOString();
-          return events.value.filter(e => e.start_datetime >= nowIso.slice(0, 10)).slice(0, 20);
+          let list = events.value.filter(e => e.start_datetime >= nowIso.slice(0, 10));
+          if (selectedProfileId.value) {
+            list = list.filter(e => !e.profile_id || e.profile_id === selectedProfileId.value);
+          }
+          return list.slice(0, 20);
         });
 
         const calendarMonthDays = computed(() => {
@@ -711,17 +1009,14 @@
           const daysInMonth = new Date(year, month + 1, 0).getDate();
           const daysInPrev = new Date(year, month, 0).getDate();
 
-          // Dates that have events for dot indicator
           const eventDates = new Set(events.value.map(e => e.start_datetime ? e.start_datetime.slice(0, 10) : null).filter(Boolean));
 
           const days = [];
-          // Padding days from previous month
           for (let i = firstDay - 1; i >= 0; i--) {
             const d = daysInPrev - i;
             const dayStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
             days.push({ dayNumber: d, isCurrentMonth: false, isToday: false, hasEvent: eventDates.has(dayStr) });
           }
-          // Days in current month
           const todayStr = today.toISOString().slice(0, 10);
           for (let d = 1; d <= daysInMonth; d++) {
             const dayStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -732,7 +1027,6 @@
               hasEvent: eventDates.has(dayStr)
             });
           }
-          // Padding days from next month
           const remaining = 42 - days.length;
           for (let d = 1; d <= remaining; d++) {
             const dayStr = `${year}-${String(month + 2).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -752,10 +1046,28 @@
           } catch (e) { return ev.start_datetime; }
         }
 
+        // Leaderboard Computation
+        const leaderboardProfiles = computed(() => {
+          return profiles.value.map(p => {
+            const pTasks = tasks.value.filter(t => t.assignee && t.assignee.toLowerCase() === p.name.toLowerCase() && t.status === 'completed');
+            const totalPoints = pTasks.reduce((sum, t) => sum + (Number(t.reward) || 0), 0);
+            return {
+              ...p,
+              completedTasksCount: pTasks.length,
+              totalPoints
+            };
+          }).sort((a, b) => b.totalPoints - a.totalPoints);
+        });
+
         // Active State
         const selectedProfileId = ref(null);
         const activePage = ref(0);
         const isEditMode = ref(false);
+        const isAdminUnlocked = ref(false);
+        const showPasswordModal = ref(false);
+        const adminPasswordInput = ref('');
+        const passwordError = ref('');
+
         const showAddWidgetDrawer = ref(false);
         const showQuickAddModal = ref(false);
         const quickAddContent = ref('');
@@ -769,10 +1081,11 @@
         const timerSeconds = ref(300); // 5 min default
         const timerRunning = ref(false);
         let timerInterval = null;
+        const showCustomTimerModal = ref(false);
+        const customTimerSeconds = ref(300);
 
-        // Inactivity timeout: 5 minutes
-        const SLEEP_TIMEOUT_MS = 5 * 60 * 1000;
-        const remainingSeconds = ref(Math.floor(SLEEP_TIMEOUT_MS / 1000));
+        // Inactivity timeout
+        const remainingSeconds = ref(300);
         let sleepTimer = null;
         let countdownTimer = null;
         let clockInterval = null;
@@ -781,16 +1094,26 @@
         // Touch Swipe tracking
         let touchStartX = 0;
         let touchStartY = 0;
+        let touchStartTime = 0;
+
+        // Voice Dictation State
+        const isListening = ref(false);
+        const showDictationModal = ref(false);
+        const liveTranscript = ref('');
+        let recognition = null;
 
         const availableWidgetTypes = [
-          { type: 'clock', name: 'Clock & Weather', icon: '🕒', desc: 'Hero digital clock with date' },
-          { type: 'weather', name: 'Weather Forecast', icon: '☀️', desc: 'Detailed temperature & forecast' },
-          { type: 'tasks', name: 'Chores & Tasks', icon: '✅', desc: 'Family & kids task checklist' },
-          { type: 'list', name: 'Custom List', icon: '🛒', desc: 'Shopping or custom checklist' },
-          { type: 'notes', name: 'Recent Notes', icon: '📝', desc: 'Family message stream' },
-          { type: 'timer', name: 'Kitchen Timer', icon: '⏳', desc: 'Quick countdown presets' },
-          { type: 'photo', name: 'Photo Frame', icon: '🖼️', desc: 'Rotating photo slideshow widget' },
-          { type: 'calendar', name: 'Calendar', icon: '📅', desc: 'Mini month + upcoming events' }
+          { type: 'clock', name: 'Clock & Weather', icon: '🕒', desc: 'Fluid hero digital clock' },
+          { type: 'weather', name: 'Weather Forecast', icon: '☀️', desc: 'Temperature, wind & humidity' },
+          { type: 'tasks', name: 'Chores & Tasks', icon: '✅', desc: 'Filtered checklist & rewards' },
+          { type: 'list', name: 'Shopping / Custom', icon: '🛒', desc: 'Interactive shopping list' },
+          { type: 'notes', name: 'Family Notes', icon: '📝', desc: 'Stream of notes & reminders' },
+          { type: 'timer', name: 'Kitchen Timer', icon: '⏳', desc: 'Countdown with audio chime' },
+          { type: 'photo', name: 'Photo Frame', icon: '🖼️', desc: 'Rotating family photos' },
+          { type: 'calendar', name: 'Calendar Agenda', icon: '📅', desc: 'Mini month & Google Cal sync' },
+          { type: 'leaderboard', name: 'Chores Leaderboard', icon: '🏆', desc: 'Kids rewards & points ranks' },
+          { type: 'quick_actions', name: 'Quick Scenes', icon: '⚡', desc: '1-tap shortcuts & night mode' },
+          { type: 'memo', name: 'Family Memo', icon: '📌', desc: 'Sticky note announcement' }
         ];
 
         // Computed Time & Date
@@ -813,15 +1136,15 @@
           };
         });
 
-        const formatSleepCountdown = computed(() => {
-          const m = Math.floor(remainingSeconds.value / 60);
-          const s = remainingSeconds.value % 60;
-          return `${m}:${String(s).padStart(2, '0')}`;
-        });
-
         const formatTimerDisplay = computed(() => {
           const m = Math.floor(timerSeconds.value / 60);
           const s = timerSeconds.value % 60;
+          return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        });
+
+        const formatCustomTimerDisplay = computed(() => {
+          const m = Math.floor(customTimerSeconds.value / 60);
+          const s = customTimerSeconds.value % 60;
           return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
         });
 
@@ -829,15 +1152,16 @@
           return profiles.value.find(p => p.id === selectedProfileId.value) || null;
         });
 
-        // Compute total pages from layout
+        // Compute total pages from active layouts
         const totalPages = computed(() => {
-          if (layouts.value.length === 0) return 2;
+          if (!layouts.value || layouts.value.length === 0) return 2;
           const maxP = Math.max(...layouts.value.map(l => l.page || 0));
           return Math.max(maxP + 1, 1);
         });
 
         // Active page widgets
         const activePageWidgets = computed(() => {
+          if (!layouts.value) return [];
           return layouts.value.filter(w => (w.page || 0) === activePage.value);
         });
 
@@ -853,7 +1177,6 @@
           if (widget.config && widget.config.listId) {
             return lists.value.find(l => l.id === widget.config.listId) || lists.value[0];
           }
-          // Default to shopping or second list
           return lists.value.find(l => l.type === 'shopping') || lists.value[0];
         }
 
@@ -865,29 +1188,100 @@
           return 'col-span-12 md:col-span-4';
         }
 
+        function getHeightClass(h) {
+          const height = Number(h) || 2;
+          if (height === 1) return 'min-h-[130px]';
+          if (height === 3) return 'min-h-[380px]';
+          return 'min-h-[230px]';
+        }
+
+        // Haptic Feedback Helper
+        function triggerHaptic(type = 'tap') {
+          if (!navigator.vibrate) return;
+          try {
+            if (type === 'tap') navigator.vibrate(15);
+            else if (type === 'success') navigator.vibrate([15, 35, 15]);
+            else if (type === 'alarm') navigator.vibrate([100, 50, 100, 50, 100]);
+          } catch (e) {}
+        }
+
+        // Web Audio Synthesizer Alarm Chime
+        function playAlarmSound() {
+          try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContext) return;
+            const ctx = new AudioContext();
+            
+            const playNote = (freq, startTime, duration) => {
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(freq, startTime);
+              gain.gain.setValueAtTime(0.35, startTime);
+              gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+              osc.start(startTime);
+              osc.stop(startTime + duration);
+            };
+
+            const t = ctx.currentTime;
+            for (let i = 0; i < 4; i++) {
+              playNote(880, t + i * 0.45, 0.18);
+              playNote(1760, t + i * 0.45 + 0.18, 0.22);
+            }
+          } catch (e) {
+            console.warn('Audio chime synthesis error:', e);
+          }
+        }
+
+        function testTimerAlarm() {
+          triggerHaptic('alarm');
+          playAlarmSound();
+        }
+
         // Swipe Navigation
         function handleTouchStart(e) {
           touchStartX = e.touches[0].clientX;
           touchStartY = e.touches[0].clientY;
+          touchStartTime = Date.now();
           resetSleepTimer();
         }
 
-        function handleTouchMove(e) {
-          // Keep active
-        }
+        function handleTouchMove(e) {}
 
         function handleTouchEnd(e) {
-          if (isEditMode.value) return; // Do not swipe during edit mode
+          if (isEditMode.value) return; // Disable page swipe while editing layout
           const deltaX = e.changedTouches[0].clientX - touchStartX;
           const deltaY = e.changedTouches[0].clientY - touchStartY;
+          const deltaTime = Date.now() - touchStartTime;
 
-          // If horizontal swipe exceeds 45px and dominant over vertical
-          if (Math.abs(deltaX) > 45 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+          // Detect clear horizontal swipe
+          if (Math.abs(deltaX) > 40 && Math.abs(deltaX) > Math.abs(deltaY) * 1.4 && deltaTime < 800) {
+            triggerHaptic('tap');
             if (deltaX < 0) {
               nextPage();
             } else {
               prevPage();
             }
+          }
+        }
+
+        function handleMouseDown(e) {
+          touchStartX = e.clientX;
+          touchStartY = e.clientY;
+          touchStartTime = Date.now();
+          resetSleepTimer();
+        }
+
+        function handleMouseUp(e) {
+          if (isEditMode.value) return;
+          const deltaX = e.clientX - touchStartX;
+          const deltaY = e.clientY - touchStartY;
+          if (Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+            triggerHaptic('tap');
+            if (deltaX < 0) nextPage();
+            else prevPage();
           }
         }
 
@@ -905,15 +1299,27 @@
           }
         }
 
-        // Profiles
+        // Profiles & Dedicated Layouts
         function selectProfile(pId) {
+          triggerHaptic('tap');
           selectedProfileId.value = pId;
           if (pId) localStorage.setItem('kiosk_profile_id', pId);
           else localStorage.removeItem('kiosk_profile_id');
+
+          // Switch to dedicated profile layout if available
+          const pKey = pId !== null ? String(pId) : 'family';
+          if (profileLayouts.value && profileLayouts.value[pKey] && profileLayouts.value[pKey].length > 0) {
+            layouts.value = profileLayouts.value[pKey];
+          } else if (profileLayouts.value && profileLayouts.value['family']) {
+            layouts.value = profileLayouts.value['family'];
+          }
+          activePage.value = 0;
+          nextTick(reinitSortable);
         }
 
         // Interactive List Item Toggles
         function toggleListItem(item) {
+          triggerHaptic('success');
           const nextChecked = item.checked === 1 ? 0 : 1;
           item.checked = nextChecked;
           if (socket && socket.connected) {
@@ -926,12 +1332,14 @@
         }
 
         function openQuickAdd(list) {
+          triggerHaptic('tap');
           quickAddTargetList.value = list;
           showQuickAddModal.value = true;
         }
 
         function submitQuickAdd() {
           if (!quickAddContent.value.trim() || !quickAddTargetList.value) return;
+          triggerHaptic('success');
           if (socket && socket.connected) {
             socket.emit('list:item:add', {
               listId: quickAddTargetList.value.id,
@@ -944,12 +1352,39 @@
           showQuickAddModal.value = false;
         }
 
-        // Kitchen Timer
+        // Kitchen Timer Controls
         function setTimerPreset(mins) {
+          triggerHaptic('tap');
           timerSeconds.value = mins * 60;
         }
 
+        function adjustTimerSeconds(sec) {
+          triggerHaptic('tap');
+          timerSeconds.value = Math.max(0, timerSeconds.value + sec);
+        }
+
+        function quickStartTimer(mins) {
+          triggerHaptic('tap');
+          timerSeconds.value = mins * 60;
+          if (!timerRunning.value) toggleTimer();
+        }
+
+        function addCustomSeconds(sec) {
+          triggerHaptic('tap');
+          customTimerSeconds.value += sec;
+        }
+
+        function applyCustomTimer() {
+          triggerHaptic('tap');
+          if (customTimerSeconds.value > 0) {
+            timerSeconds.value = customTimerSeconds.value;
+            if (!timerRunning.value) toggleTimer();
+          }
+          showCustomTimerModal.value = false;
+        }
+
         function toggleTimer() {
+          triggerHaptic('tap');
           timerRunning.value = !timerRunning.value;
           if (timerRunning.value) {
             if (timerInterval) clearInterval(timerInterval);
@@ -959,6 +1394,8 @@
               } else {
                 timerRunning.value = false;
                 clearInterval(timerInterval);
+                triggerHaptic('alarm');
+                playAlarmSound();
               }
             }, 1000);
           } else {
@@ -967,35 +1404,72 @@
         }
 
         function resetTimer() {
+          triggerHaptic('tap');
           timerRunning.value = false;
           if (timerInterval) clearInterval(timerInterval);
           timerSeconds.value = 300;
         }
 
-        // Edit Mode & Layout Management
-        function toggleEditMode() {
-          isEditMode.value = !isEditMode.value;
+        // Edit Mode & Password Verification
+        function handleEditModeClick() {
+          triggerHaptic('tap');
           if (isEditMode.value) {
-            nextTick(reinitSortable);
-          } else {
+            // Finish editing
+            isEditMode.value = false;
+            isAdminUnlocked.value = false;
             if (sortableInstance) {
               sortableInstance.destroy();
               sortableInstance = null;
             }
             saveCurrentLayout();
+          } else {
+            // Require admin password
+            if (isAdminUnlocked.value) {
+              isEditMode.value = true;
+              nextTick(reinitSortable);
+            } else {
+              passwordError.value = '';
+              adminPasswordInput.value = '';
+              showPasswordModal.value = true;
+            }
+          }
+        }
+
+        async function verifyAdminPassword() {
+          try {
+            const res = await fetch('/api/verify-pass', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ password: adminPasswordInput.value })
+            });
+            if (res.ok) {
+              isAdminUnlocked.value = true;
+              isEditMode.value = true;
+              showPasswordModal.value = false;
+              adminPasswordInput.value = '';
+              triggerHaptic('success');
+              nextTick(reinitSortable);
+            } else {
+              passwordError.value = 'Incorrect password. Access denied.';
+              triggerHaptic('tap');
+            }
+          } catch (e) {
+            passwordError.value = 'Error verifying password';
           }
         }
 
         function reinitSortable() {
-          if (!isEditMode.value || !widgetGridRef.value) return;
+          if (!isEditMode.value || !isAdminUnlocked.value || !widgetGridRef.value) return;
           if (sortableInstance) sortableInstance.destroy();
 
           sortableInstance = new Sortable(widgetGridRef.value, {
-            animation: 180,
+            animation: 200,
             ghostClass: 'sortable-ghost',
-            handle: '.cursor-move',
+            handle: '.widget-touch-handle',
+            delay: 100,
+            delayOnTouchOnly: true,
+            touchStartThreshold: 5,
             onEnd: () => {
-              // Read DOM order and reassign positions
               const domIds = Array.from(widgetGridRef.value.children).map(c => c.getAttribute('data-id'));
               const pageWidgets = layouts.value.filter(w => (w.page || 0) === activePage.value);
               pageWidgets.sort((a, b) => domIds.indexOf(String(a.id)) - domIds.indexOf(String(b.id)));
@@ -1006,13 +1480,26 @@
         }
 
         function cycleWidgetWidth(w) {
-          if (w.w === 12) w.w = 4;
-          else if (w.w === 4) w.w = 6;
+          triggerHaptic('tap');
+          const cur = Number(w.w) || 6;
+          if (cur === 12) w.w = 4;
+          else if (cur === 4) w.w = 6;
+          else if (cur === 6) w.w = 8;
           else w.w = 12;
           saveCurrentLayout();
         }
 
+        function cycleWidgetHeight(w) {
+          triggerHaptic('tap');
+          const cur = Number(w.h) || 2;
+          if (cur === 3) w.h = 1;
+          else if (cur === 1) w.h = 2;
+          else w.h = 3;
+          saveCurrentLayout();
+        }
+
         function removeWidget(w) {
+          triggerHaptic('tap');
           const idx = layouts.value.indexOf(w);
           if (idx !== -1) {
             layouts.value.splice(idx, 1);
@@ -1021,6 +1508,7 @@
         }
 
         function addWidget(type) {
+          triggerHaptic('tap');
           const newW = {
             id: Date.now(),
             page: activePage.value,
@@ -1030,7 +1518,8 @@
             w: type === 'clock' || type === 'notes' ? 12 : 6,
             h: 2,
             config: {},
-            position: activePageWidgets.value.length
+            position: activePageWidgets.value.length,
+            profile_id: selectedProfileId.value
           };
           layouts.value.push(newW);
           showAddWidgetDrawer.value = false;
@@ -1039,15 +1528,14 @@
         }
 
         function addNewPage() {
+          triggerHaptic('tap');
           activePage.value = totalPages.value;
-          // Add default widget to new page
           addWidget('tasks');
         }
 
         function deleteCurrentPage() {
           if (!confirm(`Delete Page ${activePage.value + 1}? All widgets on this page will be removed.`)) return;
           layouts.value = layouts.value.filter(w => (w.page || 0) !== activePage.value);
-          // Re-index remaining pages
           layouts.value.forEach(w => {
             if ((w.page || 0) > activePage.value) w.page--;
           });
@@ -1057,26 +1545,130 @@
 
         function saveCurrentLayout() {
           if (socket && socket.connected) {
-            socket.emit('layout:save', layouts.value);
+            socket.emit('layout:save', {
+              layouts: layouts.value,
+              profileId: selectedProfileId.value
+            });
           }
         }
 
-        // Sleep Management
+        // Sleep Management & Reliable Touch Wake
         function resetSleepTimer() {
-          if (isSleeping.value) {
-            wakeUp();
+          const timeoutSec = settings.value.sleep_timeout !== undefined ? Number(settings.value.sleep_timeout) : 300;
+          if (timeoutSec <= 0) {
+            // Never sleep
+            if (sleepTimer) clearTimeout(sleepTimer);
             return;
           }
-          remainingSeconds.value = Math.floor(SLEEP_TIMEOUT_MS / 1000);
+          remainingSeconds.value = timeoutSec;
           if (sleepTimer) clearTimeout(sleepTimer);
           sleepTimer = setTimeout(() => {
             isSleeping.value = true;
-          }, SLEEP_TIMEOUT_MS);
+          }, timeoutSec * 1000);
         }
 
         function wakeUp() {
           isSleeping.value = false;
+          triggerHaptic('tap');
           resetSleepTimer();
+        }
+
+        function triggerManualSleep() {
+          triggerHaptic('tap');
+          isSleeping.value = true;
+        }
+
+        function toggleNightModeManual() {
+          triggerHaptic('tap');
+          manualNightMode.value = !manualNightMode.value;
+        }
+
+        // Voice Dictation via Web Speech API
+        function startVoiceDictation() {
+          triggerHaptic('tap');
+          const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+          if (!SpeechRec) {
+            alert('Voice dictation is supported in Chrome, Edge, and Android Chromium browsers.');
+            return;
+          }
+
+          try {
+            if (recognition) recognition.stop();
+            recognition = new SpeechRec();
+            recognition.continuous = false;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+
+            liveTranscript.value = '';
+            isListening.value = true;
+            showDictationModal.value = true;
+
+            recognition.onresult = (event) => {
+              let interim = '';
+              for (let i = event.resultIndex; i < event.results.length; ++i) {
+                if (event.results[i].isFinal) {
+                  liveTranscript.value = event.results[i][0].transcript;
+                } else {
+                  interim += event.results[i][0].transcript;
+                }
+              }
+              if (!liveTranscript.value && interim) {
+                liveTranscript.value = interim;
+              }
+            };
+
+            recognition.onerror = (e) => {
+              console.warn('Speech recognition error:', e.error);
+              isListening.value = false;
+            };
+
+            recognition.onend = () => {
+              isListening.value = false;
+              if (liveTranscript.value.trim()) {
+                submitDictatedMessage(liveTranscript.value.trim());
+              } else {
+                showDictationModal.value = false;
+              }
+            };
+
+            recognition.start();
+          } catch (e) {
+            console.warn('Voice dictation launch error:', e);
+            isListening.value = false;
+          }
+        }
+
+        function stopVoiceDictation() {
+          if (recognition) {
+            recognition.stop();
+          }
+        }
+
+        function cancelVoiceDictation() {
+          if (recognition) {
+            recognition.stop();
+          }
+          isListening.value = false;
+          showDictationModal.value = false;
+          liveTranscript.value = '';
+        }
+
+        async function submitDictatedMessage(text) {
+          showDictationModal.value = false;
+          triggerHaptic('success');
+          try {
+            const token = localStorage.getItem('dashboard_token') || 'your_secret_token';
+            await fetch('/api/message', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                text,
+                token
+              })
+            });
+          } catch (e) {
+            console.warn('Failed to send dictated message:', e);
+          }
         }
 
         // Weather Fetch
@@ -1110,14 +1702,32 @@
           socket.on('connect', () => isConnected.value = true);
           socket.on('disconnect', () => isConnected.value = false);
 
+          socket.on('timer:set', (data) => {
+            if (data && data.minutes) {
+              timerSeconds.value = Number(data.minutes) * 60;
+              if (data.action === 'start') {
+                if (!timerRunning.value) toggleTimer();
+              }
+            }
+          });
+
           socket.on('dashboard_update', (data) => {
             if (data.notes) notes.value = data.notes;
             if (data.tasks) tasks.value = data.tasks;
             if (data.profiles) profiles.value = data.profiles;
             if (data.lists) lists.value = data.lists;
-            if (data.layouts) layouts.value = data.layouts;
+            if (data.profile_layouts) profileLayouts.value = data.profile_layouts;
             if (data.photos && Array.isArray(data.photos)) photos.value = data.photos;
             if (data.events && Array.isArray(data.events)) events.value = data.events;
+            if (data.settings) settings.value = { ...settings.value, ...data.settings };
+
+            // Apply profile layout if matching
+            const pKey = selectedProfileId.value !== null ? String(selectedProfileId.value) : 'family';
+            if (profileLayouts.value && profileLayouts.value[pKey] && profileLayouts.value[pKey].length > 0) {
+              layouts.value = profileLayouts.value[pKey];
+            } else if (data.layouts) {
+              layouts.value = data.layouts;
+            }
           });
         }
 
@@ -1134,17 +1744,40 @@
             if (!isSleeping.value && remainingSeconds.value > 0) remainingSeconds.value--;
           }, 1000);
 
-          // Screensaver slideshow rotation timer (every 8 seconds)
+          // Screensaver slideshow rotation timer
           photoInterval = setInterval(() => {
             if (screensaverPhotos.value.length > 1) {
               currentPhotoIndex.value++;
             }
-          }, 8000);
+          }, (settings.value.photo_interval || 8) * 1000);
+
+          // GLOBAL CAPTURING LISTENER: Guarantee that ANY touch, tap, click wakes up the dashboard immediately!
+          ['pointerdown', 'touchstart', 'mousedown'].forEach(evt => {
+            window.addEventListener(evt, () => {
+              if (isSleeping.value) {
+                wakeUp();
+              } else {
+                resetSleepTimer();
+              }
+            }, { capture: true, passive: true });
+          });
 
           resetSleepTimer();
           initSocket();
           fetchWeather();
           setInterval(fetchWeather, 15 * 60 * 1000);
+        });
+
+
+        // Restart photo interval when photo_interval setting changes (e.g. after server settings load)
+        watch(() => settings.value.photo_interval, (newVal) => {
+          if (photoInterval) clearInterval(photoInterval);
+          const ms = (newVal || 8) * 1000;
+          photoInterval = setInterval(() => {
+            if (screensaverPhotos.value.length > 1) {
+              currentPhotoIndex.value++;
+            }
+          }, ms);
         });
 
         onUnmounted(() => {
@@ -1163,7 +1796,6 @@
           currentTime,
           currentDate,
           remainingSeconds,
-          formatSleepCountdown,
           notes,
           tasks,
           profiles,
@@ -1178,6 +1810,10 @@
           calendarMonthDays,
           formatEventTimeDisplay,
           weather,
+          settings,
+          isNightModeActive,
+          shouldShowScreensaverPhotos,
+          leaderboardProfiles,
           selectedProfileId,
           selectedProfile,
           activePage,
@@ -1186,6 +1822,10 @@
           displayedTasks,
           targetList,
           isEditMode,
+          isAdminUnlocked,
+          showPasswordModal,
+          adminPasswordInput,
+          passwordError,
           showAddWidgetDrawer,
           availableWidgetTypes,
           showQuickAddModal,
@@ -1194,11 +1834,20 @@
           timerSeconds,
           timerRunning,
           formatTimerDisplay,
+          showCustomTimerModal,
+          customTimerSeconds,
+          formatCustomTimerDisplay,
           formatTime,
+          isListening,
+          showDictationModal,
+          liveTranscript,
           getColSpanClass,
+          getHeightClass,
           handleTouchStart,
           handleTouchMove,
           handleTouchEnd,
+          handleMouseDown,
+          handleMouseUp,
           nextPage,
           prevPage,
           selectProfile,
@@ -1207,14 +1856,27 @@
           openQuickAdd,
           submitQuickAdd,
           setTimerPreset,
+          adjustTimerSeconds,
+          quickStartTimer,
+          addCustomSeconds,
+          applyCustomTimer,
           toggleTimer,
           resetTimer,
-          toggleEditMode,
+          testTimerAlarm,
+          handleEditModeClick,
+          verifyAdminPassword,
           cycleWidgetWidth,
+          cycleWidgetHeight,
           removeWidget,
           addWidget,
           addNewPage,
-          deleteCurrentPage
+          deleteCurrentPage,
+          triggerManualSleep,
+          toggleNightModeManual,
+          startVoiceDictation,
+          stopVoiceDictation,
+          cancelVoiceDictation,
+          wakeUp
         };
       }
     }).mount('#app');

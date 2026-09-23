@@ -2,7 +2,7 @@ const { Telegraf } = require('telegraf');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
-const { parseTextWithGemini } = require('./services/gemini');
+const { parseTextWithGemini, parseAudioWithGemini } = require('./services/gemini');
 const {
   insertNote,
   insertTask,
@@ -13,7 +13,10 @@ const {
   insertPhoto,
   getPhotos,
   getCalendarEvents,
-  insertCalendarEvent
+  insertCalendarEvent,
+  getProfileByTelegramId,
+  getLists,
+  insertListItem
 } = require('./db');
 
 // Save a Telegram photo to disk and DB
@@ -258,40 +261,167 @@ function initBot(io) {
     }
   });
 
+  // Helper: execute all actions returned by Gemini
+  async function applyParsedGeminiActions(parsedData, senderProfile) {
+    const { notes, tasks, shopping_items, calendar_events, timer } = parsedData;
+    const senderName = senderProfile ? senderProfile.name : null;
+    const senderId = senderProfile ? senderProfile.id : null;
+
+    if (Array.isArray(notes)) {
+      for (const note of notes) {
+        const content = senderName ? `[${senderName}]: ${note}` : note;
+        insertNote(content);
+      }
+    }
+
+    if (Array.isArray(tasks)) {
+      for (const task of tasks) {
+        insertTask({
+          title: task.title,
+          assignee: task.assignee || senderName,
+          reward: Number(task.reward) || 0
+        });
+      }
+    }
+
+    if (Array.isArray(shopping_items) && shopping_items.length > 0) {
+      const allLists = getLists();
+      const shopList = allLists.find(l => l.type === 'shopping') || allLists[0];
+      if (shopList) {
+        for (const item of shopping_items) {
+          insertListItem({
+            list_id: shopList.id,
+            content: item.content,
+            assignee_profile_id: senderId,
+            reward: 0
+          });
+        }
+      }
+    }
+
+    if (Array.isArray(calendar_events) && calendar_events.length > 0) {
+      for (const ev of calendar_events) {
+        const startIso = ev.time ? `${ev.date}T${ev.time}:00` : `${ev.date}T09:00:00`;
+        insertCalendarEvent({
+          title: ev.title,
+          start_datetime: startIso,
+          all_day: ev.all_day ? 1 : 0,
+          profile_id: senderId,
+          source: 'telegram'
+        });
+      }
+    }
+
+    if (timer && timer.minutes) {
+      io.emit('timer:set', { minutes: Number(timer.minutes), action: timer.action || 'start' });
+    }
+
+    const updatedData = getDashboardData();
+    io.emit('dashboard_update', updatedData);
+    return updatedData;
+  }
+
+  function buildConfirmationMessage(parsedData, senderProfile) {
+    const { notes, tasks, shopping_items, calendar_events, timer, response_message } = parsedData;
+    const greeting = senderProfile ? `👋 *Hi ${senderProfile.name}!*` : `✅ *Smart Home Dashboard Updated!*`;
+    let msg = `${greeting}\n`;
+
+    if (response_message) {
+      msg += `_${response_message}_\n\n`;
+    }
+
+    if (tasks && tasks.length > 0) {
+      msg += `📋 *Tasks created:*\n` + tasks.map(t => {
+        const who = t.assignee ? `(@${t.assignee}) ` : '';
+        const rew = t.reward ? ` [+${t.reward}]` : '';
+        return `• ${t.title} ${who}${rew}`;
+      }).join('\n') + '\n';
+    }
+
+    if (shopping_items && shopping_items.length > 0) {
+      msg += `🛒 *Shopping list updated:*\n` + shopping_items.map(s => `• ${s.content}`).join('\n') + '\n';
+    }
+
+    if (calendar_events && calendar_events.length > 0) {
+      msg += `📅 *Calendar events scheduled:*\n` + calendar_events.map(e => `• ${e.title} (${e.date} ${e.time || ''})`).join('\n') + '\n';
+    }
+
+    if (notes && notes.length > 0) {
+      msg += `📝 *Notes saved:*\n` + notes.map(n => `• ${n}`).join('\n') + '\n';
+    }
+
+    if (timer && timer.minutes) {
+      msg += `⏳ *Kitchen Timer:* Set for ${timer.minutes} minutes!\n`;
+    }
+
+    if (!tasks?.length && !shopping_items?.length && !calendar_events?.length && !notes?.length && !timer) {
+      msg += `_(No specific actions detected)_`;
+    }
+
+    return msg.trim();
+  }
+
+  // Handle incoming voice audio messages (Speech-to-Action via Gemini)
+  bot.on('voice', async (ctx) => {
+    const senderId = String(ctx.from.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from.first_name || 'User');
+    console.log(`[Telegram] Voice message received from ${senderName} (${senderId})`);
+
+    try {
+      await ctx.reply('🎙️ Processing voice note with Gemini AI...');
+
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      const fileRef = ctx.message.voice;
+      const fileInfoUrl = `https://api.telegram.org/bot${botToken}/getFile?file_id=${fileRef.file_id}`;
+
+      const fileInfo = await new Promise((resolve, reject) => {
+        https.get(fileInfoUrl, (res) => {
+          let data = '';
+          res.on('data', (c) => (data += c));
+          res.on('end', () => resolve(JSON.parse(data)));
+          res.on('error', reject);
+        });
+      });
+
+      const downloadUrl = `https://api.telegram.org/file/bot${botToken}/${fileInfo.result.file_path}`;
+
+      const audioBuffer = await new Promise((resolve, reject) => {
+        https.get(downloadUrl, (res) => {
+          const chunks = [];
+          res.on('data', (chunk) => chunks.push(chunk));
+          res.on('end', () => resolve(Buffer.concat(chunks)));
+          res.on('error', reject);
+        });
+      });
+
+      const parsedData = await parseAudioWithGemini(audioBuffer, 'audio/ogg', senderName);
+      await applyParsedGeminiActions(parsedData, senderProfile);
+
+      const replyMsg = buildConfirmationMessage(parsedData, senderProfile);
+      await ctx.replyWithMarkdown(replyMsg);
+    } catch (err) {
+      console.error('[Telegram] Failed to process voice message:', err);
+      await ctx.reply(`❌ Failed to process voice: ${err.message}`);
+    }
+  });
+
   // Handle incoming text messages (natural language → Gemini)
   bot.on('text', async (ctx) => {
     const userText = ctx.message.text;
     if (userText.startsWith('/')) return; // Ignore unhandled commands
 
     const senderId = String(ctx.from.id);
-    console.log(`[Telegram] Message from authorized user ${senderId}: "${userText}"`);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from.first_name || 'User');
+    console.log(`[Telegram] Message from ${senderName} (${senderId}): "${userText}"`);
 
     try {
-      const parsedData = await parseTextWithGemini(userText);
-      const { notes, tasks } = parsedData;
+      const parsedData = await parseTextWithGemini(userText, senderName);
+      await applyParsedGeminiActions(parsedData, senderProfile);
 
-      for (const note of notes) insertNote(note);
-      for (const task of tasks) insertTask(task);
-
-      const updatedData = getDashboardData();
-      io.emit('dashboard_update', updatedData);
-
-      let summary = '✅ *Smart Home Dashboard Updated!*\n';
-      if (notes.length > 0) {
-        summary += '\n📝 *Notes added:*\n' + notes.map((n) => `• ${n}`).join('\n');
-      }
-      if (tasks.length > 0) {
-        summary += '\n📋 *Tasks created:*\n' + tasks.map((t) => {
-          const who = t.assignee ? `(@${t.assignee}) ` : '';
-          const rew = t.reward ? ` [+${t.reward}]` : '';
-          return `• ${t.title} ${who}${rew}`;
-        }).join('\n');
-      }
-      if (notes.length === 0 && tasks.length === 0) {
-        summary += '\n_(No specific notes or tasks detected)_';
-      }
-
-      await ctx.replyWithMarkdown(summary);
+      const replyMsg = buildConfirmationMessage(parsedData, senderProfile);
+      await ctx.replyWithMarkdown(replyMsg);
     } catch (err) {
       console.error('[Telegram] Error processing message:', err);
       await ctx.reply(`❌ Failed to parse/save message: ${err.message}`);

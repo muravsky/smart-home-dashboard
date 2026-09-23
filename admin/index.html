@@ -82,6 +82,13 @@
       >
         📅 Calendar & Feeds
       </button>
+      <button 
+        @click="activeTab = 'settings'" 
+        :class="activeTab === 'settings' ? 'border-sky-500 text-sky-400 bg-sky-500/10' : 'border-transparent text-neutral-400 hover:text-white'"
+        class="px-4 py-2 border-b-2 font-mono text-xs font-semibold uppercase tracking-wider transition rounded-t"
+      >
+        ⚙️ Screensaver & Night Mode
+      </button>
     </nav>
 
     <!-- =========================================================================
@@ -176,6 +183,17 @@
             </div>
           </div>
 
+          <div>
+            <label class="block text-neutral-400 text-[11px] font-mono mb-1">TELEGRAM USER ID (OPTIONAL)</label>
+            <input 
+              v-model="newProfile.telegram_id" 
+              type="text" 
+              placeholder="e.g. 123456789" 
+              class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-lg p-2.5 text-xs text-neutral-100 outline-none"
+            />
+            <span class="text-[10px] text-neutral-500 font-mono mt-1 block">Allows Telegram Bot & Gemini to identify this user</span>
+          </div>
+
           <button 
             type="submit" 
             class="w-full font-mono text-xs bg-sky-600 hover:bg-sky-500 text-white py-2 rounded-lg font-medium transition"
@@ -224,6 +242,9 @@
                       :style="{ backgroundColor: prof.color }"
                     ></span>
                     <span class="text-[11px] font-mono text-neutral-400">{{ prof.color }}</span>
+                    <span v-if="prof.telegram_id" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-950 border border-sky-800 text-sky-400">
+                      TG: {{ prof.telegram_id }}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -567,6 +588,7 @@
           </div>
         </div>
       </div>
+    </div>
 
     <!-- =========================================================================
          TAB 4: PHOTO GALLERY & SCREENSAVER
@@ -701,6 +723,7 @@
           </div>
         </div>
       </div>
+    </div>
 
     <!-- =========================================================================
          TAB 5: CALENDAR & FEEDS
@@ -931,6 +954,111 @@
 
     </div>
 
+    <!-- =========================================================================
+         TAB 6: SCREENSAVER & NIGHT MODE SETTINGS
+         ========================================================================= -->
+    <div v-if="activeTab === 'settings'" class="max-w-3xl bg-neutral-900/80 border border-neutral-800 rounded-xl p-6 shadow-lg space-y-6">
+      <div class="border-b border-neutral-800 pb-3">
+        <h2 class="font-mono text-sm font-bold uppercase tracking-wider text-sky-400">
+          ⚙️ SCREENSAVER & NIGHT MODE CONTROLS
+        </h2>
+        <p class="text-xs text-neutral-400 mt-1">
+          Configure kiosk inactivity sleep delays, screensaver modes, photo intervals, and night mode schedule.
+        </p>
+      </div>
+
+      <form @submit.prevent="saveSettings" class="space-y-5">
+        <!-- Sleep Timeout -->
+        <div>
+          <label class="block text-neutral-300 text-xs font-mono mb-1 font-semibold">INACTIVITY SLEEP DELAY</label>
+          <p class="text-[11px] text-neutral-500 mb-2">How long without touch before the dashboard enters screensaver / sleep mode.</p>
+          <select 
+            v-model.number="settings.sleep_timeout" 
+            class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2.5 text-xs text-neutral-200 outline-none"
+          >
+            <option :value="60">1 Minute</option>
+            <option :value="120">2 Minutes</option>
+            <option :value="300">5 Minutes (Recommended)</option>
+            <option :value="600">10 Minutes</option>
+            <option :value="900">15 Minutes</option>
+            <option :value="1800">30 Minutes</option>
+            <option :value="0">Never Sleep (Always On)</option>
+          </select>
+        </div>
+
+        <!-- Screensaver Mode -->
+        <div>
+          <label class="block text-neutral-300 text-xs font-mono mb-1 font-semibold">SCREENSAVER DISPLAY MODE</label>
+          <select 
+            v-model="settings.screensaver_mode" 
+            class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2.5 text-xs text-neutral-200 outline-none"
+          >
+            <option value="photos">Photo Slideshow with Ambient Clock</option>
+            <option value="clock">Minimalist OLED Digital Clock</option>
+            <option value="black">Pure Black (Lowest power / burn-in protection)</option>
+          </select>
+        </div>
+
+        <!-- Photo Slideshow Interval -->
+        <div v-if="settings.screensaver_mode === 'photos'">
+          <label class="block text-neutral-300 text-xs font-mono mb-1 font-semibold">PHOTO SLIDESHOW ROTATION INTERVAL</label>
+          <select 
+            v-model.number="settings.photo_interval" 
+            class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2.5 text-xs text-neutral-200 outline-none"
+          >
+            <option :value="5">5 Seconds</option>
+            <option :value="8">8 Seconds (Default)</option>
+            <option :value="15">15 Seconds</option>
+            <option :value="30">30 Seconds</option>
+            <option :value="60">1 Minute</option>
+          </select>
+        </div>
+
+        <!-- Night Mode Section -->
+        <div class="pt-4 border-t border-neutral-800 space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-xs font-mono font-bold text-amber-400 uppercase">🌙 NIGHT MODE</h3>
+              <p class="text-[11px] text-neutral-500">Dims screen to ultra-low amber/red glow and disables photo slideshow during sleeping hours.</p>
+            </div>
+            <input 
+              type="checkbox" 
+              v-model="settings.night_mode_enabled" 
+              :true-value="1" 
+              :false-value="0"
+              class="w-5 h-5 rounded bg-neutral-950 border-neutral-800 text-amber-500 focus:ring-0 cursor-pointer"
+            />
+          </div>
+
+          <div v-if="settings.night_mode_enabled" class="grid grid-cols-2 gap-4 bg-neutral-950 p-3.5 rounded-lg border border-neutral-800">
+            <div>
+              <label class="block text-neutral-400 text-[11px] font-mono mb-1">NIGHT MODE START</label>
+              <input 
+                v-model="settings.night_mode_start" 
+                type="time" 
+                class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 outline-none"
+              />
+            </div>
+            <div>
+              <label class="block text-neutral-400 text-[11px] font-mono mb-1">NIGHT MODE END</label>
+              <input 
+                v-model="settings.night_mode_end" 
+                type="time" 
+                class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 outline-none"
+              />
+            </div>
+          </div>
+        </div>
+
+        <button 
+          type="submit" 
+          class="w-full font-mono text-xs bg-sky-600 hover:bg-sky-500 text-white py-2.5 rounded-lg font-semibold transition"
+        >
+          ✓ Save Settings & Apply to Kiosk
+        </button>
+      </form>
+    </div>
+
   </div>
 
   <script>
@@ -988,11 +1116,22 @@
           name: '',
           color: '#38bdf8',
           avatar_type: 'builtin',
-          avatar_value: '🦁'
+          avatar_value: '🦁',
+          telegram_id: ''
         });
         const avatarFileInput = ref(null);
         const avatarUploadFile = ref(null);
         const avatarUploadPreview = ref(null);
+
+        // Settings State
+        const settings = ref({
+          sleep_timeout: 300,
+          screensaver_mode: 'photos',
+          photo_interval: 8,
+          night_mode_enabled: 0,
+          night_mode_start: '22:00',
+          night_mode_end: '07:00'
+        });
 
         // List Form
         const newList = ref({
@@ -1036,6 +1175,9 @@
             notes.value = data.notes || [];
             events.value = data.events || [];
             feeds.value = data.feeds || [];
+            if (data.settings) {
+              settings.value = { ...settings.value, ...data.settings };
+            }
 
             if (lists.value.length > 0 && (!selectedListId.value || !lists.value.some(l => l.id === selectedListId.value))) {
               selectedListId.value = lists.value[0].id;
@@ -1149,12 +1291,14 @@
                 name: newProfile.value.name,
                 color: newProfile.value.color,
                 avatar_type: newProfile.value.avatar_type,
-                avatar_value: avatarVal
+                avatar_value: avatarVal,
+                telegram_id: newProfile.value.telegram_id || null
               })
             });
             if (!res.ok) throw new Error('HTTP ' + res.status);
             showAlert('Profile created successfully!');
             newProfile.value.name = '';
+            newProfile.value.telegram_id = '';
             avatarUploadFile.value = null;
             avatarUploadPreview.value = null;
             loadData();
@@ -1389,6 +1533,22 @@
           }
         }
 
+        async function saveSettings() {
+          try {
+            const res = await fetch('/api/admin/settings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(settings.value)
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            if (data.settings) settings.value = data.settings;
+            showAlert('Settings saved and synchronized with kiosk!');
+          } catch (err) {
+            showAlert('Failed to save settings: ' + err.message, false);
+          }
+        }
+
         onMounted(() => {
           loadData();
         });
@@ -1397,6 +1557,8 @@
           activeTab,
           alertMessage,
           alertSuccess,
+          settings,
+          saveSettings,
           profiles,
           lists,
           notes,

@@ -29,7 +29,10 @@ const {
   updateListItem,
   deleteListItem,
   getWidgetLayouts,
+  getAllProfileLayouts,
   saveWidgetLayouts,
+  getSettings,
+  updateSettings,
   getPhotos,
   insertPhoto,
   updatePhoto,
@@ -107,9 +110,13 @@ io.on('connection', (socket) => {
     io.emit('dashboard_update', getDashboardData());
   });
 
-  // Save widget layouts from kiosk
-  socket.on('layout:save', (layouts) => {
-    saveWidgetLayouts(layouts);
+  // Save widget layouts from kiosk (with optional profileId)
+  socket.on('layout:save', (data) => {
+    if (Array.isArray(data)) {
+      saveWidgetLayouts(data, null);
+    } else if (data && Array.isArray(data.layouts)) {
+      saveWidgetLayouts(data.layouts, data.profileId || null);
+    }
     io.emit('dashboard_update', getDashboardData());
   });
 
@@ -121,6 +128,21 @@ io.on('connection', (socket) => {
 // Body parsers
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Password verification endpoint for Kiosk Edit Mode
+app.post('/api/verify-pass', (req, res) => {
+  const { password } = req.body;
+  const expectedPass = process.env.ADMIN_PASS || 'your_admin_pass';
+  if (password && basicAuth.safeCompare(String(password), expectedPass)) {
+    return res.json({ ok: true, token: process.env.DASHBOARD_TOKEN || 'your_secret_token' });
+  }
+  return res.status(401).json({ ok: false, error: 'Incorrect admin password' });
+});
+
+// Public Settings endpoint
+app.get('/api/settings', (req, res) => {
+  res.json(getSettings());
+});
 
 // Express Basic Auth for Admin routes (/admin and /api/admin/*)
 const adminAuth = basicAuth({
@@ -195,9 +217,9 @@ app.get('/api/admin/profiles', (req, res) => {
 });
 
 app.post('/api/admin/profiles', (req, res) => {
-  const { name, color, avatar_type, avatar_value } = req.body;
+  const { name, color, avatar_type, avatar_value, telegram_id } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
-  const profile = insertProfile({ name, color, avatar_type, avatar_value });
+  const profile = insertProfile({ name, color, avatar_type, avatar_value, telegram_id });
   io.emit('dashboard_update', getDashboardData());
   res.json({ ok: true, profile });
 });
@@ -283,15 +305,23 @@ app.delete('/api/admin/lists/:listId/items/:itemId', (req, res) => {
 
 // Layouts API
 app.get('/api/layouts', (req, res) => {
-  res.json(getWidgetLayouts());
+  const profileId = req.query.profileId ? Number(req.query.profileId) : null;
+  res.json(getWidgetLayouts(profileId));
 });
 
 app.post('/api/admin/layouts', (req, res) => {
-  const { layouts } = req.body;
+  const { layouts, profileId } = req.body;
   if (!Array.isArray(layouts)) return res.status(400).json({ error: 'layouts must be an array' });
-  const saved = saveWidgetLayouts(layouts);
+  const saved = saveWidgetLayouts(layouts, profileId || null);
   io.emit('dashboard_update', getDashboardData());
   res.json({ ok: true, layouts: saved });
+});
+
+// Settings API (admin)
+app.post('/api/admin/settings', (req, res) => {
+  const updated = updateSettings(req.body);
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, settings: updated });
 });
 
 // Photos API (admin)
@@ -411,8 +441,26 @@ app.post('/api/admin/simulate-message', async (req, res) => {
   if (!text) return res.status(400).json({ error: 'text is required' });
   try {
     const parsed = await parseTextWithGemini(text);
-    for (const note of parsed.notes) insertNote(note);
-    for (const task of parsed.tasks) insertTask(task);
+    if (parsed.notes) for (const note of parsed.notes) insertNote(note);
+    if (parsed.tasks) for (const task of parsed.tasks) insertTask(task);
+    if (parsed.shopping_items && parsed.shopping_items.length > 0) {
+      const allLists = getLists();
+      const shopList = allLists.find(l => l.type === 'shopping') || allLists[0];
+      if (shopList) {
+        for (const item of parsed.shopping_items) {
+          insertListItem({ list_id: shopList.id, content: item.content, reward: 0 });
+        }
+      }
+    }
+    if (parsed.calendar_events && parsed.calendar_events.length > 0) {
+      for (const ev of parsed.calendar_events) {
+        const startIso = ev.time ? `${ev.date}T${ev.time}:00` : `${ev.date}T09:00:00`;
+        insertCalendarEvent({ title: ev.title, start_datetime: startIso, all_day: ev.all_day ? 1 : 0, source: 'gemini' });
+      }
+    }
+    if (parsed.timer && parsed.timer.minutes) {
+      io.emit('timer:set', { minutes: Number(parsed.timer.minutes), action: parsed.timer.action || 'start' });
+    }
     const updated = getDashboardData();
     io.emit('dashboard_update', updated);
     res.json({ ok: true, parsed, data: updated });
@@ -475,13 +523,26 @@ app.post('/api/message', async (req, res) => {
   }
 
   try {
-    const { notes, tasks } = await parseTextWithGemini(text);
-
-    for (const note of notes) {
-      insertNote(note);
+    const parsed = await parseTextWithGemini(text);
+    if (parsed.notes) for (const note of parsed.notes) insertNote(note);
+    if (parsed.tasks) for (const task of parsed.tasks) insertTask(task);
+    if (parsed.shopping_items && parsed.shopping_items.length > 0) {
+      const allLists = getLists();
+      const shopList = allLists.find(l => l.type === 'shopping') || allLists[0];
+      if (shopList) {
+        for (const item of parsed.shopping_items) {
+          insertListItem({ list_id: shopList.id, content: item.content, reward: 0 });
+        }
+      }
     }
-    for (const task of tasks) {
-      insertTask(task);
+    if (parsed.calendar_events && parsed.calendar_events.length > 0) {
+      for (const ev of parsed.calendar_events) {
+        const startIso = ev.time ? `${ev.date}T${ev.time}:00` : `${ev.date}T09:00:00`;
+        insertCalendarEvent({ title: ev.title, start_datetime: startIso, all_day: ev.all_day ? 1 : 0, source: 'gemini' });
+      }
+    }
+    if (parsed.timer && parsed.timer.minutes) {
+      io.emit('timer:set', { minutes: Number(parsed.timer.minutes), action: parsed.timer.action || 'start' });
     }
 
     const updatedData = getDashboardData();
@@ -489,7 +550,7 @@ app.post('/api/message', async (req, res) => {
 
     res.json({
       success: true,
-      parsed: { notes, tasks },
+      parsed,
       dashboardData: updatedData
     });
   } catch (err) {
