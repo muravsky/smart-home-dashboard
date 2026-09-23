@@ -583,38 +583,104 @@
           </div>
 
           <!-- ADD ITEM INPUT -->
-          <form @submit.prevent="addListItem" class="mb-5 p-3 bg-neutral-950 border border-neutral-800 rounded-lg flex flex-wrap items-center gap-2">
-            <input 
-              v-model="newListItem.content" 
-              type="text" 
-              placeholder="Add item or task..." 
-              class="flex-1 bg-transparent border-0 text-xs text-white outline-none min-w-[160px]"
-              required
-            />
+          <form @submit.prevent="addListItem" class="mb-5 p-3 bg-neutral-950 border border-neutral-800 rounded-lg space-y-2.5">
+            <div class="flex flex-wrap items-center gap-2">
+              <input 
+                v-model="newListItem.content" 
+                type="text" 
+                placeholder="Add item or task..." 
+                class="flex-1 bg-neutral-900 border border-neutral-800 rounded px-2.5 py-1.5 text-xs text-white outline-none min-w-[180px] focus:border-emerald-500"
+                required
+              />
 
-            <!-- Optional Assignee profile -->
-            <select 
-              v-model="newListItem.assignee_profile_id" 
-              class="bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-[11px] text-neutral-300 font-mono outline-none"
-            >
-              <option :value="null">No Assignee</option>
-              <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
-            </select>
+              <!-- Optional Assignee profile -->
+              <select 
+                v-model="newListItem.assignee_profile_id" 
+                class="bg-neutral-900 border border-neutral-800 rounded px-2 py-1.5 text-[11px] text-neutral-300 font-mono outline-none"
+              >
+                <option :value="null">No Assignee</option>
+                <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </select>
 
-            <!-- Optional Reward -->
-            <input 
-              v-model.number="newListItem.reward" 
-              type="number" 
-              placeholder="+Reward" 
-              class="w-16 bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-[11px] text-neutral-300 font-mono outline-none text-center"
-            />
+              <!-- Optional Reward -->
+              <input 
+                v-model.number="newListItem.reward" 
+                type="number" 
+                placeholder="+Reward" 
+                class="w-20 bg-neutral-900 border border-neutral-800 rounded px-2 py-1.5 text-[11px] text-neutral-300 font-mono outline-none text-center"
+              />
 
-            <button 
-              type="submit" 
-              class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded text-xs font-mono font-medium transition"
-            >
-              + Add
-            </button>
+              <button 
+                type="submit" 
+                class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-1.5 rounded text-xs font-mono font-medium transition shrink-0"
+              >
+                + Add
+              </button>
+            </div>
+
+            <!-- Due Date & Recurrence Options -->
+            <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-neutral-900 text-xs font-mono">
+              <div class="flex items-center gap-1.5">
+                <span class="text-neutral-500 text-[11px]">Due:</span>
+                <input 
+                  v-model="newListItem.due_date" 
+                  type="date" 
+                  class="bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-[11px] text-neutral-200 outline-none"
+                />
+                <input 
+                  v-model="newListItem.due_time" 
+                  type="time" 
+                  class="bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-[11px] text-neutral-200 outline-none"
+                />
+              </div>
+
+              <div class="flex items-center gap-1.5">
+                <span class="text-neutral-500 text-[11px]">Repeat:</span>
+                <select 
+                  v-model="newListItem.recurrence" 
+                  class="bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-[11px] text-sky-400 outline-none"
+                >
+                  <option value="none">No Repeat</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekdays">Weekdays (Mon-Fri)</option>
+                  <option value="weekends">Weekends (Sat-Sun)</option>
+                  <option value="interval">Every N Days</option>
+                  <option value="weekly">Custom Days of Week</option>
+                </select>
+              </div>
+
+              <div v-if="newListItem.recurrence === 'interval'" class="flex items-center gap-1">
+                <span class="text-neutral-500 text-[11px]">Every</span>
+                <input 
+                  v-model.number="newListItem.recurrence_interval" 
+                  type="number" 
+                  min="1" 
+                  class="w-14 bg-neutral-900 border border-neutral-800 rounded px-1.5 py-1 text-[11px] text-center text-neutral-200 outline-none"
+                />
+                <span class="text-neutral-500 text-[11px]">days</span>
+              </div>
+
+              <div v-if="newListItem.recurrence === 'weekly'" class="flex items-center gap-1">
+                <button 
+                  v-for="day in [
+                    { id: 1, label: 'M' },
+                    { id: 2, label: 'T' },
+                    { id: 3, label: 'W' },
+                    { id: 4, label: 'T' },
+                    { id: 5, label: 'F' },
+                    { id: 6, label: 'S' },
+                    { id: 0, label: 'S' }
+                  ]"
+                  :key="day.id"
+                  type="button"
+                  @click="toggleRecurrenceDay(day.id)"
+                  class="w-6 h-6 rounded text-[10px] font-bold flex items-center justify-center transition"
+                  :class="newListItem.recurrence_days.includes(day.id) ? 'bg-sky-600 text-white' : 'bg-neutral-900 text-neutral-400 hover:text-white'"
+                >
+                  {{ day.label }}
+                </button>
+              </div>
+            </div>
           </form>
 
           <!-- ITEMS LIST -->
@@ -626,15 +692,19 @@
             <div 
               v-for="item in currentList.items" 
               :key="item.id" 
-              class="p-2.5 bg-neutral-950 border border-neutral-800/80 rounded-lg flex items-center justify-between gap-3 hover:border-neutral-700 transition"
-              :class="{ 'opacity-50': item.checked }"
+              class="p-2.5 bg-neutral-950 border rounded-lg flex items-center justify-between gap-3 hover:border-neutral-700 transition"
+              :class="{
+                'border-red-800 bg-red-950/30': item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10),
+                'border-neutral-800/80': !(item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10)),
+                'opacity-50': item.checked
+              }"
             >
-              <div class="flex items-center gap-3">
+              <div class="flex items-center gap-3 flex-wrap flex-1 min-w-0">
                 <input 
                   type="checkbox" 
                   :checked="item.checked === 1" 
                   @change="toggleListItem(item)"
-                  class="w-4 h-4 rounded bg-neutral-900 border-neutral-700 text-emerald-500 focus:ring-0 cursor-pointer"
+                  class="w-4 h-4 rounded bg-neutral-900 border-neutral-700 text-emerald-500 focus:ring-0 cursor-pointer shrink-0"
                 />
                 <span 
                   class="text-xs text-neutral-200" 
@@ -644,21 +714,36 @@
                 </span>
                 <span 
                   v-if="item.assignee_name" 
-                  class="text-[10px] font-mono px-1.5 py-0.5 rounded border border-neutral-800 bg-neutral-900 text-neutral-400"
+                  class="text-[10px] font-mono px-1.5 py-0.5 rounded border border-neutral-800 bg-neutral-900 text-neutral-400 shrink-0"
                 >
                   @{{ item.assignee_name }}
                 </span>
                 <span 
                   v-if="item.reward" 
-                  class="text-[10px] font-mono text-emerald-400 font-semibold"
+                  class="text-[10px] font-mono text-emerald-400 font-semibold shrink-0"
                 >
                   +{{ item.reward }} pts
+                </span>
+                <span 
+                  v-if="item.recurrence && item.recurrence !== 'none'" 
+                  class="text-[10px] font-mono text-sky-400 px-1.5 py-0.5 rounded bg-sky-950/60 border border-sky-800/50 shrink-0 flex items-center gap-1"
+                >
+                  <span>↻</span>
+                  <span>{{ item.recurrence === 'interval' ? 'every ' + (item.recurrence_interval || 1) + 'd' : item.recurrence }}</span>
+                </span>
+                <span 
+                  v-if="item.due_date" 
+                  class="text-[10px] font-mono shrink-0 flex items-center gap-1"
+                  :class="item.checked !== 1 && item.due_date < new Date().toISOString().slice(0,10) ? 'text-red-400 font-bold' : 'text-neutral-400'"
+                >
+                  <span v-if="item.checked !== 1 && item.due_date < new Date().toISOString().slice(0,10)" class="px-1 py-0.5 rounded bg-red-950 text-red-400 border border-red-800 font-bold">OVERDUE</span>
+                  <span>📅 {{ item.due_date }}{{ item.due_time ? ' ' + item.due_time : '' }}</span>
                 </span>
               </div>
 
               <button 
                 @click="deleteListItem(item.id)" 
-                class="text-neutral-600 hover:text-red-400 text-xs font-mono px-2 py-1 transition"
+                class="text-neutral-600 hover:text-red-400 text-xs font-mono px-2 py-1 transition shrink-0"
                 title="Delete item"
               >
                 ✕
@@ -1344,6 +1429,69 @@
           </div>
         </div>
 
+        <!-- Weather Location Settings -->
+        <div class="border-t border-neutral-700 pt-4">
+          <h3 class="font-mono text-xs text-sky-400 uppercase tracking-widest mb-3">🌤 Weather Location</h3>
+          <div class="space-y-3">
+            <!-- City Search -->
+            <div>
+              <label class="block text-xs font-mono text-neutral-400 mb-1">Search City</label>
+              <div class="flex gap-2">
+                <input
+                  v-model="weatherSearchQuery"
+                  @keyup.enter="searchWeatherCity"
+                  type="text"
+                  placeholder="e.g. London, Berlin, New York..."
+                  class="flex-1 text-xs font-mono bg-neutral-800 border border-neutral-700 text-neutral-100 rounded px-3 py-2 focus:outline-none focus:border-sky-500"
+                />
+                <button
+                  type="button"
+                  @click="searchWeatherCity"
+                  :disabled="weatherSearchLoading"
+                  class="px-4 py-2 text-xs font-mono bg-sky-700 hover:bg-sky-600 text-white rounded transition"
+                >
+                  {{ weatherSearchLoading ? '...' : 'Search' }}
+                </button>
+              </div>
+              <!-- Search Results Dropdown -->
+              <div v-if="weatherSearchResults.length > 0" class="mt-1 bg-neutral-800 border border-neutral-700 rounded-lg overflow-hidden">
+                <button
+                  v-for="city in weatherSearchResults"
+                  :key="city.latitude + '_' + city.longitude"
+                  type="button"
+                  @click="selectWeatherCity(city)"
+                  class="w-full text-left px-3 py-2 text-xs font-mono text-neutral-200 hover:bg-sky-900/50 border-b border-neutral-700/50 last:border-0 transition"
+                >
+                  📍 {{ city.name }}<span v-if="city.admin1">, {{ city.admin1 }}</span>, {{ city.country }}
+                  <span class="text-neutral-500 ml-2">{{ city.latitude.toFixed(2) }}, {{ city.longitude.toFixed(2) }}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Current Selection Display -->
+            <div v-if="settings.weather_city" class="flex items-center gap-2 bg-sky-950/30 border border-sky-800/40 rounded-lg px-3 py-2">
+              <span class="text-base">📍</span>
+              <div class="flex-1">
+                <div class="text-xs font-mono text-sky-300 font-semibold">{{ settings.weather_city }}</div>
+                <div class="text-[10px] font-mono text-neutral-500">lat: {{ settings.weather_lat }}, lon: {{ settings.weather_lon }}</div>
+              </div>
+              <button type="button" @click="settings.weather_city = ''; settings.weather_lat = ''; settings.weather_lon = ''" class="text-xs text-red-400 hover:text-red-300">✕</button>
+            </div>
+
+            <!-- Temperature Units -->
+            <div>
+              <label class="block text-xs font-mono text-neutral-400 mb-1">Temperature Unit</label>
+              <select
+                v-model="settings.weather_units"
+                class="text-xs font-mono bg-neutral-800 border border-neutral-700 text-neutral-100 rounded px-3 py-2 w-full"
+              >
+                <option value="celsius">°C — Celsius</option>
+                <option value="fahrenheit">°F — Fahrenheit</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         <button 
           type="submit" 
           class="w-full font-mono text-xs bg-sky-600 hover:bg-sky-500 text-white py-2.5 rounded-lg font-semibold transition flex items-center justify-center gap-2"
@@ -1441,8 +1589,37 @@
           photo_interval_night: 15,
           night_mode_enabled: 0,
           night_mode_start: '22:00',
-          night_mode_end: '07:00'
+          night_mode_end: '07:00',
+          weather_city: '',
+          weather_lat: '',
+          weather_lon: '',
+          weather_units: 'celsius'
         });
+
+        const weatherSearchQuery = ref('');
+        const weatherSearchResults = ref([]);
+        const weatherSearchLoading = ref(false);
+
+        async function searchWeatherCity() {
+          const q = weatherSearchQuery.value.trim();
+          if (q.length < 2) { weatherSearchResults.value = []; return; }
+          weatherSearchLoading.value = true;
+          try {
+            const res = await fetch('/api/weather/search?q=' + encodeURIComponent(q));
+            weatherSearchResults.value = await res.json();
+          } catch(e) {
+            weatherSearchResults.value = [];
+          }
+          weatherSearchLoading.value = false;
+        }
+
+        function selectWeatherCity(city) {
+          settings.value.weather_city = city.name + (city.admin1 ? ', ' + city.admin1 : '') + ', ' + city.country;
+          settings.value.weather_lat = String(city.latitude);
+          settings.value.weather_lon = String(city.longitude);
+          weatherSearchResults.value = [];
+          weatherSearchQuery.value = '';
+        }
 
         // List Form
         const newList = ref({
@@ -1457,8 +1634,22 @@
         const newListItem = ref({
           content: '',
           assignee_profile_id: null,
-          reward: 0
+          reward: 0,
+          due_date: '',
+          due_time: '',
+          recurrence: 'none',
+          recurrence_interval: 1,
+          recurrence_days: []
         });
+
+        function toggleRecurrenceDay(dayNum) {
+          const idx = newListItem.value.recurrence_days.indexOf(dayNum);
+          if (idx >= 0) {
+            newListItem.value.recurrence_days.splice(idx, 1);
+          } else {
+            newListItem.value.recurrence_days.push(dayNum);
+          }
+        }
 
         // Notes & Simulator
         const newNoteContent = ref('');
@@ -1488,6 +1679,10 @@
             feeds.value = data.feeds || [];
             if (data.settings) {
               settings.value = { ...settings.value, ...data.settings };
+              if (data.settings.weather_city) settings.value.weather_city = data.settings.weather_city;
+              if (data.settings.weather_lat) settings.value.weather_lat = String(data.settings.weather_lat);
+              if (data.settings.weather_lon) settings.value.weather_lon = String(data.settings.weather_lon);
+              if (data.settings.weather_units) settings.value.weather_units = data.settings.weather_units;
             }
 
             if (lists.value.length > 0 && (!selectedListId.value || !lists.value.some(l => l.id === selectedListId.value))) {
@@ -1754,6 +1949,11 @@
             if (!res.ok) throw new Error('HTTP ' + res.status);
             newListItem.value.content = '';
             newListItem.value.reward = 0;
+            newListItem.value.due_date = '';
+            newListItem.value.due_time = '';
+            newListItem.value.recurrence = 'none';
+            newListItem.value.recurrence_interval = 1;
+            newListItem.value.recurrence_days = [];
             showAlert('Item added!');
             loadData();
           } catch (err) {
@@ -1948,6 +2148,12 @@
 
         return {
           activeTab,
+          weatherSearchQuery,
+          weatherSearchResults,
+          weatherSearchLoading,
+          searchWeatherCity,
+          selectWeatherCity,
+          toggleRecurrenceDay,
           alertMessage,
           alertSuccess,
           settings,

@@ -159,6 +159,18 @@ try {
   console.warn('Migration widget_layouts profile_id check:', e.message);
 }
 
+try {
+  const itemCols = db.pragma('table_info(list_items)').map(c => c.name);
+  if (!itemCols.includes('due_date')) db.exec('ALTER TABLE list_items ADD COLUMN due_date TEXT');
+  if (!itemCols.includes('due_time')) db.exec('ALTER TABLE list_items ADD COLUMN due_time TEXT');
+  if (!itemCols.includes('recurrence')) db.exec("ALTER TABLE list_items ADD COLUMN recurrence TEXT DEFAULT 'none'");
+  if (!itemCols.includes('recurrence_interval')) db.exec('ALTER TABLE list_items ADD COLUMN recurrence_interval INTEGER DEFAULT 1');
+  if (!itemCols.includes('recurrence_days')) db.exec('ALTER TABLE list_items ADD COLUMN recurrence_days TEXT');
+  if (!itemCols.includes('last_completed_at')) db.exec('ALTER TABLE list_items ADD COLUMN last_completed_at TEXT');
+} catch (e) {
+  console.warn('Migration list_items columns check:', e.message);
+}
+
 // Seed default settings if empty
 const existingSettingsCount = db.prepare('SELECT COUNT(*) as count FROM settings').get();
 if (existingSettingsCount.count === 0) {
@@ -390,34 +402,147 @@ function deleteList(id) {
   return db.prepare('DELETE FROM lists WHERE id = ?').run(id);
 }
 
-function insertListItem({ list_id, content, assignee_profile_id = null, reward = 0, position = 0 }) {
+function calculateNextDueDate(currentDueDateStr, recurrence, interval = 1, daysOfWeek = null) {
+  let base = currentDueDateStr ? new Date(currentDueDateStr + 'T00:00:00') : new Date();
+  if (isNaN(base.getTime())) base = new Date();
+  
+  const next = new Date(base);
+  
+  if (recurrence === 'daily') {
+    next.setDate(next.getDate() + 1);
+  } else if (recurrence === 'weekdays') {
+    do {
+      next.setDate(next.getDate() + 1);
+    } while (next.getDay() === 0 || next.getDay() === 6);
+  } else if (recurrence === 'weekends') {
+    do {
+      next.setDate(next.getDate() + 1);
+    } while (next.getDay() !== 0 && next.getDay() !== 6);
+  } else if (recurrence === 'interval') {
+    const days = Math.max(1, Number(interval) || 1);
+    next.setDate(next.getDate() + days);
+  } else if (recurrence === 'weekly' || recurrence === 'custom_days') {
+    let targetDays = [next.getDay()];
+    if (daysOfWeek) {
+      let parsed = daysOfWeek;
+      if (typeof daysOfWeek === 'string') {
+        try { parsed = JSON.parse(daysOfWeek); } catch(e) { parsed = [daysOfWeek]; }
+      }
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const dayMap = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+        targetDays = parsed.map(d => typeof d === 'string' ? (dayMap[d.toLowerCase()] ?? Number(d)) : Number(d));
+      }
+    }
+    let found = false;
+    for (let i = 1; i <= 7; i++) {
+      const candidate = new Date(next);
+      candidate.setDate(candidate.getDate() + i);
+      if (targetDays.includes(candidate.getDay())) {
+        next.setTime(candidate.getTime());
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      next.setDate(next.getDate() + 7);
+    }
+  } else {
+    next.setDate(next.getDate() + 1);
+  }
+  
+  const y = next.getFullYear();
+  const m = String(next.getMonth() + 1).padStart(2, '0');
+  const d = String(next.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function insertListItem({ 
+  list_id, 
+  content, 
+  assignee_profile_id = null, 
+  reward = 0, 
+  position = 0,
+  due_date = null,
+  due_time = null,
+  recurrence = 'none',
+  recurrence_interval = 1,
+  recurrence_days = null
+}) {
   const stmt = db.prepare(`
-    INSERT INTO list_items (list_id, content, assignee_profile_id, reward, position)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO list_items (
+      list_id, content, assignee_profile_id, reward, position,
+      due_date, due_time, recurrence, recurrence_interval, recurrence_days
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const info = stmt.run(list_id, content.trim(), assignee_profile_id || null, Number(reward) || 0, position);
+  const recDaysStr = recurrence_days ? (typeof recurrence_days === 'string' ? recurrence_days : JSON.stringify(recurrence_days)) : null;
+  const info = stmt.run(
+    list_id, 
+    content.trim(), 
+    assignee_profile_id || null, 
+    Number(reward) || 0, 
+    position,
+    due_date || null,
+    due_time || null,
+    recurrence || 'none',
+    Number(recurrence_interval) || 1,
+    recDaysStr
+  );
   return db.prepare('SELECT * FROM list_items WHERE id = ?').get(info.lastInsertRowid);
 }
 
 function toggleListItemChecked(id, checked) {
-  const stmt = db.prepare('UPDATE list_items SET checked = ? WHERE id = ?');
-  stmt.run(checked ? 1 : 0, id);
+  const item = db.prepare('SELECT * FROM list_items WHERE id = ?').get(id);
+  if (!item) return null;
+
+  if (checked && item.recurrence && item.recurrence !== 'none') {
+    const nextDate = calculateNextDueDate(item.due_date, item.recurrence, item.recurrence_interval, item.recurrence_days);
+    const nowIso = new Date().toISOString();
+    db.prepare(`
+      UPDATE list_items 
+      SET checked = 0, due_date = ?, last_completed_at = ?
+      WHERE id = ?
+    `).run(nextDate, nowIso, id);
+  } else {
+    const nowIso = checked ? new Date().toISOString() : null;
+    db.prepare('UPDATE list_items SET checked = ?, last_completed_at = COALESCE(?, last_completed_at) WHERE id = ?')
+      .run(checked ? 1 : 0, nowIso, id);
+  }
+
   return db.prepare('SELECT * FROM list_items WHERE id = ?').get(id);
 }
 
-function updateListItem(id, { content, checked, assignee_profile_id, reward }) {
+function updateListItem(id, { 
+  content, 
+  checked, 
+  assignee_profile_id, 
+  reward,
+  due_date,
+  due_time,
+  recurrence,
+  recurrence_interval,
+  recurrence_days
+}) {
   const current = db.prepare('SELECT * FROM list_items WHERE id = ?').get(id);
   if (!current) return null;
   const stmt = db.prepare(`
     UPDATE list_items 
-    SET content = ?, checked = ?, assignee_profile_id = ?, reward = ?
+    SET content = ?, checked = ?, assignee_profile_id = ?, reward = ?,
+        due_date = ?, due_time = ?, recurrence = ?, recurrence_interval = ?, recurrence_days = ?
     WHERE id = ?
   `);
+  const recDaysStr = recurrence_days !== undefined
+    ? (recurrence_days ? (typeof recurrence_days === 'string' ? recurrence_days : JSON.stringify(recurrence_days)) : null)
+    : current.recurrence_days;
   stmt.run(
     content !== undefined ? content.trim() : current.content,
     checked !== undefined ? (checked ? 1 : 0) : current.checked,
     assignee_profile_id !== undefined ? assignee_profile_id : current.assignee_profile_id,
     reward !== undefined ? Number(reward) || 0 : current.reward,
+    due_date !== undefined ? due_date : current.due_date,
+    due_time !== undefined ? due_time : current.due_time,
+    recurrence !== undefined ? recurrence : current.recurrence,
+    recurrence_interval !== undefined ? Number(recurrence_interval) || 1 : current.recurrence_interval,
+    recDaysStr,
     id
   );
   return db.prepare('SELECT * FROM list_items WHERE id = ?').get(id);
@@ -522,7 +647,11 @@ function getSettings() {
     photo_interval_night: 15,
     night_mode_enabled: 0,
     night_mode_start: '22:00',
-    night_mode_end: '07:00'
+    night_mode_end: '07:00',
+    weather_city: 'Berlin',
+    weather_lat: '52.5200',
+    weather_lon: '13.4050',
+    weather_units: 'metric'
   };
   const numericKeys = [
     'sleep_timeout',
@@ -763,6 +892,7 @@ module.exports = {
   toggleListItemChecked,
   updateListItem,
   deleteListItem,
+  calculateNextDueDate,
   getWidgetLayouts,
   getAllProfileLayouts,
   saveWidgetLayouts,

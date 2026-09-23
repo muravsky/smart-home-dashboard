@@ -192,6 +192,28 @@
       color: #ffffff !important;
     }
 
+
+    /* html.theme-white — applied by JS watcher on documentElement for correct Vue 3 CDN compatibility */
+    html.theme-white body { background-color: #f1f5f9 !important; color: #0f172a !important; }
+    html.theme-white #app { background-color: #f1f5f9 !important; color: #0f172a !important; }
+    html.theme-white header { border-color: #e2e8f0 !important; }
+    html.theme-white .bg-black { background-color: #f8fafc !important; }
+    html.theme-white .bg-neutral-950 { background-color: #ffffff !important; border-color: #e2e8f0 !important; color: #0f172a !important; }
+    html.theme-white .bg-neutral-900 { background-color: #f8fafc !important; border-color: #e2e8f0 !important; color: #0f172a !important; }
+    html.theme-white .bg-neutral-800 { background-color: #e2e8f0 !important; color: #0f172a !important; }
+    html.theme-white .border-neutral-900, html.theme-white .border-neutral-800, html.theme-white .border-neutral-700 { border-color: #e2e8f0 !important; }
+    html.theme-white .text-white { color: #0f172a !important; }
+    html.theme-white .text-neutral-100, html.theme-white .text-neutral-200 { color: #1e293b !important; }
+    html.theme-white .text-neutral-300, html.theme-white .text-neutral-400 { color: #475569 !important; }
+    html.theme-white .text-neutral-500 { color: #64748b !important; }
+    html.theme-white .text-neutral-600 { color: #94a3b8 !important; }
+    html.theme-white .text-sky-400 { color: #0284c7 !important; }
+    html.theme-white .text-emerald-400 { color: #059669 !important; }
+    html.theme-white .text-amber-400 { color: #d97706 !important; }
+    html.theme-white .widget-card { background-color: #ffffff !important; border: 1px solid #e2e8f0 !important; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05) !important; }
+    html.theme-white input[type="text"] { background-color: #f8fafc !important; border-color: #cbd5e1 !important; color: #0f172a !important; }
+    html.theme-white .fixed.inset-0 { background-color: #000000 !important; color: #ffffff !important; }
+
     /* ==========================================================================
        Font Size Sizing System (Proportional Scaling per Page & Widget)
        ========================================================================== */
@@ -234,6 +256,18 @@
     .fs-xlarge .text-2xl { font-size: 2.1rem !important; }
     .fs-xlarge .text-3xl { font-size: 2.6rem !important; }
     .fs-xlarge .responsive-clock-text { font-size: clamp(3.6rem, 11vw, 9.5rem) !important; }
+
+    .fs-xxlarge {
+      font-size: 1.45rem;
+    }
+    .fs-xxlarge .text-xs { font-size: 1.12rem !important; }
+    .fs-xxlarge .text-sm { font-size: 1.28rem !important; }
+    .fs-xxlarge .text-base { font-size: 1.45rem !important; }
+    .fs-xxlarge .text-lg { font-size: 1.7rem !important; }
+    .fs-xxlarge .text-xl { font-size: 2rem !important; }
+    .fs-xxlarge .text-2xl { font-size: 2.5rem !important; }
+    .fs-xxlarge .text-3xl { font-size: 3.1rem !important; }
+    .fs-xxlarge .responsive-clock-text { font-size: clamp(4.5rem, 14vw, 12rem) !important; }
   </style>
 </head>
 <body class="h-full bg-black text-white font-sans antialiased overflow-hidden select-none">
@@ -315,6 +349,39 @@
       </div>
     </transition>
 
+
+    <!-- TIMER ALARM FLOATING MODAL -->
+    <transition name="fade-sleep">
+      <div
+        v-if="isAlarmRinging"
+        class="fixed inset-0 z-[60] flex items-center justify-center pointer-events-auto"
+        style="background: rgba(0,0,0,0.75); backdrop-filter: blur(6px);"
+      >
+        <div class="bg-neutral-950 border border-amber-500 rounded-2xl p-8 flex flex-col items-center gap-5 shadow-2xl max-w-xs w-full mx-4">
+          <div class="text-5xl animate-bounce">⏰</div>
+          <div class="text-amber-400 font-mono text-lg font-bold uppercase tracking-widest">Timer Done!</div>
+          <div class="text-neutral-400 text-sm font-mono text-center">Your timer has finished ringing.</div>
+          <div class="flex flex-col gap-2 w-full">
+            <div class="text-xs font-mono text-neutral-500 uppercase tracking-widest text-center mb-1">Snooze</div>
+            <div class="flex gap-2 justify-center">
+              <button @click="snoozeTimer(1)" class="flex-1 py-2.5 rounded-xl bg-neutral-800 hover:bg-amber-900 border border-amber-700 text-amber-300 font-mono text-sm font-bold transition">
+                +1 min
+              </button>
+              <button @click="snoozeTimer(5)" class="flex-1 py-2.5 rounded-xl bg-neutral-800 hover:bg-amber-900 border border-amber-700 text-amber-300 font-mono text-sm font-bold transition">
+                +5 min
+              </button>
+              <button @click="snoozeTimer(10)" class="flex-1 py-2.5 rounded-xl bg-neutral-800 hover:bg-amber-900 border border-amber-700 text-amber-300 font-mono text-sm font-bold transition">
+                +10 min
+              </button>
+            </div>
+          </div>
+          <button @click="stopAlarm()" class="w-full py-3 rounded-xl bg-red-700 hover:bg-red-600 text-white font-mono font-bold text-base uppercase tracking-wide transition">
+            🛑 Stop
+          </button>
+        </div>
+      </div>
+    </transition>
+
     <!-- MAIN DASHBOARD CONTENT -->
     <div 
       class="h-full w-full flex flex-col justify-between p-3 md:p-5 transition-all duration-500 overflow-hidden"
@@ -323,7 +390,8 @@
         'night-mode-glow': isNightModeActive,
         'fs-small': activeFontSize === 'small',
         'fs-large': activeFontSize === 'large',
-        'fs-xlarge': activeFontSize === 'xlarge'
+        'fs-xlarge': activeFontSize === 'xlarge',
+        'fs-xxlarge': activeFontSize === 'xxlarge'
       }"
     >
       
@@ -541,6 +609,27 @@
                 Aa{{ (w.config && w.config.font_size) ? ':' + w.config.font_size[0].toUpperCase() : '' }}
               </button>
 
+              <!-- Toggle Weather on Clock Widget -->
+              <button 
+                v-if="w.widget_type === 'clock'"
+                @click.stop="toggleClockWeather(w)"
+                title="Toggle weather on clock widget"
+                class="px-2 py-1 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 font-semibold"
+                :class="isClockWeatherVisible(w) ? 'text-amber-400' : 'text-neutral-500'"
+              >
+                🌤{{ isClockWeatherVisible(w) ? 'On' : 'Off' }}
+              </button>
+
+              <!-- Cycle Clock Style Button -->
+              <button 
+                v-if="w.widget_type === 'clock'"
+                @click.stop="cycleClockStyle(w)"
+                title="Cycle clock style (modern, bold, minimal, classic)"
+                class="px-2 py-1 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 text-purple-400 font-semibold"
+              >
+                {{ getClockStyle(w) }}
+              </button>
+
               <!-- Delete Widget -->
               <button 
                 @click.stop="removeWidget(w)"
@@ -553,18 +642,33 @@
 
             <!-- ================= WIDGET TYPE 1: CLOCK & DATE ================= -->
             <div v-if="w.widget_type === 'clock'" class="flex flex-col items-center justify-center my-auto py-2 text-center w-full overflow-hidden">
-              <div class="font-mono font-extralight tracking-tight text-white leading-none mb-1 flex items-baseline justify-center responsive-clock-text">
+              <div
+                class="leading-none mb-1 flex items-baseline justify-center responsive-clock-text"
+                :class="{
+                  'font-mono font-extralight tracking-tight': getClockStyle(w) === 'modern',
+                  'font-sans font-black tracking-tighter': getClockStyle(w) === 'bold',
+                  'font-mono font-thin tracking-widest': getClockStyle(w) === 'minimal',
+                  'font-serif font-medium tracking-wide': getClockStyle(w) === 'classic'
+                }"
+                :style="w.h >= 3 ? 'font-size: clamp(5rem, 18vw, 14rem)' : w.h >= 2 ? '' : 'font-size: clamp(1.8rem, 5vw, 3.5rem)'"
+              >
                 <span>{{ currentTime.hours }}</span>
                 <span :class="isSecondTick ? 'opacity-100' : 'opacity-20'" class="transition-opacity">:</span>
                 <span>{{ currentTime.minutes }}</span>
-                <span class="font-light text-neutral-500 ml-1.5 responsive-clock-seconds">{{ currentTime.seconds }}</span>
+                <span v-if="getClockStyle(w) !== 'minimal'" class="font-light text-neutral-500 ml-1.5 responsive-clock-seconds">{{ currentTime.seconds }}</span>
               </div>
-              <div class="text-sm md:text-lg font-light tracking-wide text-neutral-300 uppercase">
+              <div
+                class="tracking-wide text-neutral-300 uppercase"
+                :class="[
+                  w.h >= 3 ? 'text-xl md:text-2xl mt-2' : 'text-sm md:text-lg',
+                  getClockStyle(w) === 'classic' ? 'font-serif' : 'font-light'
+                ]"
+              >
                 {{ currentDate.weekday }}, <span class="text-white font-normal">{{ currentDate.monthDay }}</span> {{ currentDate.year }}
               </div>
-              <div v-if="weather" class="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full border border-neutral-800 bg-neutral-900/60 text-xs font-mono text-neutral-300">
+              <div v-if="weather && isClockWeatherVisible(w)" class="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full border border-neutral-800 bg-neutral-900/60 text-xs font-mono text-neutral-300">
                 <span>{{ weather.icon }}</span>
-                <span class="font-bold text-white">{{ weather.temperature }}°C</span>
+                <span class="font-bold text-white">{{ weather.temperature }}°{{ weather.unit || 'C' }}</span>
                 <span class="text-neutral-600">•</span>
                 <span>{{ weather.condition }}</span>
               </div>
@@ -573,16 +677,22 @@
             <!-- ================= WIDGET TYPE 2: WEATHER ================= -->
             <div v-else-if="w.widget_type === 'weather'" class="h-full flex flex-col justify-between">
               <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
-                <span class="font-mono text-xs uppercase tracking-widest text-sky-400 font-semibold">OUTDOOR WEATHER</span>
+                <div class="flex items-center gap-2">
+                  <span class="font-mono text-xs uppercase tracking-widest text-sky-400 font-semibold">OUTDOOR WEATHER</span>
+                  <span v-if="weather && weather.city" class="text-[10px] font-mono text-neutral-500">{{ weather.city }}</span>
+                </div>
                 <span class="text-base">{{ weather ? weather.icon : '☀️' }}</span>
               </div>
               <div v-if="weather" class="flex items-center justify-between my-auto py-2">
                 <div>
-                  <div class="text-4xl md:text-5xl font-mono font-light text-white">{{ weather.temperature }}°C</div>
+                  <div
+                    class="font-mono font-light text-white"
+                    :class="w.h >= 3 ? 'text-7xl md:text-8xl' : w.h >= 2 ? 'text-4xl md:text-5xl' : 'text-3xl'"
+                  >{{ weather.temperature }}°{{ weather.unit || 'C' }}</div>
                   <div class="text-xs text-neutral-400 font-sans mt-0.5">{{ weather.condition }}</div>
                 </div>
                 <div class="text-right font-mono text-xs text-neutral-400 space-y-1">
-                  <div>Low: {{ weather.tempMin }}°C / High: {{ weather.tempMax }}°C</div>
+                  <div>Low: {{ weather.tempMin }}° / High: {{ weather.tempMax }}°</div>
                   <div>Humidity: {{ weather.humidity }}%</div>
                   <div>Wind: {{ weather.windSpeed }} km/h</div>
                 </div>
@@ -610,8 +720,9 @@
                   :key="item.id"
                   @click="toggleTaskItem(item)"
                   class="text-neutral-300 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-1.5 px-2 rounded-lg hover:bg-neutral-900/60"
+                  :class="{ 'border border-red-800/60 bg-red-950/30': item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10) }"
                 >
-                  <div class="flex items-center gap-2.5">
+                  <div class="flex items-center gap-2.5 flex-1 min-w-0">
                     <span 
                       class="w-4 h-4 rounded-full border transition-all duration-300 flex items-center justify-center text-[10px] shrink-0"
                       :class="item.checked === 1 ? 'bg-emerald-500 border-emerald-500 text-black font-bold' : 'border-neutral-600'"
@@ -622,8 +733,13 @@
                     <span v-if="item.assignee_name && !selectedProfileId" class="text-[9px] font-mono px-1 rounded bg-neutral-900 text-neutral-400 border border-neutral-800">
                       @{{ item.assignee_name }}
                     </span>
+                    <span v-if="item.recurrence && item.recurrence !== 'none'" class="text-[9px] font-mono px-1 rounded bg-sky-950/40 text-sky-400 border border-sky-900/40 shrink-0">↻</span>
                   </div>
-                  <span v-if="item.reward" class="font-mono text-xs text-amber-400 font-bold shrink-0">+{{ item.reward }} pts</span>
+                  <div class="flex items-center gap-1 shrink-0">
+                    <span v-if="item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10)" class="text-[9px] font-mono text-red-400 font-bold">OVERDUE</span>
+                    <span v-else-if="item.due_date && item.checked !== 1" class="text-[9px] font-mono text-neutral-500">{{ item.due_date }}</span>
+                    <span v-if="item.reward" class="font-mono text-xs text-amber-400 font-bold">+{{ item.reward }} pts</span>
+                  </div>
                 </li>
               </ul>
             </div>
@@ -654,8 +770,9 @@
                   :key="item.id"
                   @click="toggleListItem(item)"
                   class="text-neutral-300 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-1.5 px-2 rounded-lg hover:bg-neutral-900/60"
+                  :class="{ 'border border-red-800/60 bg-red-950/30': item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10) }"
                 >
-                  <div class="flex items-center gap-2.5">
+                  <div class="flex items-center gap-2.5 flex-1 min-w-0">
                     <span 
                       class="w-4 h-4 rounded-full border transition-all duration-300 flex items-center justify-center text-[10px] shrink-0"
                       :class="item.checked === 1 ? 'bg-white border-white text-black font-bold' : 'border-neutral-600'"
@@ -663,6 +780,11 @@
                       <span v-if="item.checked === 1">✓</span>
                     </span>
                     <span :class="{ 'line-through text-neutral-600': item.checked === 1 }">{{ item.content }}</span>
+                    <span v-if="item.recurrence && item.recurrence !== 'none'" class="text-[9px] font-mono px-1 rounded bg-sky-950/40 text-sky-400 border border-sky-900/40 shrink-0">↻</span>
+                  </div>
+                  <div class="flex items-center gap-1 shrink-0">
+                    <span v-if="item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10)" class="text-[9px] font-mono text-red-400 font-bold">OVERDUE</span>
+                    <span v-else-if="item.due_date && item.checked !== 1" class="text-[9px] font-mono text-neutral-500">{{ item.due_date }}</span>
                   </div>
                 </li>
               </ul>
@@ -1104,7 +1226,30 @@
             autofocus
             required
           />
-          <div class="flex items-center gap-2">
+          <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+            <div>
+              <label class="block text-[10px] text-neutral-400 mb-1">Due Date</label>
+              <input 
+                v-model="quickAddDueDate" 
+                type="date" 
+                class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-1.5 text-xs text-neutral-200 outline-none"
+              />
+            </div>
+            <div>
+              <label class="block text-[10px] text-neutral-400 mb-1">Repeat</label>
+              <select 
+                v-model="quickAddRecurrence" 
+                class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-1.5 text-xs text-sky-400 outline-none"
+              >
+                <option value="none">No Repeat</option>
+                <option value="daily">Daily</option>
+                <option value="weekdays">Weekdays</option>
+                <option value="weekends">Weekends</option>
+                <option value="weekly">Weekly</option>
+              </select>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 pt-1">
             <button 
               type="submit" 
               class="flex-1 bg-white hover:bg-neutral-200 text-black font-mono text-xs font-semibold py-2 rounded-lg transition"
@@ -1309,6 +1454,8 @@
         const showAddWidgetDrawer = ref(false);
         const showQuickAddModal = ref(false);
         const quickAddContent = ref('');
+        const quickAddDueDate = ref('');
+        const quickAddRecurrence = ref('none');
         const quickAddTargetList = ref(null);
 
         // SortableJS instance
@@ -1319,6 +1466,8 @@
         const timerSeconds = ref(300); // 5 min default
         const timerRunning = ref(false);
         let timerInterval = null;
+        let alarmRingInterval = null;
+        const isAlarmRinging = ref(false);
         const showCustomTimerModal = ref(false);
         const customTimerSeconds = ref(300);
 
@@ -1444,10 +1593,17 @@
         function cyclePageFontSize() {
           triggerHaptic('tap');
           const cur = currentPageConfigFontSize.value || 'inherit';
-          const order = ['inherit', 'small', 'normal', 'large', 'xlarge'];
+          const order = ['inherit', 'small', 'normal', 'large', 'xlarge', 'xxlarge'];
           const nextIdx = (order.indexOf(cur) + 1) % order.length;
           savePageSetting(currentPageConfigTheme.value || 'inherit', order[nextIdx]);
         }
+
+
+        // Watch activeTheme and apply class on documentElement (fixes Vue 3 CDN root mount limitation)
+        watch(activeTheme, (theme) => {
+          document.documentElement.classList.toggle('theme-white', theme === 'white');
+          document.body.style.backgroundColor = theme === 'white' ? '#f1f5f9' : '';
+        }, { immediate: true });
 
         function savePageSetting(themeVal, fontSizeVal) {
           const profKey = selectedProfileId.value !== null ? String(selectedProfileId.value) : 'family';
@@ -1482,6 +1638,7 @@
           if (fs === 'small') return 'fs-small';
           if (fs === 'large') return 'fs-large';
           if (fs === 'xlarge') return 'fs-xlarge';
+          if (fs === 'xxlarge') return 'fs-xxlarge';
           return 'fs-normal';
         }
 
@@ -1492,7 +1649,7 @@
             try { w.config = JSON.parse(w.config); } catch(e) { w.config = {}; }
           }
           const cur = w.config.font_size || 'inherit';
-          const order = ['inherit', 'small', 'normal', 'large', 'xlarge'];
+          const order = ['inherit', 'small', 'normal', 'large', 'xlarge', 'xxlarge'];
           const nextIdx = (order.indexOf(cur) + 1) % order.length;
           const nextVal = order[nextIdx];
           if (nextVal === 'inherit') {
@@ -1500,6 +1657,45 @@
           } else {
             w.config.font_size = nextVal;
           }
+          saveCurrentLayout();
+        }
+
+        function isClockWeatherVisible(w) {
+          let cfg = w && w.config;
+          if (typeof cfg === 'string') {
+            try { cfg = JSON.parse(cfg); } catch(e) { cfg = {}; }
+          }
+          return cfg && cfg.show_weather === true;
+        }
+
+        function toggleClockWeather(w) {
+          triggerHaptic('tap');
+          if (!w.config) w.config = {};
+          if (typeof w.config === 'string') {
+            try { w.config = JSON.parse(w.config); } catch(e) { w.config = {}; }
+          }
+          w.config.show_weather = !isClockWeatherVisible(w);
+          saveCurrentLayout();
+        }
+
+        function getClockStyle(w) {
+          let cfg = w && w.config;
+          if (typeof cfg === 'string') {
+            try { cfg = JSON.parse(cfg); } catch(e) { cfg = {}; }
+          }
+          return (cfg && cfg.clock_style) || 'modern';
+        }
+
+        function cycleClockStyle(w) {
+          triggerHaptic('tap');
+          if (!w.config) w.config = {};
+          if (typeof w.config === 'string') {
+            try { w.config = JSON.parse(w.config); } catch(e) { w.config = {}; }
+          }
+          const styles = ['modern', 'bold', 'minimal', 'classic'];
+          const cur = w.config.clock_style || 'modern';
+          const nextIdx = (styles.indexOf(cur) + 1) % styles.length;
+          w.config.clock_style = styles[nextIdx];
           saveCurrentLayout();
         }
 
@@ -1685,6 +1881,8 @@
         function openQuickAdd(list) {
           triggerHaptic('tap');
           quickAddTargetList.value = list;
+          quickAddDueDate.value = '';
+          quickAddRecurrence.value = 'none';
           showQuickAddModal.value = true;
         }
 
@@ -1696,10 +1894,14 @@
               listId: quickAddTargetList.value.id,
               content: quickAddContent.value.trim(),
               assigneeProfileId: selectedProfileId.value,
-              reward: 0
+              reward: 0,
+              dueDate: quickAddDueDate.value || null,
+              recurrence: quickAddRecurrence.value || 'none'
             });
           }
           quickAddContent.value = '';
+          quickAddDueDate.value = '';
+          quickAddRecurrence.value = 'none';
           showQuickAddModal.value = false;
         }
 
@@ -1734,6 +1936,23 @@
           showCustomTimerModal.value = false;
         }
 
+        function stopAlarm() {
+          if (alarmRingInterval) clearInterval(alarmRingInterval);
+          alarmRingInterval = null;
+          isAlarmRinging.value = false;
+          timerSeconds.value = 300;
+          timerRunning.value = false;
+        }
+
+        function snoozeTimer(mins) {
+          if (alarmRingInterval) clearInterval(alarmRingInterval);
+          alarmRingInterval = null;
+          isAlarmRinging.value = false;
+          timerSeconds.value = mins * 60;
+          timerRunning.value = false;
+          if (!timerRunning.value) toggleTimer();
+        }
+
         function toggleTimer() {
           triggerHaptic('tap');
           timerRunning.value = !timerRunning.value;
@@ -1746,7 +1965,15 @@
                 timerRunning.value = false;
                 clearInterval(timerInterval);
                 triggerHaptic('alarm');
+                // Start repeating alarm
+                isAlarmRinging.value = true;
+                wakeUp();
                 playAlarmSound();
+                if (alarmRingInterval) clearInterval(alarmRingInterval);
+                alarmRingInterval = setInterval(() => {
+                  triggerHaptic('alarm');
+                  playAlarmSound();
+                }, 2500);
               }
             }, 1000);
           } else {
@@ -2186,6 +2413,8 @@
           availableWidgetTypes,
           showQuickAddModal,
           quickAddContent,
+          quickAddDueDate,
+          quickAddRecurrence,
           widgetGridRef,
           timerSeconds,
           timerRunning,
@@ -2219,11 +2448,18 @@
           toggleTimer,
           resetTimer,
           testTimerAlarm,
+          isAlarmRinging,
+          stopAlarm,
+          snoozeTimer,
           handleEditModeClick,
           verifyAdminPassword,
           cycleWidgetWidth,
           cycleWidgetHeight,
           cycleWidgetFontSize,
+          isClockWeatherVisible,
+          toggleClockWeather,
+          getClockStyle,
+          cycleClockStyle,
           getWidgetFontSize,
           getWidgetFontSizeClass,
           pageConfigs,

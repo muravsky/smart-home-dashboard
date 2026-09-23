@@ -47,7 +47,7 @@ const {
   deleteCalendarEvent
 } = require('./db');
 const { parseTextWithGemini } = require('./services/gemini');
-const { getWeather } = require('./services/weather');
+const { getWeather, searchCity, clearWeatherCache } = require('./services/weather');
 const { initBot } = require('./bot');
 const { uploadAvatar, uploadPhoto } = require('./middleware/upload');
 const { syncFeed, syncAllFeeds, startCalendarSyncCron } = require('./services/calendar');
@@ -102,12 +102,17 @@ io.on('connection', (socket) => {
   });
 
   // Interactive list item addition from tablet
-  socket.on('list:item:add', ({ listId, content, assigneeProfileId, reward }) => {
+  socket.on('list:item:add', (data) => {
     insertListItem({
-      list_id: listId,
-      content,
-      assignee_profile_id: assigneeProfileId,
-      reward
+      list_id: data.listId,
+      content: data.content,
+      assignee_profile_id: data.assigneeProfileId,
+      reward: data.reward,
+      due_date: data.dueDate || data.due_date,
+      due_time: data.dueTime || data.due_time,
+      recurrence: data.recurrence || 'none',
+      recurrence_interval: data.recurrenceInterval || data.recurrence_interval,
+      recurrence_days: data.recurrenceDays || data.recurrence_days
     });
     io.emit('dashboard_update', getDashboardData());
   });
@@ -305,14 +310,22 @@ app.delete('/api/admin/lists/:id', (req, res) => {
 
 // List items API
 app.post('/api/admin/lists/:id/items', (req, res) => {
-  const { content, assignee_profile_id, reward, position } = req.body;
+  const {
+    content, assignee_profile_id, reward, position,
+    due_date, due_time, recurrence, recurrence_interval, recurrence_days
+  } = req.body;
   if (!content) return res.status(400).json({ error: 'content is required' });
   const item = insertListItem({
     list_id: req.params.id,
     content,
     assignee_profile_id,
     reward,
-    position
+    position,
+    due_date: due_date || null,
+    due_time: due_time || null,
+    recurrence: recurrence || 'none',
+    recurrence_interval: recurrence_interval || 1,
+    recurrence_days: recurrence_days || null
   });
   io.emit('dashboard_update', getDashboardData());
   res.json({ ok: true, item });
@@ -354,8 +367,24 @@ app.post('/api/admin/layouts', (req, res) => {
 // Settings API (admin)
 app.post('/api/admin/settings', (req, res) => {
   const updated = updateSettings(req.body);
+  const weatherKeys = ['weather_lat', 'weather_lon', 'weather_city', 'weather_units'];
+  if (weatherKeys.some(k => req.body[k] !== undefined)) {
+    clearWeatherCache();
+  }
   io.emit('dashboard_update', getDashboardData());
   res.json({ ok: true, settings: updated });
+});
+
+app.get('/api/weather/search', async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q || q.trim().length < 2) return res.json([]);
+    const results = await searchCity(q.trim());
+    res.json(results);
+  } catch (err) {
+    console.error('Weather search error:', err);
+    res.json([]);
+  }
 });
 
 // Photos API (admin)
