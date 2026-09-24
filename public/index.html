@@ -192,6 +192,68 @@
       color: #ffffff !important;
     }
 
+    /* ==========================================================================
+       High Contrast Theme System
+       ========================================================================== */
+    .theme-high-contrast {
+      background-color: #000000 !important;
+      color: #f8fafc !important;
+    }
+    .theme-high-contrast header,
+    .theme-high-contrast .border-neutral-900,
+    .theme-high-contrast .border-neutral-800,
+    .theme-high-contrast .border-neutral-700,
+    .theme-high-contrast .border-sky-950\/60 {
+      border-color: #facc15 !important;
+    }
+    .theme-high-contrast .bg-black {
+      background-color: #000000 !important;
+    }
+    .theme-high-contrast .bg-neutral-950,
+    .theme-high-contrast .bg-neutral-900,
+    .theme-high-contrast .bg-neutral-800,
+    .theme-high-contrast .bg-neutral-900\/80,
+    .theme-high-contrast .bg-neutral-950\/80 {
+      background-color: #111111 !important;
+      border-color: #facc15 !important;
+      color: #f8fafc !important;
+    }
+    .theme-high-contrast .text-white,
+    .theme-high-contrast .text-neutral-100,
+    .theme-high-contrast .text-neutral-200,
+    .theme-high-contrast .text-neutral-300,
+    .theme-high-contrast .text-neutral-400,
+    .theme-high-contrast .text-neutral-500,
+    .theme-high-contrast .text-sky-400,
+    .theme-high-contrast .text-emerald-400,
+    .theme-high-contrast .text-amber-400 {
+      color: #f8fafc !important;
+    }
+    .theme-high-contrast .text-yellow-300,
+    .theme-high-contrast .text-yellow-400,
+    .theme-high-contrast .text-amber-300 {
+      color: #fde047 !important;
+    }
+    .theme-high-contrast .widget-card {
+      background-color: #000000 !important;
+      border: 1px solid #facc15 !important;
+      box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.35) !important;
+    }
+    html.theme-high-contrast body {
+      background-color: #000000 !important;
+      color: #f8fafc !important;
+    }
+    html.theme-high-contrast #app {
+      background-color: #000000 !important;
+      color: #f8fafc !important;
+    }
+    html.theme-high-contrast .bg-neutral-950,
+    html.theme-high-contrast .bg-neutral-900,
+    html.theme-high-contrast .bg-neutral-800 {
+      background-color: #111111 !important;
+      border-color: #facc15 !important;
+      color: #f8fafc !important;
+    }
 
     /* html.theme-white — applied by JS watcher on documentElement for correct Vue 3 CDN compatibility */
     html.theme-white body { background-color: #f1f5f9 !important; color: #0f172a !important; }
@@ -412,6 +474,7 @@
               PAGE {{ activePage + 1 }} / {{ totalPages }}
             </span>
             <span v-if="activeTheme === 'white'" class="text-xs text-sky-600 font-mono ml-1.5 font-bold">☀️ White</span>
+            <span v-if="activeTheme === 'high-contrast'" class="text-xs text-yellow-300 font-mono ml-1.5 font-bold">⚫ High Contrast</span>
             <span v-if="activeFontSize !== 'normal'" class="text-[11px] text-neutral-400 font-mono ml-1">[{{ activeFontSize }}]</span>
             <span v-if="isNightModeActive" class="text-xs text-amber-500 font-mono ml-2">🌙 Night</span>
           </div>
@@ -507,11 +570,11 @@
                 type="button"
                 @click="cyclePageTheme"
                 class="px-2 py-0.5 rounded text-[11px] font-mono border transition flex items-center gap-1"
-                :class="currentPageConfigTheme === 'white' ? 'bg-white text-black border-neutral-300 font-bold' : (currentPageConfigTheme === 'dark' ? 'bg-neutral-950 text-white border-neutral-700' : 'bg-neutral-800 text-neutral-300 border-neutral-700')"
+                :class="currentPageConfigTheme === 'white' ? 'bg-white text-black border-neutral-300 font-bold' : (currentPageConfigTheme === 'dark' ? 'bg-neutral-950 text-white border-neutral-700' : (currentPageConfigTheme === 'high-contrast' ? 'bg-black text-yellow-300 border-yellow-400' : 'bg-neutral-800 text-neutral-300 border-neutral-700'))"
                 :title="'Page Theme: ' + (currentPageConfigTheme === 'inherit' ? 'Auto (' + activeTheme + ')' : currentPageConfigTheme)"
               >
                 <span>Theme:</span>
-                <span>{{ currentPageConfigTheme === 'white' ? '☀️ White' : (currentPageConfigTheme === 'dark' ? '🌙 Dark' : 'Auto') }}</span>
+                <span>{{ currentPageConfigTheme === 'white' ? '☀️ White' : (currentPageConfigTheme === 'dark' ? '🌙 Dark' : (currentPageConfigTheme === 'high-contrast' ? '⚫ High Contrast' : 'Auto')) }}</span>
               </button>
 
               <!-- Font size toggle for this page -->
@@ -1828,7 +1891,7 @@
         function cyclePageTheme() {
           triggerHaptic('tap');
           const cur = currentPageConfigTheme.value || 'inherit';
-          const order = ['inherit', 'dark', 'white'];
+          const order = ['inherit', 'dark', 'white', 'high-contrast'];
           const nextIdx = (order.indexOf(cur) + 1) % order.length;
           savePageSetting(order[nextIdx], currentPageConfigFontSize.value || 'inherit');
         }
@@ -1845,7 +1908,8 @@
         // Watch activeTheme and apply class on documentElement (fixes Vue 3 CDN root mount limitation)
         watch(activeTheme, (theme) => {
           document.documentElement.classList.toggle('theme-white', theme === 'white');
-          document.body.style.backgroundColor = theme === 'white' ? '#f1f5f9' : '';
+          document.documentElement.classList.toggle('theme-high-contrast', theme === 'high-contrast');
+          document.body.style.backgroundColor = theme === 'white' ? '#f1f5f9' : (theme === 'high-contrast' ? '#000000' : '');
         }, { immediate: true });
 
         function savePageSetting(themeVal, fontSizeVal) {

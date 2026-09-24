@@ -4,4 +4,6 @@ node_modules/
 *.db-journal
 *.db-wal
 *.db-shm
+!data/samples/*.db
+!data/samples/**/*.db
 .DS_Store

@@ -3,6 +3,7 @@ const Database = require('better-sqlite3');
 const fs = require('fs');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../data/smart_home.db');
+const SAMPLE_DB_PATH = path.join(__dirname, '../data/samples/smart_home_sample.db');
 
 // Ensure parent directory exists
 const dbDir = path.dirname(DB_PATH);
@@ -10,9 +11,56 @@ if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
 
-const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+function createDatabaseConnection() {
+  if (!fs.existsSync(DB_PATH) && fs.existsSync(SAMPLE_DB_PATH)) {
+    fs.copyFileSync(SAMPLE_DB_PATH, DB_PATH);
+  }
+
+  const db = new Database(DB_PATH);
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+  return db;
+}
+
+let db;
+try {
+  db = createDatabaseConnection();
+} catch (error) {
+  if (fs.existsSync(SAMPLE_DB_PATH)) {
+    console.warn(`Database at ${DB_PATH} is unreadable; restoring from sample DB.`, error.message);
+    for (const suffix of ['.db', '.db-wal', '.db-shm']) {
+      const candidate = `${DB_PATH}${suffix}`;
+      if (fs.existsSync(candidate)) fs.rmSync(candidate, { force: true });
+    }
+    fs.copyFileSync(SAMPLE_DB_PATH, DB_PATH);
+    db = createDatabaseConnection();
+  } else {
+    throw error;
+  }
+}
+
+function runMigrations() {
+  db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at DATETIME DEFAULT CURRENT_TIMESTAMP);`);
+
+  const migrationsDir = path.join(__dirname, 'db', 'migrations');
+  if (!fs.existsSync(migrationsDir)) return;
+
+  const migrationFiles = fs.readdirSync(migrationsDir)
+    .filter((file) => file.endsWith('.sql'))
+    .sort();
+
+  for (const fileName of migrationFiles) {
+    const version = fileName.replace(/\.sql$/i, '');
+    const alreadyApplied = db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?').get(version);
+    if (alreadyApplied) continue;
+
+    const sql = fs.readFileSync(path.join(migrationsDir, fileName), 'utf8');
+    db.exec(sql);
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (?)').run(version);
+  }
+}
+
+runMigrations();
 
 // Initialize schema
 db.exec(`

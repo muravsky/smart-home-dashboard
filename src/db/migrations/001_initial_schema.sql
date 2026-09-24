@@ -1,0 +1,127 @@
+CREATE TABLE IF NOT EXISTS notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  content TEXT NOT NULL,
+  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  assignee TEXT,
+  title TEXT NOT NULL,
+  reward REAL DEFAULT 0,
+  status TEXT DEFAULT 'pending'
+);
+
+CREATE TABLE IF NOT EXISTS profiles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  color TEXT DEFAULT '#38bdf8',
+  avatar_type TEXT DEFAULT 'builtin',
+  avatar_value TEXT DEFAULT '🙂',
+  telegram_id TEXT,
+  theme TEXT DEFAULT 'dark',
+  font_size TEXT DEFAULT 'normal',
+  language TEXT DEFAULT 'en',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS schedules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  profile_id INTEGER,
+  name TEXT NOT NULL,
+  schedule_data TEXT DEFAULT '[]',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS page_configs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  profile_key TEXT NOT NULL,
+  page INTEGER NOT NULL DEFAULT 0,
+  theme TEXT DEFAULT 'inherit',
+  font_size TEXT DEFAULT 'inherit',
+  UNIQUE(profile_key, page)
+);
+
+CREATE TABLE IF NOT EXISTS lists (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  type TEXT DEFAULT 'custom',
+  profile_id INTEGER,
+  color TEXT DEFAULT '#334155',
+  icon TEXT DEFAULT '📋',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS list_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  list_id INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  checked INTEGER DEFAULT 0,
+  assignee_profile_id INTEGER,
+  reward REAL DEFAULT 0,
+  position INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (list_id) REFERENCES lists(id) ON DELETE CASCADE,
+  FOREIGN KEY (assignee_profile_id) REFERENCES profiles(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS widget_layouts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  page INTEGER NOT NULL DEFAULT 0,
+  widget_type TEXT NOT NULL,
+  x INTEGER NOT NULL DEFAULT 0,
+  y INTEGER NOT NULL DEFAULT 0,
+  w INTEGER NOT NULL DEFAULT 6,
+  h INTEGER NOT NULL DEFAULT 2,
+  config TEXT DEFAULT '{}',
+  position INTEGER DEFAULT 0,
+  profile_id INTEGER,
+  FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
+
+CREATE TABLE IF NOT EXISTS photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  filename TEXT NOT NULL,
+  original_name TEXT,
+  source TEXT DEFAULT 'upload',
+  caption TEXT,
+  show_in_screensaver INTEGER DEFAULT 1,
+  telegram_file_id TEXT,
+  uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS calendar_feeds (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  ical_url TEXT NOT NULL,
+  color TEXT DEFAULT '#38bdf8',
+  profile_id INTEGER,
+  last_synced DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS calendar_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uid TEXT UNIQUE,
+  feed_id INTEGER,
+  title TEXT NOT NULL,
+  description TEXT,
+  start_datetime TEXT NOT NULL,
+  end_datetime TEXT,
+  all_day INTEGER DEFAULT 0,
+  profile_id INTEGER,
+  color TEXT DEFAULT '#38bdf8',
+  source TEXT DEFAULT 'manual',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (feed_id) REFERENCES calendar_feeds(id) ON DELETE CASCADE,
+  FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE SET NULL
+);
+
