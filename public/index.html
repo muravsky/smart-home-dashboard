@@ -627,11 +627,11 @@
                 type="button"
                 @click="cyclePageTheme"
                 class="px-2 py-0.5 rounded text-[11px] font-mono border transition flex items-center gap-1"
-                :class="currentPageConfigTheme === 'white' ? 'bg-white text-black border-neutral-300 font-bold' : (currentPageConfigTheme === 'white-contrast' ? 'bg-white text-black border-black font-black' : (currentPageConfigTheme === 'dark' ? 'bg-neutral-950 text-white border-neutral-700' : (currentPageConfigTheme === 'high-contrast' ? 'bg-black text-yellow-300 border-yellow-400' : 'bg-neutral-800 text-neutral-300 border-neutral-700'))))"
+                :class="currentPageConfigTheme === 'white' ? 'bg-white text-black border-neutral-300 font-bold' : currentPageConfigTheme === 'white-contrast' ? 'bg-white text-black border-black font-black' : currentPageConfigTheme === 'dark' ? 'bg-neutral-950 text-white border-neutral-700' : currentPageConfigTheme === 'high-contrast' ? 'bg-black text-yellow-300 border-yellow-400' : 'bg-neutral-800 text-neutral-300 border-neutral-700'"
                 :title="'Page Theme: ' + (currentPageConfigTheme === 'inherit' ? 'Auto (' + activeTheme + ')' : currentPageConfigTheme)"
               >
                 <span>Theme:</span>
-                <span>{{ currentPageConfigTheme === 'white' ? '☀️ White' : (currentPageConfigTheme === 'white-contrast' ? '⚪ White (Black Text)' : (currentPageConfigTheme === 'dark' ? '🌙 Dark' : (currentPageConfigTheme === 'high-contrast' ? '⚫ High Contrast' : 'Auto'))) }}</span>
+                <span>{{ currentPageConfigTheme === 'white' ? '☀️ White' : currentPageConfigTheme === 'white-contrast' ? '⚪ White (Black Text)' : currentPageConfigTheme === 'dark' ? '🌙 Dark' : currentPageConfigTheme === 'high-contrast' ? '⚫ High Contrast' : 'Auto' }}</span>
               </button>
 
               <!-- Font size toggle for this page -->
