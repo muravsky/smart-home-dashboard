@@ -1,8 +1,7 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { getSettings } = require('../db');
 
-function buildSystemPrompt() {
-  const todayStr = new Date().toISOString().slice(0, 10);
-  return `You are the smart assistant for a family smart home tablet dashboard. Today is ${todayStr}.
+const DEFAULT_GEMINI_SYSTEM_PROMPT = `You are the smart assistant for a family smart home tablet dashboard. Today is ${new Date().toISOString().slice(0, 10)}.
 Analyze the user's natural language input and return ONLY raw JSON matching this schema:
 {
   "notes": ["string of note content"],
@@ -46,6 +45,27 @@ Rules:
 4. Tasks: Chores, to-dos, things to do. If reward is mentioned (e.g. "for 15 points"), set reward number. If the user mentions a date or time, fill due_date and due_time. If they say recurring, use recurrence and recurrence_interval.
 5. Notes: Generic info, reminders, thoughts.
 6. Only return non-empty arrays/objects when detected. If a field is not present, use empty array [] or null for timer. If the request is not clearly actionable, return notes with the user text as a reminder.`;
+
+const DEFAULT_GEMINI_TEXT_PROMPT = 'Extract actionable family dashboard items from the message and return only the structured JSON schema described above.';
+const DEFAULT_GEMINI_VOICE_PROMPT = 'Please listen carefully to this voice recording, transcribe it, and extract the smart home actions according to the schema.';
+
+function resolveGeminiPromptSettings() {
+  const settings = getSettings ? getSettings() : {};
+  return {
+    system: String(settings.gemini_system_prompt || '').trim() || DEFAULT_GEMINI_SYSTEM_PROMPT,
+    text: String(settings.gemini_text_prompt || '').trim() || DEFAULT_GEMINI_TEXT_PROMPT,
+    voice: String(settings.gemini_voice_prompt || '').trim() || DEFAULT_GEMINI_VOICE_PROMPT
+  };
+}
+
+function buildSystemPrompt(mode = 'text', senderName = null) {
+  const { system, text, voice } = resolveGeminiPromptSettings();
+  const basePrompt = mode === 'voice' ? voice : text;
+  let prompt = `${system}\n\n${basePrompt}`;
+  if (senderName) {
+    prompt += `\nThe sender's name is ${senderName}.`;
+  }
+  return prompt;
 }
 
 function normalizeParsedGeminiPayload(parsed = {}) {
@@ -138,7 +158,7 @@ async function parseTextWithGemini(userText, senderName = null) {
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
-  const prompt = buildSystemPrompt() + (senderName ? `\nThe sender's name is ${senderName}.` : '');
+  const prompt = buildSystemPrompt('text', senderName);
 
   const model = genAI.getGenerativeModel({
     model: 'gemini-3.5-flash-lite',
@@ -156,15 +176,7 @@ async function parseTextWithGemini(userText, senderName = null) {
   rawContent = rawContent.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
   const parsed = JSON.parse(rawContent);
-
-  return {
-    notes: Array.isArray(parsed.notes) ? parsed.notes : [],
-    tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
-    shopping_items: Array.isArray(parsed.shopping_items) ? parsed.shopping_items : [],
-    calendar_events: Array.isArray(parsed.calendar_events) ? parsed.calendar_events : [],
-    timer: parsed.timer && typeof parsed.timer === 'object' ? parsed.timer : null,
-    response_message: parsed.response_message || ''
-  };
+  return normalizeParsedGeminiPayload(parsed);
 }
 
 /**
@@ -179,7 +191,7 @@ async function parseAudioWithGemini(audioBuffer, mimeType = 'audio/ogg', senderN
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
-  const prompt = buildSystemPrompt() + (senderName ? `\nThe sender's name is ${senderName}.` : '');
+  const prompt = buildSystemPrompt('voice', senderName);
 
   const model = genAI.getGenerativeModel({
     model: 'gemini-3.5-flash-lite',
@@ -198,7 +210,7 @@ async function parseAudioWithGemini(audioBuffer, mimeType = 'audio/ogg', senderN
         data: base64Audio
       }
     },
-    'Please listen carefully to this voice recording, transcribe it, and extract the smart home actions according to the schema.'
+    buildSystemPrompt('voice', senderName)
   ]);
 
   let rawContent = response.response.text().trim();
