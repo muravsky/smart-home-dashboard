@@ -45,7 +45,7 @@ Rules:
 }
 
 /**
- * Parse incoming text from Telegram or Dictation using Gemini 1.5 Flash.
+ * Parse incoming text from Telegram or Dictation using Gemini 3.5 Flash.
  */
 async function parseTextWithGemini(userText, senderName = null) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -59,7 +59,7 @@ async function parseTextWithGemini(userText, senderName = null) {
   const prompt = buildSystemPrompt() + (senderName ? `\nThe sender's name is ${senderName}.` : '');
 
   const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-flash',
+    model: 'gemini-3.5-flash-lite',
     systemInstruction: prompt,
     generationConfig: {
       responseMimeType: 'application/json',
@@ -86,7 +86,7 @@ async function parseTextWithGemini(userText, senderName = null) {
 }
 
 /**
- * Parse incoming voice audio from Telegram using Gemini 1.5 Flash multimodal understanding.
+ * Parse incoming voice audio from Telegram using Gemini 3.5 Flash multimodal understanding.
  */
 async function parseAudioWithGemini(audioBuffer, mimeType = 'audio/ogg', senderName = null) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -100,7 +100,7 @@ async function parseAudioWithGemini(audioBuffer, mimeType = 'audio/ogg', senderN
   const prompt = buildSystemPrompt() + (senderName ? `\nThe sender's name is ${senderName}.` : '');
 
   const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-flash',
+    model: 'gemini-3.5-flash-lite',
     systemInstruction: prompt,
     generationConfig: {
       responseMimeType: 'application/json',
