@@ -192,6 +192,62 @@
       color: #ffffff !important;
     }
 
+    /* High-contrast white theme: true black text on pure white background */
+    .theme-white-contrast {
+      background-color: #ffffff !important;
+      color: #000000 !important;
+    }
+    .theme-white-contrast .widget-card,
+    .theme-white-contrast .bg-neutral-950,
+    .theme-white-contrast .bg-neutral-900,
+    .theme-white-contrast .bg-neutral-800,
+    .theme-white-contrast .bg-neutral-900\/80,
+    .theme-white-contrast .bg-neutral-950\/80,
+    .theme-white-contrast .bg-sky-950\/20,
+    .theme-white-contrast .bg-sky-950\/30,
+    .theme-white-contrast .bg-sky-950\/40,
+    .theme-white-contrast .bg-sky-950\/50,
+    .theme-white-contrast .bg-sky-950\/60 {
+      background-color: #ffffff !important;
+      border-color: #000000 !important;
+      color: #000000 !important;
+    }
+    .theme-white-contrast .text-white,
+    .theme-white-contrast .text-neutral-100,
+    .theme-white-contrast .text-neutral-200,
+    .theme-white-contrast .text-neutral-300,
+    .theme-white-contrast .text-neutral-400,
+    .theme-white-contrast .text-neutral-500,
+    .theme-white-contrast .text-sky-400,
+    .theme-white-contrast .text-sky-300,
+    .theme-white-contrast .text-emerald-400,
+    .theme-white-contrast .text-emerald-300,
+    .theme-white-contrast .text-amber-400,
+    .theme-white-contrast .text-yellow-300,
+    .theme-white-contrast .text-yellow-400,
+    .theme-white-contrast .text-amber-300 {
+      color: #000000 !important;
+    }
+    .theme-white-contrast .border-neutral-900,
+    .theme-white-contrast .border-neutral-800,
+    .theme-white-contrast .border-neutral-700,
+    .theme-white-contrast .border-sky-950\/60,
+    .theme-white-contrast .border-neutral-300 {
+      border-color: #000000 !important;
+    }
+    .theme-white-contrast input[type="text"] {
+      background-color: #ffffff !important;
+      border-color: #000000 !important;
+      color: #000000 !important;
+    }
+    .theme-white-contrast .fixed.inset-0.z-50 {
+      background-color: #000000 !important;
+      color: #ffffff !important;
+    }
+    .theme-white-contrast .fixed.inset-0.z-50 .text-white {
+      color: #ffffff !important;
+    }
+
     /* ==========================================================================
        High Contrast Theme System
        ========================================================================== */
@@ -336,7 +392,7 @@
   <div 
     id="app" 
     class="h-full w-full relative flex flex-col justify-between overflow-hidden" 
-    :class="{ 'theme-white': activeTheme === 'white' }" 
+    :class="{ 'theme-white': activeTheme === 'white', 'theme-white-contrast': activeTheme === 'white-contrast' }" 
     @touchstart="handleTouchStart" 
     @touchmove="handleTouchMove"
     @touchend="handleTouchEnd"
@@ -474,6 +530,7 @@
               PAGE {{ activePage + 1 }} / {{ totalPages }}
             </span>
             <span v-if="activeTheme === 'white'" class="text-xs text-sky-600 font-mono ml-1.5 font-bold">☀️ White</span>
+            <span v-if="activeTheme === 'white-contrast'" class="text-xs text-black font-mono ml-1.5 font-bold">⚪ White (Black Text)</span>
             <span v-if="activeTheme === 'high-contrast'" class="text-xs text-yellow-300 font-mono ml-1.5 font-bold">⚫ High Contrast</span>
             <span v-if="activeFontSize !== 'normal'" class="text-[11px] text-neutral-400 font-mono ml-1">[{{ activeFontSize }}]</span>
             <span v-if="isNightModeActive" class="text-xs text-amber-500 font-mono ml-2">🌙 Night</span>
@@ -570,11 +627,11 @@
                 type="button"
                 @click="cyclePageTheme"
                 class="px-2 py-0.5 rounded text-[11px] font-mono border transition flex items-center gap-1"
-                :class="currentPageConfigTheme === 'white' ? 'bg-white text-black border-neutral-300 font-bold' : (currentPageConfigTheme === 'dark' ? 'bg-neutral-950 text-white border-neutral-700' : (currentPageConfigTheme === 'high-contrast' ? 'bg-black text-yellow-300 border-yellow-400' : 'bg-neutral-800 text-neutral-300 border-neutral-700'))"
+                :class="currentPageConfigTheme === 'white' ? 'bg-white text-black border-neutral-300 font-bold' : (currentPageConfigTheme === 'white-contrast' ? 'bg-white text-black border-black font-black' : (currentPageConfigTheme === 'dark' ? 'bg-neutral-950 text-white border-neutral-700' : (currentPageConfigTheme === 'high-contrast' ? 'bg-black text-yellow-300 border-yellow-400' : 'bg-neutral-800 text-neutral-300 border-neutral-700'))))"
                 :title="'Page Theme: ' + (currentPageConfigTheme === 'inherit' ? 'Auto (' + activeTheme + ')' : currentPageConfigTheme)"
               >
                 <span>Theme:</span>
-                <span>{{ currentPageConfigTheme === 'white' ? '☀️ White' : (currentPageConfigTheme === 'dark' ? '🌙 Dark' : (currentPageConfigTheme === 'high-contrast' ? '⚫ High Contrast' : 'Auto')) }}</span>
+                <span>{{ currentPageConfigTheme === 'white' ? '☀️ White' : (currentPageConfigTheme === 'white-contrast' ? '⚪ White (Black Text)' : (currentPageConfigTheme === 'dark' ? '🌙 Dark' : (currentPageConfigTheme === 'high-contrast' ? '⚫ High Contrast' : 'Auto'))) }}</span>
               </button>
 
               <!-- Font size toggle for this page -->
@@ -1891,7 +1948,7 @@
         function cyclePageTheme() {
           triggerHaptic('tap');
           const cur = currentPageConfigTheme.value || 'inherit';
-          const order = ['inherit', 'dark', 'white', 'high-contrast'];
+          const order = ['inherit', 'dark', 'white', 'white-contrast', 'high-contrast'];
           const nextIdx = (order.indexOf(cur) + 1) % order.length;
           savePageSetting(order[nextIdx], currentPageConfigFontSize.value || 'inherit');
         }
@@ -1908,8 +1965,9 @@
         // Watch activeTheme and apply class on documentElement (fixes Vue 3 CDN root mount limitation)
         watch(activeTheme, (theme) => {
           document.documentElement.classList.toggle('theme-white', theme === 'white');
+          document.documentElement.classList.toggle('theme-white-contrast', theme === 'white-contrast');
           document.documentElement.classList.toggle('theme-high-contrast', theme === 'high-contrast');
-          document.body.style.backgroundColor = theme === 'white' ? '#f1f5f9' : (theme === 'high-contrast' ? '#000000' : '');
+          document.body.style.backgroundColor = theme === 'white' ? '#f1f5f9' : (theme === 'white-contrast' ? '#ffffff' : (theme === 'high-contrast' ? '#000000' : ''));
         }, { immediate: true });
 
         function savePageSetting(themeVal, fontSizeVal) {
