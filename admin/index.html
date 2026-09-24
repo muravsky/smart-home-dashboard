@@ -62,6 +62,13 @@
         📋 Lists & Tasks
       </button>
       <button 
+        @click="activeTab = 'schedules'" 
+        :class="activeTab === 'schedules' ? 'border-sky-500 text-sky-400 bg-sky-500/10' : 'border-transparent text-neutral-400 hover:text-white'"
+        class="px-4 py-2 border-b-2 font-mono text-xs font-semibold uppercase tracking-wider transition rounded-t"
+      >
+        📚 School Schedules
+      </button>
+      <button 
         @click="activeTab = 'notes_ai'" 
         :class="activeTab === 'notes_ai' ? 'border-sky-500 text-sky-400 bg-sky-500/10' : 'border-transparent text-neutral-400 hover:text-white'"
         class="px-4 py-2 border-b-2 font-mono text-xs font-semibold uppercase tracking-wider transition rounded-t"
@@ -218,6 +225,19 @@
                 <option value="xlarge">Extra Large</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <label class="block text-neutral-400 text-[11px] font-mono mb-1">LANGUAGE</label>
+            <select 
+              v-model="newProfile.language" 
+              class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-lg p-2 text-xs text-neutral-100 outline-none cursor-pointer"
+            >
+              <option value="en">English</option>
+              <option value="ru">Русский</option>
+              <option value="pl">Polski</option>
+              <option value="uk">Українська</option>
+            </select>
           </div>
 
           <button 
@@ -425,6 +445,19 @@
               </div>
             </div>
 
+            <div>
+              <label class="block text-neutral-300 text-xs font-mono mb-1">LANGUAGE</label>
+              <select 
+                v-model="editingProfile.language" 
+                class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-lg p-2 text-xs text-neutral-100 outline-none cursor-pointer"
+              >
+                <option value="en">English</option>
+                <option value="ru">Русский</option>
+                <option value="pl">Polski</option>
+                <option value="uk">Українська</option>
+              </select>
+            </div>
+
             <div class="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
               <button 
                 type="button" 
@@ -574,12 +607,60 @@
               </div>
             </div>
 
-            <button 
-              @click="deleteList(currentList.id)" 
-              class="text-xs font-mono text-neutral-500 hover:text-red-400 border border-neutral-800 hover:border-red-900 px-2.5 py-1 rounded transition"
-            >
-              Delete List
-            </button>
+            <div class="flex items-center gap-2">
+              <button 
+                @click="startEditList(currentList)" 
+                class="text-xs font-mono text-neutral-300 hover:text-emerald-400 border border-neutral-800 hover:border-emerald-700 px-2.5 py-1 rounded transition"
+              >
+                Edit List
+              </button>
+              <button 
+                @click="deleteList(currentList.id)" 
+                class="text-xs font-mono text-neutral-500 hover:text-red-400 border border-neutral-800 hover:border-red-900 px-2.5 py-1 rounded transition"
+              >
+                Delete List
+              </button>
+            </div>
+          </div>
+
+          <div v-if="editingList && editingList.id === currentList.id" class="mb-4 p-3 bg-neutral-950 border border-neutral-800 rounded-lg space-y-3">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="font-mono text-[11px] uppercase tracking-wider text-emerald-400">Edit list</h3>
+              <button type="button" @click="cancelEditList" class="text-[10px] font-mono text-neutral-500 hover:text-white">Cancel</button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div class="md:col-span-2">
+                <label class="block text-neutral-400 text-[11px] font-mono mb-1">LIST NAME</label>
+                <input v-model="editingList.name" type="text" class="w-full bg-neutral-900 border border-neutral-800 rounded p-2 text-xs text-white outline-none" required />
+              </div>
+              <div>
+                <label class="block text-neutral-400 text-[11px] font-mono mb-1">TYPE</label>
+                <select v-model="editingList.type" class="w-full bg-neutral-900 border border-neutral-800 rounded p-2 text-xs text-neutral-200 outline-none">
+                  <option value="tasks">Tasks & Chores</option>
+                  <option value="shopping">Shopping List</option>
+                  <option value="custom">Custom List</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-neutral-400 text-[11px] font-mono mb-1">ASSIGN TO</label>
+                <select v-model="editingList.profile_id" class="w-full bg-neutral-900 border border-neutral-800 rounded p-2 text-xs text-neutral-200 outline-none">
+                  <option :value="null">Shared (Family)</option>
+                  <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-neutral-400 text-[11px] font-mono mb-1">ICON</label>
+                <input v-model="editingList.icon" type="text" class="w-full bg-neutral-900 border border-neutral-800 rounded p-2 text-xs text-center text-neutral-200 outline-none" />
+              </div>
+              <div>
+                <label class="block text-neutral-400 text-[11px] font-mono mb-1">COLOR</label>
+                <input v-model="editingList.color" type="color" class="w-full h-9 rounded bg-transparent border-0 cursor-pointer" />
+              </div>
+            </div>
+            <div class="flex gap-2 justify-end">
+              <button type="button" @click="cancelEditList" class="text-xs font-mono border border-neutral-800 px-3 py-1.5 rounded text-neutral-300 hover:text-white">Cancel</button>
+              <button type="button" @click="saveEditList" class="text-xs font-mono bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded">Save List</button>
+            </div>
           </div>
 
           <!-- ADD ITEM INPUT -->
@@ -692,62 +773,126 @@
             <div 
               v-for="item in currentList.items" 
               :key="item.id" 
-              class="p-2.5 bg-neutral-950 border rounded-lg flex items-center justify-between gap-3 hover:border-neutral-700 transition"
+              class="p-2.5 bg-neutral-950 border rounded-lg hover:border-neutral-700 transition"
               :class="{
                 'border-red-800 bg-red-950/30': item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10),
                 'border-neutral-800/80': !(item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10)),
                 'opacity-50': item.checked
               }"
             >
-              <div class="flex items-center gap-3 flex-wrap flex-1 min-w-0">
-                <input 
-                  type="checkbox" 
-                  :checked="item.checked === 1" 
-                  @change="toggleListItem(item)"
-                  class="w-4 h-4 rounded bg-neutral-900 border-neutral-700 text-emerald-500 focus:ring-0 cursor-pointer shrink-0"
-                />
-                <span 
-                  class="text-xs text-neutral-200" 
-                  :class="{ 'line-through text-neutral-500': item.checked }"
-                >
-                  {{ item.content }}
-                </span>
-                <span 
-                  v-if="item.assignee_name" 
-                  class="text-[10px] font-mono px-1.5 py-0.5 rounded border border-neutral-800 bg-neutral-900 text-neutral-400 shrink-0"
-                >
-                  @{{ item.assignee_name }}
-                </span>
-                <span 
-                  v-if="item.reward" 
-                  class="text-[10px] font-mono text-emerald-400 font-semibold shrink-0"
-                >
-                  +{{ item.reward }} pts
-                </span>
-                <span 
-                  v-if="item.recurrence && item.recurrence !== 'none'" 
-                  class="text-[10px] font-mono text-sky-400 px-1.5 py-0.5 rounded bg-sky-950/60 border border-sky-800/50 shrink-0 flex items-center gap-1"
-                >
-                  <span>↻</span>
-                  <span>{{ item.recurrence === 'interval' ? 'every ' + (item.recurrence_interval || 1) + 'd' : item.recurrence }}</span>
-                </span>
-                <span 
-                  v-if="item.due_date" 
-                  class="text-[10px] font-mono shrink-0 flex items-center gap-1"
-                  :class="item.checked !== 1 && item.due_date < new Date().toISOString().slice(0,10) ? 'text-red-400 font-bold' : 'text-neutral-400'"
-                >
-                  <span v-if="item.checked !== 1 && item.due_date < new Date().toISOString().slice(0,10)" class="px-1 py-0.5 rounded bg-red-950 text-red-400 border border-red-800 font-bold">OVERDUE</span>
-                  <span>📅 {{ item.due_date }}{{ item.due_time ? ' ' + item.due_time : '' }}</span>
-                </span>
+              <div v-if="editingListItem && editingListItem.id === item.id" class="space-y-3">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <div class="md:col-span-2">
+                    <label class="block text-neutral-400 text-[11px] font-mono mb-1">TASK CONTENT</label>
+                    <input v-model="editingListItem.content" type="text" class="w-full bg-neutral-900 border border-neutral-800 rounded p-2 text-xs text-white outline-none" required />
+                  </div>
+                  <div>
+                    <label class="block text-neutral-400 text-[11px] font-mono mb-1">ASSIGNEE</label>
+                    <select v-model="editingListItem.assignee_profile_id" class="w-full bg-neutral-900 border border-neutral-800 rounded p-2 text-[11px] text-neutral-200 outline-none">
+                      <option :value="null">No Assignee</option>
+                      <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-neutral-400 text-[11px] font-mono mb-1">REWARD</label>
+                    <input v-model.number="editingListItem.reward" type="number" min="0" class="w-full bg-neutral-900 border border-neutral-800 rounded p-2 text-[11px] text-neutral-200 outline-none text-center" />
+                  </div>
+                  <div>
+                    <label class="block text-neutral-400 text-[11px] font-mono mb-1">DUE DATE</label>
+                    <input v-model="editingListItem.due_date" type="date" class="w-full bg-neutral-900 border border-neutral-800 rounded p-2 text-[11px] text-neutral-200 outline-none" />
+                  </div>
+                  <div>
+                    <label class="block text-neutral-400 text-[11px] font-mono mb-1">DUE TIME</label>
+                    <input v-model="editingListItem.due_time" type="time" class="w-full bg-neutral-900 border border-neutral-800 rounded p-2 text-[11px] text-neutral-200 outline-none" />
+                  </div>
+                  <div class="md:col-span-2">
+                    <label class="block text-neutral-400 text-[11px] font-mono mb-1">RECURRING</label>
+                    <select v-model="editingListItem.recurrence" class="w-full bg-neutral-900 border border-neutral-800 rounded p-2 text-[11px] text-sky-400 outline-none">
+                      <option value="none">No Repeat</option>
+                      <option value="daily">Daily</option>
+                      <option value="weekdays">Weekdays (Mon-Fri)</option>
+                      <option value="weekends">Weekends (Sat-Sun)</option>
+                      <option value="interval">Every N Days</option>
+                      <option value="weekly">Custom Days of Week</option>
+                    </select>
+                  </div>
+                  <div v-if="editingListItem.recurrence === 'interval'" class="md:col-span-2 flex items-center gap-2">
+                    <span class="text-neutral-500 text-[11px] font-mono">Every</span>
+                    <input v-model.number="editingListItem.recurrence_interval" type="number" min="1" class="w-16 bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-[11px] text-center text-neutral-200 outline-none" />
+                    <span class="text-neutral-500 text-[11px] font-mono">days</span>
+                  </div>
+                  <div v-if="editingListItem.recurrence === 'weekly'" class="md:col-span-2 flex items-center gap-1">
+                    <button v-for="day in [{ id: 1, label: 'M' }, { id: 2, label: 'T' }, { id: 3, label: 'W' }, { id: 4, label: 'T' }, { id: 5, label: 'F' }, { id: 6, label: 'S' }, { id: 0, label: 'S' }]" :key="day.id" type="button" @click="toggleRecurrenceDay(day.id, editingListItem.recurrence_days)" class="w-6 h-6 rounded text-[10px] font-bold flex items-center justify-center transition" :class="editingListItem.recurrence_days.includes(day.id) ? 'bg-sky-600 text-white' : 'bg-neutral-900 text-neutral-400 hover:text-white'">
+                      {{ day.label }}
+                    </button>
+                  </div>
+                </div>
+                <div class="flex justify-end gap-2 pt-2 border-t border-neutral-900">
+                  <button type="button" @click="cancelEditListItem" class="text-xs font-mono border border-neutral-800 px-3 py-1.5 rounded text-neutral-300 hover:text-white">Cancel</button>
+                  <button type="button" @click="saveEditListItem" class="text-xs font-mono bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded">Save Item</button>
+                </div>
               </div>
 
-              <button 
-                @click="deleteListItem(item.id)" 
-                class="text-neutral-600 hover:text-red-400 text-xs font-mono px-2 py-1 transition shrink-0"
-                title="Delete item"
-              >
-                ✕
-              </button>
+              <div v-else class="flex items-center justify-between gap-3">
+                <div class="flex items-center gap-3 flex-wrap flex-1 min-w-0">
+                  <input 
+                    type="checkbox" 
+                    :checked="item.checked === 1" 
+                    @change="toggleListItem(item)"
+                    class="w-4 h-4 rounded bg-neutral-900 border-neutral-700 text-emerald-500 focus:ring-0 cursor-pointer shrink-0"
+                  />
+                  <span 
+                    class="text-xs text-neutral-200" 
+                    :class="{ 'line-through text-neutral-500': item.checked }"
+                  >
+                    {{ item.content }}
+                  </span>
+                  <span 
+                    v-if="item.assignee_name" 
+                    class="text-[10px] font-mono px-1.5 py-0.5 rounded border border-neutral-800 bg-neutral-900 text-neutral-400 shrink-0"
+                  >
+                    @{{ item.assignee_name }}
+                  </span>
+                  <span 
+                    v-if="item.reward" 
+                    class="text-[10px] font-mono text-emerald-400 font-semibold shrink-0"
+                  >
+                    +{{ item.reward }} pts
+                  </span>
+                  <span 
+                    v-if="item.recurrence && item.recurrence !== 'none'" 
+                    class="text-[10px] font-mono text-sky-400 px-1.5 py-0.5 rounded bg-sky-950/60 border border-sky-800/50 shrink-0 flex items-center gap-1"
+                  >
+                    <span>↻</span>
+                    <span>{{ item.recurrence === 'interval' ? 'every ' + (item.recurrence_interval || 1) + 'd' : item.recurrence }}</span>
+                  </span>
+                  <span 
+                    v-if="item.due_date" 
+                    class="text-[10px] font-mono shrink-0 flex items-center gap-1"
+                    :class="item.checked !== 1 && item.due_date < new Date().toISOString().slice(0,10) ? 'text-red-400 font-bold' : 'text-neutral-400'"
+                  >
+                    <span v-if="item.checked !== 1 && item.due_date < new Date().toISOString().slice(0,10)" class="px-1 py-0.5 rounded bg-red-950 text-red-400 border border-red-800 font-bold">OVERDUE</span>
+                    <span>📅 {{ item.due_date }}{{ item.due_time ? ' ' + item.due_time : '' }}</span>
+                  </span>
+                </div>
+
+                <div class="flex items-center gap-2 shrink-0">
+                  <button 
+                    @click="startEditListItem(item)" 
+                    class="text-neutral-400 hover:text-emerald-400 text-xs font-mono px-2 py-1 transition"
+                    title="Edit item"
+                  >
+                    Edit
+                  </button>
+                  <button 
+                    @click="deleteListItem(item.id)" 
+                    class="text-neutral-600 hover:text-red-400 text-xs font-mono px-2 py-1 transition"
+                    title="Delete item"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -761,7 +906,117 @@
     </div>
 
     <!-- =========================================================================
-         TAB 3: NOTES & GEMINI AI SIMULATOR
+         TAB 3: SCHOOL SCHEDULES
+         ========================================================================= -->
+    <div v-if="activeTab === 'schedules'" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div class="space-y-6 lg:col-span-1">
+        <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg">
+          <h2 class="font-mono text-xs font-bold uppercase tracking-wider text-violet-400 mb-3 border-b border-neutral-800 pb-2">
+            {{ editingSchedule ? 'EDIT SCHEDULE' : '+ CREATE SCHEDULE' }}
+          </h2>
+
+          <form @submit.prevent="saveSchedule" class="space-y-3">
+            <div>
+              <label class="block text-neutral-400 text-[11px] font-mono mb-1">SCHEDULE NAME</label>
+              <input v-model="scheduleDraft.name" type="text" placeholder="e.g. Leo Weekly Plan" class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-100 outline-none" required />
+            </div>
+
+            <div>
+              <label class="block text-neutral-400 text-[11px] font-mono mb-1">ASSIGN TO</label>
+              <select v-model="scheduleDraft.profile_id" class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 outline-none">
+                <option :value="null">Shared / Family</option>
+                <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </select>
+            </div>
+
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <h3 class="font-mono text-[11px] uppercase tracking-wider text-neutral-400">Days</h3>
+                <button type="button" @click="addScheduleDay" class="text-[10px] font-mono text-violet-300 hover:text-violet-200">+ Add day</button>
+              </div>
+
+              <div v-for="(dayEntry, dayIndex) in scheduleDraft.schedule" :key="dayIndex" class="bg-neutral-950 border border-neutral-800 rounded-lg p-3 space-y-3">
+                <div class="flex items-center gap-2">
+                  <input v-model="dayEntry.day" type="text" placeholder="Mon" class="w-20 bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-[11px] text-white outline-none" />
+                  <button type="button" @click="addScheduleLesson(dayIndex)" class="ml-auto text-[10px] font-mono text-sky-300 hover:text-sky-200">+ Add lesson</button>
+                  <button v-if="scheduleDraft.schedule.length > 1" type="button" @click="removeScheduleDay(dayIndex)" class="text-[10px] font-mono text-red-400 hover:text-red-300">Remove</button>
+                </div>
+
+                <div v-for="(lesson, lessonIndex) in dayEntry.lessons" :key="lessonIndex" class="grid grid-cols-2 gap-2 bg-neutral-900/60 border border-neutral-800 rounded p-2">
+                  <div>
+                    <label class="block text-[10px] font-mono text-neutral-500 mb-1">#</label>
+                    <input v-model.number="lesson.number" type="number" min="1" class="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-[11px] text-neutral-100 outline-none" />
+                  </div>
+                  <div>
+                    <label class="block text-[10px] font-mono text-neutral-500 mb-1">Room</label>
+                    <input v-model="lesson.room" type="text" placeholder="A-101" class="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-[11px] text-neutral-100 outline-none" />
+                  </div>
+                  <div>
+                    <label class="block text-[10px] font-mono text-neutral-500 mb-1">Start</label>
+                    <input v-model="lesson.start" type="time" class="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-[11px] text-neutral-100 outline-none" />
+                  </div>
+                  <div>
+                    <label class="block text-[10px] font-mono text-neutral-500 mb-1">End</label>
+                    <input v-model="lesson.end" type="time" class="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-[11px] text-neutral-100 outline-none" />
+                  </div>
+                  <div class="col-span-2">
+                    <label class="block text-[10px] font-mono text-neutral-500 mb-1">Lesson</label>
+                    <input v-model="lesson.name" type="text" placeholder="Mathematics" class="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-[11px] text-neutral-100 outline-none" />
+                  </div>
+                  <div class="col-span-2 flex justify-end">
+                    <button type="button" @click="removeScheduleLesson(dayIndex, lessonIndex)" class="text-[10px] font-mono text-red-400 hover:text-red-300">Delete Lesson</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2 pt-2 border-t border-neutral-800">
+              <button type="button" v-if="editingSchedule" @click="cancelEditSchedule" class="flex-1 font-mono text-xs bg-neutral-800 hover:bg-neutral-700 text-neutral-200 py-2 rounded-lg">Cancel</button>
+              <button type="submit" class="flex-1 font-mono text-xs bg-violet-600 hover:bg-violet-500 text-white py-2 rounded-lg">
+                {{ editingSchedule ? 'Update Schedule' : 'Create Schedule' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="lg:col-span-2 space-y-4">
+        <div v-if="schedules.length === 0" class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-8 text-center text-xs font-mono text-neutral-500">
+          No schedules created yet.
+        </div>
+
+        <div v-for="schedule in schedules" :key="schedule.id" class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-4 shadow-lg">
+          <div class="flex items-start justify-between gap-3 border-b border-neutral-800 pb-3 mb-3">
+            <div>
+              <div class="text-base font-bold text-white">{{ schedule.name }}</div>
+              <div class="text-[11px] font-mono text-neutral-400">
+                {{ schedule.profile_name ? 'Assigned to ' + schedule.profile_name : 'Family Shared' }}
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <button type="button" @click="startEditSchedule(schedule)" class="text-xs font-mono text-neutral-300 hover:text-violet-300 border border-neutral-700 px-2 py-1 rounded">Edit</button>
+              <button type="button" @click="deleteSchedule(schedule.id)" class="text-xs font-mono text-neutral-500 hover:text-red-400 border border-neutral-700 px-2 py-1 rounded">Delete</button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <div v-for="day in schedule.schedule.slice(0, 5)" :key="day.day" class="bg-neutral-950 border border-neutral-800 rounded-lg p-2">
+              <div class="text-[10px] font-mono text-violet-300 uppercase tracking-wider mb-2">{{ day.day }}</div>
+              <div v-if="day.lessons && day.lessons.length" class="space-y-1">
+                <div v-for="lesson in day.lessons" :key="lesson.number" class="text-[11px] text-neutral-200 border-b border-neutral-900 pb-1 last:border-b-0">
+                  <span class="font-bold text-white">{{ lesson.number }}.</span> {{ lesson.name }} <span class="text-neutral-500">{{ lesson.start }}–{{ lesson.end }}</span>
+                  <span class="text-violet-300">{{ lesson.room }}</span>
+                </div>
+              </div>
+              <div v-else class="text-[10px] text-neutral-600">No lessons</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================================================
+         TAB 4: NOTES & GEMINI AI SIMULATOR
          ========================================================================= -->
     <div v-if="activeTab === 'notes_ai'" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
       
@@ -1497,6 +1752,19 @@
                 <option value="fahrenheit">°F — Fahrenheit</option>
               </select>
             </div>
+
+            <div>
+              <label class="block text-xs font-mono text-neutral-400 mb-1">Dashboard Language</label>
+              <select
+                v-model="settings.language"
+                class="text-xs font-mono bg-neutral-800 border border-neutral-700 text-neutral-100 rounded px-3 py-2 w-full"
+              >
+                <option value="en">English</option>
+                <option value="ru">Русский</option>
+                <option value="pl">Polski</option>
+                <option value="uk">Українська</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -1522,6 +1790,7 @@
         const alertSuccess = ref(true);
 
         const profiles = ref([]);
+        const schedules = ref([]);
         const lists = ref([]);
         const notes = ref([]);
         const photos = ref([]);
@@ -1571,7 +1840,8 @@
           avatar_value: '🦁',
           telegram_id: '',
           theme: 'dark',
-          font_size: 'normal'
+          font_size: 'normal',
+          language: 'en'
         });
         const avatarFileInput = ref(null);
         const avatarUploadFile = ref(null);
@@ -1601,7 +1871,8 @@
           weather_city: '',
           weather_lat: '',
           weather_lon: '',
-          weather_units: 'celsius'
+          weather_units: 'celsius',
+          language: 'en'
         });
 
         const weatherSearchQuery = ref('');
@@ -1650,12 +1921,230 @@
           recurrence_days: []
         });
 
-        function toggleRecurrenceDay(dayNum) {
-          const idx = newListItem.value.recurrence_days.indexOf(dayNum);
+        const editingList = ref(null);
+        const editingListItem = ref(null);
+
+        const makeScheduleLesson = () => ({
+          number: 1,
+          start: '08:30',
+          end: '09:15',
+          name: '',
+          room: ''
+        });
+
+        const makeScheduleDay = (dayLabel = 'Mon') => ({
+          day: dayLabel,
+          lessons: [makeScheduleLesson()]
+        });
+
+        const defaultScheduleDays = () => [
+          makeScheduleDay('Mon'),
+          makeScheduleDay('Tue'),
+          makeScheduleDay('Wed'),
+          makeScheduleDay('Thu'),
+          makeScheduleDay('Fri')
+        ];
+
+        const scheduleDraft = ref({
+          name: '',
+          profile_id: null,
+          schedule: defaultScheduleDays()
+        });
+        const editingSchedule = ref(null);
+
+        function normalizeRecurrenceDays(value) {
+          if (Array.isArray(value)) {
+            return value.map(v => Number(v)).filter(v => !Number.isNaN(v));
+          }
+          if (typeof value === 'string') {
+            try {
+              const parsed = JSON.parse(value);
+              if (Array.isArray(parsed)) {
+                return parsed.map(v => Number(v)).filter(v => !Number.isNaN(v));
+              }
+            } catch (e) {}
+            return value.split(',').map(v => Number(v.trim())).filter(v => !Number.isNaN(v));
+          }
+          return [];
+        }
+
+        function toggleRecurrenceDay(dayNum, target = newListItem.value.recurrence_days) {
+          const idx = target.indexOf(dayNum);
           if (idx >= 0) {
-            newListItem.value.recurrence_days.splice(idx, 1);
+            target.splice(idx, 1);
           } else {
-            newListItem.value.recurrence_days.push(dayNum);
+            target.push(dayNum);
+          }
+        }
+
+        function addScheduleDay() {
+          scheduleDraft.value.schedule.push(makeScheduleDay(`Day ${scheduleDraft.value.schedule.length + 1}`));
+        }
+
+        function addScheduleLesson(dayIndex) {
+          if (!scheduleDraft.value.schedule[dayIndex]) return;
+          scheduleDraft.value.schedule[dayIndex].lessons.push(makeScheduleLesson());
+        }
+
+        function removeScheduleDay(dayIndex) {
+          if (scheduleDraft.value.schedule.length <= 1) return;
+          scheduleDraft.value.schedule.splice(dayIndex, 1);
+        }
+
+        function removeScheduleLesson(dayIndex, lessonIndex) {
+          const day = scheduleDraft.value.schedule[dayIndex];
+          if (!day) return;
+          if (day.lessons.length <= 1) {
+            day.lessons = [makeScheduleLesson()];
+            return;
+          }
+          day.lessons.splice(lessonIndex, 1);
+        }
+
+        function resetScheduleDraft() {
+          scheduleDraft.value = {
+            name: '',
+            profile_id: null,
+            schedule: defaultScheduleDays()
+          };
+        }
+
+        function startEditSchedule(schedule) {
+          editingSchedule.value = schedule;
+          scheduleDraft.value = {
+            name: schedule.name || '',
+            profile_id: schedule.profile_id ?? null,
+            schedule: Array.isArray(schedule.schedule) && schedule.schedule.length > 0
+              ? JSON.parse(JSON.stringify(schedule.schedule))
+              : defaultScheduleDays()
+          };
+        }
+
+        function cancelEditSchedule() {
+          editingSchedule.value = null;
+          resetScheduleDraft();
+        }
+
+        async function saveSchedule() {
+          if (!scheduleDraft.value.name.trim()) {
+            showAlert('Schedule name is required', false);
+            return;
+          }
+          try {
+            const payload = {
+              profile_id: scheduleDraft.value.profile_id ?? null,
+              name: scheduleDraft.value.name,
+              schedule: scheduleDraft.value.schedule.filter(day => Array.isArray(day.lessons) && day.lessons.length)
+            };
+            const endpoint = editingSchedule.value ? `/api/admin/schedules/${editingSchedule.value.id}` : '/api/admin/schedules';
+            const method = editingSchedule.value ? 'PATCH' : 'POST';
+            const res = await fetch(endpoint, {
+              method,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+            showAlert(editingSchedule.value ? 'Schedule updated!' : 'Schedule created!');
+            editingSchedule.value = null;
+            resetScheduleDraft();
+            loadData();
+          } catch (err) {
+            showAlert('Error saving schedule: ' + err.message, false);
+          }
+        }
+
+        async function deleteSchedule(id) {
+          if (!confirm('Delete this schedule?')) return;
+          try {
+            const res = await fetch(`/api/admin/schedules/${id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            showAlert('Schedule deleted');
+            loadData();
+          } catch (err) {
+            showAlert('Error deleting schedule: ' + err.message, false);
+          }
+        }
+
+        function startEditList(list) {
+          editingList.value = {
+            id: list.id,
+            name: list.name || '',
+            type: list.type || 'tasks',
+            profile_id: list.profile_id ?? null,
+            color: list.color || '#38bdf8',
+            icon: list.icon || '✅'
+          };
+        }
+
+        function cancelEditList() {
+          editingList.value = null;
+        }
+
+        async function saveEditList() {
+          if (!editingList.value) return;
+          try {
+            const res = await fetch(`/api/admin/lists/${editingList.value.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: editingList.value.name,
+                type: editingList.value.type,
+                profile_id: editingList.value.profile_id,
+                color: editingList.value.color,
+                icon: editingList.value.icon
+              })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            showAlert('List updated!');
+            editingList.value = null;
+            loadData();
+          } catch (err) {
+            showAlert('Error updating list: ' + err.message, false);
+          }
+        }
+
+        function startEditListItem(item) {
+          editingListItem.value = {
+            id: item.id,
+            content: item.content || '',
+            assignee_profile_id: item.assignee_profile_id ?? null,
+            reward: Number(item.reward) || 0,
+            due_date: item.due_date || '',
+            due_time: item.due_time || '',
+            recurrence: item.recurrence || 'none',
+            recurrence_interval: Number(item.recurrence_interval) || 1,
+            recurrence_days: normalizeRecurrenceDays(item.recurrence_days)
+          };
+        }
+
+        function cancelEditListItem() {
+          editingListItem.value = null;
+        }
+
+        async function saveEditListItem() {
+          if (!editingListItem.value || !selectedListId.value) return;
+          try {
+            const res = await fetch(`/api/admin/lists/${selectedListId.value}/items/${editingListItem.value.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                content: editingListItem.value.content,
+                assignee_profile_id: editingListItem.value.assignee_profile_id,
+                reward: editingListItem.value.reward,
+                due_date: editingListItem.value.due_date,
+                due_time: editingListItem.value.due_time,
+                recurrence: editingListItem.value.recurrence,
+                recurrence_interval: editingListItem.value.recurrence_interval,
+                recurrence_days: editingListItem.value.recurrence_days
+              })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            showAlert('Item updated!');
+            editingListItem.value = null;
+            loadData();
+          } catch (err) {
+            showAlert('Error updating item: ' + err.message, false);
           }
         }
 
@@ -1681,6 +2170,7 @@
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
             profiles.value = data.profiles || [];
+            schedules.value = data.schedules || [];
             lists.value = data.lists || [];
             notes.value = data.notes || [];
             events.value = data.events || [];
@@ -1765,7 +2255,8 @@
             avatar_value: prof.avatar_value || '🙂',
             telegram_id: prof.telegram_id || '',
             theme: prof.theme || 'dark',
-            font_size: prof.font_size || 'normal'
+            font_size: prof.font_size || 'normal',
+            language: prof.language || 'en'
           };
           editAvatarUploadFile.value = null;
           editAvatarUploadPreview.value = prof.avatar_type === 'upload' ? prof.avatar_value : null;
@@ -1811,7 +2302,8 @@
                 avatar_value: avatarVal,
                 telegram_id: editingProfile.value.telegram_id || null,
                 theme: editingProfile.value.theme || 'dark',
-                font_size: editingProfile.value.font_size || 'normal'
+                font_size: editingProfile.value.font_size || 'normal',
+                language: editingProfile.value.language || 'en'
               })
             });
             if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -1886,7 +2378,8 @@
                 avatar_value: avatarVal,
                 telegram_id: newProfile.value.telegram_id || null,
                 theme: newProfile.value.theme || 'dark',
-                font_size: newProfile.value.font_size || 'normal'
+                font_size: newProfile.value.font_size || 'normal',
+                language: newProfile.value.language || 'en'
               })
             });
             if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -1895,6 +2388,7 @@
             newProfile.value.telegram_id = '';
             newProfile.value.theme = 'dark';
             newProfile.value.font_size = 'normal';
+            newProfile.value.language = 'en';
             avatarUploadFile.value = null;
             avatarUploadPreview.value = null;
             loadData();
@@ -1956,6 +2450,7 @@
             });
             if (!res.ok) throw new Error('HTTP ' + res.status);
             newListItem.value.content = '';
+            newListItem.value.assignee_profile_id = null;
             newListItem.value.reward = 0;
             newListItem.value.due_date = '';
             newListItem.value.due_time = '';
@@ -2169,12 +2664,31 @@
 
         return {
           activeTab,
+          schedules,
+          scheduleDraft,
+          editingSchedule,
+          addScheduleDay,
+          addScheduleLesson,
+          removeScheduleDay,
+          removeScheduleLesson,
+          startEditSchedule,
+          cancelEditSchedule,
+          saveSchedule,
+          deleteSchedule,
           weatherSearchQuery,
           weatherSearchResults,
           weatherSearchLoading,
           searchWeatherCity,
           selectWeatherCity,
           toggleRecurrenceDay,
+          editingList,
+          editingListItem,
+          startEditList,
+          cancelEditList,
+          saveEditList,
+          startEditListItem,
+          cancelEditListItem,
+          saveEditListItem,
           alertMessage,
           alertSuccess,
           settings,

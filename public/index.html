@@ -630,6 +630,36 @@
                 {{ getClockStyle(w) }}
               </button>
 
+              <!-- Cycle Weather Style Button -->
+              <button 
+                v-if="w.widget_type === 'weather'"
+                @click.stop="cycleWeatherStyle(w)"
+                title="Cycle weather style (full, detailed, compact, minimal)"
+                class="px-2 py-1 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 text-cyan-400 font-semibold"
+              >
+                {{ getWeatherStyle(w) }}
+              </button>
+
+              <!-- Cycle Weather Forecast Button -->
+              <button 
+                v-if="w.widget_type === 'weather'"
+                @click.stop="cycleWeatherForecast(w)"
+                title="Cycle weather forecast mode (today / 7-day / 10-day / hourly)"
+                class="px-2 py-1 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 text-violet-400 font-semibold"
+              >
+                {{ getWeatherForecastButtonLabel(w) }}
+              </button>
+
+              <!-- Cycle Task Filter Button -->
+              <button 
+                v-if="w.widget_type === 'tasks'"
+                @click.stop="cycleTaskFilter(w)"
+                title="Cycle task filter mode (all, today, today or undated, undated)"
+                class="px-2 py-1 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 text-emerald-400 font-semibold"
+              >
+                {{ getTaskFilterButtonLabel(w) }}
+              </button>
+
               <!-- Delete Widget -->
               <button 
                 @click.stop="removeWidget(w)"
@@ -676,28 +706,106 @@
 
             <!-- ================= WIDGET TYPE 2: WEATHER ================= -->
             <div v-else-if="w.widget_type === 'weather'" class="h-full flex flex-col justify-between">
-              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
-                <div class="flex items-center gap-2">
-                  <span class="font-mono text-xs uppercase tracking-widest text-sky-400 font-semibold">OUTDOOR WEATHER</span>
-                  <span v-if="weather && weather.city" class="text-[10px] font-mono text-neutral-500">{{ weather.city }}</span>
+              <div v-if="localizedWeather" class="h-full flex flex-col justify-between">
+                <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="font-mono text-xs uppercase tracking-widest text-sky-400 font-semibold">{{ t('weatherTitle') }}</span>
+                    <span v-if="localizedWeather && localizedWeather.city" class="text-[10px] font-mono text-neutral-500 truncate">{{ localizedWeather.city }}</span>
+                  </div>
+                  <span v-if="getWeatherStyle(w) !== 'minimal'" class="text-base">{{ localizedWeather.icon }}</span>
                 </div>
-                <span class="text-base">{{ weather ? weather.icon : '☀️' }}</span>
+
+                <div v-if="getWeatherStyle(w) === 'full'" class="flex flex-col justify-center my-auto py-2 space-y-3">
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="text-[7rem] md:text-[9rem] leading-none text-sky-300 drop-shadow-[0_0_25px_rgba(56,189,248,0.3)]" :class="w.h >= 3 ? 'text-[7rem] md:text-[9rem]' : 'text-[5rem] md:text-[7rem]'">{{ localizedWeather.icon }}</div>
+                    <div class="text-right">
+                      <div class="font-mono font-light text-white leading-none" :class="w.h >= 3 ? 'text-7xl md:text-8xl' : 'text-5xl md:text-6xl'">{{ localizedWeather.temperature }}°{{ localizedWeather.unit || 'C' }}</div>
+                      <div class="text-sm md:text-base text-neutral-300 font-sans mt-1">{{ localizedWeather.condition }}</div>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2 text-[11px] md:text-xs font-mono text-neutral-300">
+                    <div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-2">
+                      <div class="text-neutral-500 uppercase tracking-widest">{{ t('feelsLike') }}</div>
+                      <div class="text-base md:text-lg font-bold text-white mt-1">{{ localizedWeather.feelsLike }}°</div>
+                    </div>
+                    <div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-2">
+                      <div class="text-neutral-500 uppercase tracking-widest">{{ t('precip') }}</div>
+                      <div class="text-base md:text-lg font-bold text-white mt-1">{{ localizedWeather.precipitation }} mm</div>
+                    </div>
+                    <div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-2">
+                      <div class="text-neutral-500 uppercase tracking-widest">{{ t('humidity') }}</div>
+                      <div class="text-base md:text-lg font-bold text-white mt-1">{{ localizedWeather.humidity }}%</div>
+                    </div>
+                    <div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-2">
+                      <div class="text-neutral-500 uppercase tracking-widest">{{ t('wind') }}</div>
+                      <div class="text-base md:text-lg font-bold text-white mt-1">{{ localizedWeather.windSpeed }} {{ localizedWeather.units === 'imperial' ? 'mph' : 'km/h' }}</div>
+                    </div>
+                    <div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-2 col-span-2">
+                      <div class="text-neutral-500 uppercase tracking-widest">{{ t('range') }}</div>
+                      <div class="text-base md:text-lg font-bold text-white mt-1">{{ localizedWeather.tempMin }}° / {{ localizedWeather.tempMax }}°</div>
+                    </div>
+                  </div>
+                  <div v-if="getWeatherForecastItems(w).length" class="pt-2 border-t border-neutral-800">
+                    <div class="text-[10px] font-mono uppercase tracking-[0.16em] text-neutral-500 mb-2">{{ getWeatherForecastTitle(w) }}</div>
+                    <div class="flex gap-2 overflow-x-auto pb-1">
+                      <div v-for="item in getWeatherForecastItems(w)" :key="item.key" class="min-w-[58px] rounded-lg border border-neutral-800 bg-neutral-900/70 p-2 text-center shrink-0">
+                        <div class="text-[9px] font-mono text-neutral-400">{{ item.label }}</div>
+                        <div class="text-lg leading-none my-1">{{ item.icon }}</div>
+                        <div class="text-[10px] font-bold text-white">{{ item.temperature }}°</div>
+                        <div class="text-[8px] font-mono text-sky-300">{{ item.precipitation }}mm</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-else-if="getWeatherStyle(w) === 'detailed'" class="flex items-center justify-between my-auto py-2 gap-4">
+                  <div class="flex-1 min-w-0">
+                    <div class="text-[5rem] md:text-[7rem] leading-none text-sky-300 drop-shadow-[0_0_20px_rgba(56,189,248,0.25)]">{{ localizedWeather.icon }}</div>
+                    <div class="mt-2 text-sm md:text-base text-neutral-400 font-sans">{{ localizedWeather.condition }}</div>
+                  </div>
+                  <div class="flex-1 text-right">
+                    <div class="font-mono font-light text-white leading-none" :class="w.h >= 3 ? 'text-6xl md:text-7xl' : 'text-4xl md:text-5xl'">{{ localizedWeather.temperature }}°{{ localizedWeather.unit || 'C' }}</div>
+                    <div class="mt-3 grid grid-cols-2 gap-2 text-[10px] md:text-[11px] font-mono text-neutral-300 text-left">
+                      <div class="rounded-md bg-neutral-900/80 border border-neutral-800 p-2">
+                        <div class="text-neutral-500">{{ t('feelsLike') }}</div>
+                        <div class="font-bold text-white mt-1">{{ localizedWeather.feelsLike }}°</div>
+                      </div>
+                      <div class="rounded-md bg-neutral-900/80 border border-neutral-800 p-2">
+                        <div class="text-neutral-500">{{ t('precip') }}</div>
+                        <div class="font-bold text-white mt-1">{{ localizedWeather.precipitation }} mm</div>
+                      </div>
+                      <div class="rounded-md bg-neutral-900/80 border border-neutral-800 p-2">
+                        <div class="text-neutral-500">{{ t('humidity') }}</div>
+                        <div class="font-bold text-white mt-1">{{ localizedWeather.humidity }}%</div>
+                      </div>
+                      <div class="rounded-md bg-neutral-900/80 border border-neutral-800 p-2">
+                        <div class="text-neutral-500">{{ t('wind') }}</div>
+                        <div class="font-bold text-white mt-1">{{ localizedWeather.windSpeed }} {{ localizedWeather.units === 'imperial' ? 'mph' : 'km/h' }}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-else-if="getWeatherStyle(w) === 'compact'" class="flex items-center justify-between gap-3 my-auto py-2">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div class="text-[4rem] md:text-[6rem] leading-none text-sky-300" :class="w.h >= 3 ? 'text-[4rem] md:text-[6rem]' : 'text-[3rem] md:text-[4rem]'">{{ localizedWeather.icon }}</div>
+                    <div class="min-w-0">
+                      <div class="font-mono font-light text-white leading-none" :class="w.h >= 3 ? 'text-4xl md:text-5xl' : 'text-3xl md:text-4xl'">{{ localizedWeather.temperature }}°{{ localizedWeather.unit || 'C' }}</div>
+                      <div class="text-[10px] md:text-xs text-neutral-400 font-sans truncate mt-1">{{ localizedWeather.condition }}</div>
+                    </div>
+                  </div>
+                  <div class="flex gap-2 text-[10px] md:text-[11px] font-mono text-neutral-300 text-right">
+                    <span class="px-1.5 py-1 rounded border border-neutral-800 bg-neutral-900/80">{{ localizedWeather.humidity }}%</span>
+                    <span class="px-1.5 py-1 rounded border border-neutral-800 bg-neutral-900/80">{{ localizedWeather.windSpeed }} {{ localizedWeather.units === 'imperial' ? 'mph' : 'km/h' }}</span>
+                  </div>
+                </div>
+
+                <div v-else class="flex flex-col items-center justify-center my-auto py-2 text-center">
+                  <div class="text-[5rem] md:text-[9rem] leading-none text-sky-300 drop-shadow-[0_0_25px_rgba(56,189,248,0.3)]" :class="w.h >= 3 ? 'text-[5rem] md:text-[9rem]' : 'text-[4rem] md:text-[7rem]'">{{ localizedWeather.icon }}</div>
+                  <div class="font-mono font-light text-white leading-none mt-2" :class="w.h >= 3 ? 'text-5xl md:text-7xl' : 'text-4xl md:text-5xl'">{{ localizedWeather.temperature }}°{{ localizedWeather.unit || 'C' }}</div>
+                </div>
               </div>
-              <div v-if="weather" class="flex items-center justify-between my-auto py-2">
-                <div>
-                  <div
-                    class="font-mono font-light text-white"
-                    :class="w.h >= 3 ? 'text-7xl md:text-8xl' : w.h >= 2 ? 'text-4xl md:text-5xl' : 'text-3xl'"
-                  >{{ weather.temperature }}°{{ weather.unit || 'C' }}</div>
-                  <div class="text-xs text-neutral-400 font-sans mt-0.5">{{ weather.condition }}</div>
-                </div>
-                <div class="text-right font-mono text-xs text-neutral-400 space-y-1">
-                  <div>Low: {{ weather.tempMin }}° / High: {{ weather.tempMax }}°</div>
-                  <div>Humidity: {{ weather.humidity }}%</div>
-                  <div>Wind: {{ weather.windSpeed }} km/h</div>
-                </div>
-              </div>
-              <div v-else class="text-xs font-mono text-neutral-600 py-4 text-center">Loading live weather...</div>
+              <div v-else class="text-xs font-mono text-neutral-600 py-4 text-center">{{ t('loading') }}</div>
             </div>
 
             <!-- ================= WIDGET TYPE 3: TASKS ================= -->
@@ -711,12 +819,12 @@
                 </div>
               </div>
               
-              <div v-if="displayedTasks.length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
-                No active tasks. Tap + to add.
+              <div v-if="getFilteredTasksForWidget(w).length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
+                {{ t('noTasks') }}
               </div>
               <ul v-else class="space-y-1.5 overflow-y-auto pr-1 flex-1">
                 <li 
-                  v-for="item in displayedTasks" 
+                  v-for="item in getFilteredTasksForWidget(w)" 
                   :key="item.id"
                   @click="toggleTaskItem(item)"
                   class="text-neutral-300 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-1.5 px-2 rounded-lg hover:bg-neutral-900/60"
@@ -736,7 +844,7 @@
                     <span v-if="item.recurrence && item.recurrence !== 'none'" class="text-[9px] font-mono px-1 rounded bg-sky-950/40 text-sky-400 border border-sky-900/40 shrink-0">↻</span>
                   </div>
                   <div class="flex items-center gap-1 shrink-0">
-                    <span v-if="item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10)" class="text-[9px] font-mono text-red-400 font-bold">OVERDUE</span>
+                    <span v-if="item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10)" class="text-[9px] font-mono text-red-400 font-bold">{{ t('overdue') }}</span>
                     <span v-else-if="item.due_date && item.checked !== 1" class="text-[9px] font-mono text-neutral-500">{{ item.due_date }}</span>
                     <span v-if="item.reward" class="font-mono text-xs text-amber-400 font-bold">+{{ item.reward }} pts</span>
                   </div>
@@ -783,7 +891,7 @@
                     <span v-if="item.recurrence && item.recurrence !== 'none'" class="text-[9px] font-mono px-1 rounded bg-sky-950/40 text-sky-400 border border-sky-900/40 shrink-0">↻</span>
                   </div>
                   <div class="flex items-center gap-1 shrink-0">
-                    <span v-if="item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10)" class="text-[9px] font-mono text-red-400 font-bold">OVERDUE</span>
+                    <span v-if="item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10)" class="text-[9px] font-mono text-red-400 font-bold">{{ t('overdue') }}</span>
                     <span v-else-if="item.due_date && item.checked !== 1" class="text-[9px] font-mono text-neutral-500">{{ item.due_date }}</span>
                   </div>
                 </li>
@@ -810,7 +918,7 @@
             <!-- ================= WIDGET TYPE 6: KITCHEN TIMER ================= -->
             <div v-else-if="w.widget_type === 'timer'" class="h-full flex flex-col justify-between">
               <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
-                <span class="font-mono text-xs uppercase tracking-widest text-amber-400 font-semibold">KITCHEN TIMER</span>
+                <span class="font-mono text-xs uppercase tracking-widest text-amber-400 font-semibold">{{ t('kitchenTimer') }}</span>
                 <div class="flex items-center gap-2">
                   <button @click="testTimerAlarm" class="text-[10px] font-mono text-neutral-500 hover:text-white">🔔 Test</button>
                   <span class="font-mono text-xs" :class="timerRunning ? 'text-amber-400 animate-pulse' : 'text-neutral-500'">
@@ -881,7 +989,43 @@
               </div>
             </div>
 
-            <!-- ================= WIDGET TYPE 8: CALENDAR ================= -->
+            <!-- ================= WIDGET TYPE 8: SCHOOL SCHEDULE ================= -->
+            <div v-else-if="w.widget_type === 'schedule'" class="h-full flex flex-col justify-between overflow-hidden">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+                <div class="flex items-center gap-2">
+                  <span class="font-mono text-xs uppercase tracking-widest text-violet-400 font-semibold">SCHOOL SCHEDULE</span>
+                </div>
+                <span v-if="selectedProfile" class="text-[10px] font-mono px-2 py-0.5 rounded-full" :style="{ backgroundColor: selectedProfile.color + '22', color: selectedProfile.color }">
+                  {{ selectedProfile.name }}
+                </span>
+                <span v-else class="text-[10px] font-mono text-neutral-500">Student</span>
+              </div>
+
+              <div class="overflow-auto rounded-xl border border-neutral-800 bg-neutral-950/60">
+                <table class="w-full border-collapse text-[9px] text-neutral-200">
+                  <thead>
+                    <tr class="bg-neutral-900/80 text-neutral-400">
+                      <th class="px-2 py-1 text-left font-mono uppercase tracking-wide">Day</th>
+                      <th v-for="lessonNumber in getSchoolLessonNumbers(w)" :key="lessonNumber" class="px-2 py-1 text-center font-mono uppercase tracking-wide">
+                        {{ lessonNumber }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="dayRow in getSchoolScheduleRows(w)" :key="dayRow.day" :class="dayRow.isToday ? 'bg-violet-500/10' : 'bg-transparent'">
+                      <td class="px-2 py-2 border-t border-neutral-800 font-semibold text-white whitespace-nowrap">{{ dayRow.day }}</td>
+                      <td v-for="lesson in dayRow.lessons" :key="lesson.number" class="px-1.5 py-2 border-t border-l border-neutral-800 align-top text-center min-w-[86px]">
+                        <div class="text-[8px] text-neutral-400 font-mono">{{ lesson.start }}–{{ lesson.end }}</div>
+                        <div class="mt-1 font-bold text-white text-[10px] leading-tight">{{ lesson.name }}</div>
+                        <div class="mt-0.5 text-[8px] text-violet-300">Rm {{ lesson.room }}</div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- ================= WIDGET TYPE 9: CALENDAR ================= -->
             <div v-else-if="w.widget_type === 'calendar'" class="h-full flex flex-col justify-between overflow-hidden">
               <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
                 <div class="flex items-center gap-2">
@@ -1111,7 +1255,7 @@
       @click.self="showCustomTimerModal = false"
     >
       <div class="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 max-w-xs w-full shadow-2xl">
-        <h3 class="text-sm font-mono font-bold text-white mb-3 text-center">SET KITCHEN TIMER</h3>
+        <h3 class="text-sm font-mono font-bold text-white mb-3 text-center">{{ t('kitchenTimer') }}</h3>
         
         <div class="text-center font-mono text-4xl font-light text-white mb-4 bg-neutral-950 p-3 rounded-xl border border-neutral-800">
           {{ formatCustomTimerDisplay }}
@@ -1284,6 +1428,7 @@
         const notes = ref([]);
         const tasks = ref([]);
         const profiles = ref([]);
+        const schedules = ref([]);
         const lists = ref([]);
         const layouts = ref([]);
         const profileLayouts = ref({});
@@ -1303,7 +1448,101 @@
           photo_interval_night: 15,
           night_mode_enabled: 0,
           night_mode_start: '22:00',
-          night_mode_end: '07:00'
+          night_mode_end: '07:00',
+          language: 'en'
+        });
+
+        const localeMap = { en: 'en-US', ru: 'ru-RU', pl: 'pl-PL', uk: 'uk-UA' };
+        const uiText = {
+          en: {
+            weatherTitle: 'OUTDOOR WEATHER',
+            feelsLike: 'Feels like',
+            precip: 'Precip',
+            humidity: 'Humidity',
+            wind: 'Wind',
+            range: 'Range',
+            loading: 'Loading live weather...',
+            overdue: 'OVERDUE',
+            kitchenTimer: 'KITCHEN TIMER',
+            noTasks: 'No active tasks. Tap + to add.'
+          },
+          ru: {
+            weatherTitle: 'ПОГОДА НА УЛИЦЕ',
+            feelsLike: 'Ощущается',
+            precip: 'Осадки',
+            humidity: 'Влажность',
+            wind: 'Ветер',
+            range: 'Диапазон',
+            loading: 'Загрузка погоды...',
+            overdue: 'ПРОСРОЧЕНО',
+            kitchenTimer: 'КУХОННЫЙ ТАЙМЕР',
+            noTasks: 'Нет активных задач. Нажмите +, чтобы добавить.'
+          },
+          pl: {
+            weatherTitle: 'POGODA NA ZEWNĄTRZ',
+            feelsLike: 'Odczuwalna',
+            precip: 'Opady',
+            humidity: 'Wilgotność',
+            wind: 'Wiatr',
+            range: 'Zakres',
+            loading: 'Ładowanie pogody...',
+            overdue: 'ZALEGŁE',
+            kitchenTimer: 'MINUTNIK KITCHEN',
+            noTasks: 'Brak aktywnych zadań. Dotknij +, aby dodać.'
+          },
+          uk: {
+            weatherTitle: 'ПОГОДА НА ВУЛИЦІ',
+            feelsLike: 'Відчувається',
+            precip: 'Опади',
+            humidity: 'Вологість',
+            wind: 'Вітер',
+            range: 'Діапазон',
+            loading: 'Завантаження погоди...',
+            overdue: 'ПРОСТРОЧЕНО',
+            kitchenTimer: 'КУХОННИЙ ТАЙМЕР',
+            noTasks: 'Немає активних задач. Натисніть +, щоб додати.'
+          }
+        };
+
+        const weatherConditionTranslations = {
+          'Clear Sky': { en: 'Clear Sky', ru: 'Ясно', pl: 'Pogodnie', uk: 'Ясно' },
+          'Mainly Clear': { en: 'Mainly Clear', ru: 'Преимущественно ясно', pl: 'Głównie bezchmurnie', uk: 'Переважно ясно' },
+          'Partly Cloudy': { en: 'Partly Cloudy', ru: 'Переменная облачность', pl: 'Częściowe zachmurzenie', uk: 'Перемінна хмарність' },
+          'Overcast': { en: 'Overcast', ru: 'Пасмурно', pl: 'Pochmurno', uk: 'Хмарно' },
+          'Foggy': { en: 'Foggy', ru: 'Туман', pl: 'Mgła', uk: 'Туман' },
+          'Light Drizzle': { en: 'Light Drizzle', ru: 'Легкая морось', pl: 'Lekka mżawka', uk: 'Легка мряка' },
+          'Moderate Drizzle': { en: 'Moderate Drizzle', ru: 'Умеренная морось', pl: 'Średnia mżawka', uk: 'Помірна мряка' },
+          'Slight Rain': { en: 'Slight Rain', ru: 'Небольшой дождь', pl: 'Lekki deszcz', uk: 'Невеликий дощ' },
+          'Moderate Rain': { en: 'Moderate Rain', ru: 'Умеренный дождь', pl: 'Średni deszcz', uk: 'Помірний дощ' },
+          'Heavy Rain': { en: 'Heavy Rain', ru: 'Сильный дождь', pl: 'Silny deszcz', uk: 'Сильний дощ' },
+          'Rain Showers': { en: 'Rain Showers', ru: 'Ливневые дожди', pl: 'Przelotne opady', uk: 'Зливові дощі' },
+          'Thunderstorm': { en: 'Thunderstorm', ru: 'Гроза', pl: 'Burza', uk: 'Гроза' }
+        };
+
+        const normalizeLanguage = (lang) => ['en', 'ru', 'pl', 'uk'].includes(lang) ? lang : 'en';
+        const t = (key) => {
+          const lang = normalizeLanguage(effectiveLanguage.value);
+          return (uiText[lang] && uiText[lang][key]) || (uiText.en && uiText.en[key]) || key;
+        };
+
+        const localizedWeatherCondition = (condition) => {
+          const lang = normalizeLanguage(effectiveLanguage.value);
+          if (!condition) return condition;
+          return (weatherConditionTranslations[condition] && weatherConditionTranslations[condition][lang]) || condition;
+        };
+
+        const localizedWeather = computed(() => {
+          if (!weather.value) return null;
+          return {
+            ...weather.value,
+            condition: localizedWeatherCondition(weather.value.condition),
+            city: weather.value.city
+          };
+        });
+
+        const effectiveLanguage = computed(() => {
+          const profileLang = selectedProfile.value && selectedProfile.value.language;
+          return normalizeLanguage(profileLang || settings.value.language || 'en');
         });
 
         // Screensaver Photo State
@@ -1372,7 +1611,8 @@
 
         // Calendar computed helpers
         const calendarMonthLabel = computed(() => {
-          return now.value.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+          const locale = localeMap[effectiveLanguage.value] || 'en-US';
+          return now.value.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
         });
 
         const filteredEvents = computed(() => {
@@ -1422,10 +1662,11 @@
           if (!ev.start_datetime) return '';
           try {
             const d = new Date(ev.start_datetime);
+            const locale = localeMap[effectiveLanguage.value] || 'en-US';
             if (ev.all_day) {
-              return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+              return d.toLocaleDateString(locale, { weekday: 'short', month: 'short', day: 'numeric' });
             }
-            return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            return d.toLocaleDateString(locale, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
           } catch (e) { return ev.start_datetime; }
         }
 
@@ -1497,6 +1738,7 @@
           { type: 'notes', name: 'Family Notes', icon: '📝', desc: 'Stream of notes & reminders' },
           { type: 'timer', name: 'Kitchen Timer', icon: '⏳', desc: 'Countdown with audio chime' },
           { type: 'photo', name: 'Photo Frame', icon: '🖼️', desc: 'Rotating family photos' },
+          { type: 'schedule', name: 'School Schedule', icon: '📚', desc: 'Day-by-day school timetable' },
           { type: 'calendar', name: 'Calendar Agenda', icon: '📅', desc: 'Mini month & Google Cal sync' },
           { type: 'leaderboard', name: 'Chores Leaderboard', icon: '🏆', desc: 'Kids rewards & points ranks' },
           { type: 'quick_actions', name: 'Quick Scenes', icon: '⚡', desc: '1-tap shortcuts & night mode' },
@@ -1515,11 +1757,12 @@
 
         const currentDate = computed(() => {
           const d = now.value;
+          const locale = localeMap[effectiveLanguage.value] || 'en-US';
           return {
-            weekday: d.toLocaleDateString(undefined, { weekday: 'long' }),
-            monthDay: d.toLocaleDateString(undefined, { month: 'long', day: 'numeric' }),
+            weekday: d.toLocaleDateString(locale, { weekday: 'long' }),
+            monthDay: d.toLocaleDateString(locale, { month: 'long', day: 'numeric' }),
             year: d.getFullYear(),
-            short: d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+            short: d.toLocaleDateString(locale, { weekday: 'short', month: 'short', day: 'numeric' })
           };
         });
 
@@ -1699,6 +1942,99 @@
           saveCurrentLayout();
         }
 
+        function getWeatherStyle(w) {
+          let cfg = w && w.config;
+          if (typeof cfg === 'string') {
+            try { cfg = JSON.parse(cfg); } catch(e) { cfg = {}; }
+          }
+          return (cfg && cfg.weather_style) || 'full';
+        }
+
+        function cycleWeatherStyle(w) {
+          triggerHaptic('tap');
+          if (!w.config) w.config = {};
+          if (typeof w.config === 'string') {
+            try { w.config = JSON.parse(w.config); } catch(e) { w.config = {}; }
+          }
+          const styles = ['full', 'detailed', 'compact', 'minimal'];
+          const cur = w.config.weather_style || 'full';
+          const nextIdx = (styles.indexOf(cur) + 1) % styles.length;
+          w.config.weather_style = styles[nextIdx];
+          saveCurrentLayout();
+        }
+
+        function getWeatherForecastMode(w) {
+          let cfg = w && w.config;
+          if (typeof cfg === 'string') {
+            try { cfg = JSON.parse(cfg); } catch(e) { cfg = {}; }
+          }
+          return (cfg && cfg.forecast_mode) || 'daily';
+        }
+
+        function getWeatherForecastDays(w) {
+          let cfg = w && w.config;
+          if (typeof cfg === 'string') {
+            try { cfg = JSON.parse(cfg); } catch(e) { cfg = {}; }
+          }
+          return Number(cfg && cfg.forecast_days) || 7;
+        }
+
+        function cycleWeatherForecast(w) {
+          triggerHaptic('tap');
+          if (!w.config) w.config = {};
+          if (typeof w.config === 'string') {
+            try { w.config = JSON.parse(w.config); } catch(e) { w.config = {}; }
+          }
+          const order = [
+            { mode: 'hourly' },
+            { mode: 'daily', days: 7 },
+            { mode: 'daily', days: 10 }
+          ];
+          const current = getWeatherForecastMode(w) === 'hourly'
+            ? 'hourly'
+            : `daily:${getWeatherForecastDays(w)}`;
+          const currentIdx = order.findIndex(opt => current === (opt.mode === 'hourly' ? 'hourly' : `daily:${opt.days}`));
+          const next = order[(currentIdx + 1) % order.length];
+          w.config.forecast_mode = next.mode;
+          if (next.mode === 'daily') {
+            w.config.forecast_days = next.days;
+          }
+          saveCurrentLayout();
+        }
+
+        function getWeatherForecastButtonLabel(w) {
+          const mode = getWeatherForecastMode(w);
+          return mode === 'hourly' ? '24h' : `D${getWeatherForecastDays(w)}`;
+        }
+
+        function getWeatherForecastTitle(w) {
+          return getWeatherForecastMode(w) === 'hourly' ? 'Next 12 hours' : `Next ${getWeatherForecastDays(w)} days`;
+        }
+
+        function getWeatherForecastItems(w) {
+          if (!weather.value || !weather.value.forecast) return [];
+          const mode = getWeatherForecastMode(w);
+          const forecast = weather.value.forecast;
+          if (mode === 'hourly') {
+            return (forecast.hourly || []).slice(0, 12).map((entry, idx) => ({
+              key: entry.time || `hour-${idx}`,
+              label: entry.label || entry.time,
+              icon: entry.icon || '☀️',
+              temperature: entry.temperature,
+              precipitation: entry.precipitation,
+              wind: entry.windSpeed
+            }));
+          }
+          const days = Number(w && w.config && w.config.forecast_days) || 7;
+          return (forecast.daily || []).slice(0, Math.max(1, Math.min(days, 10))).map((entry, idx) => ({
+            key: entry.date || `day-${idx}`,
+            label: entry.label || entry.date,
+            icon: entry.icon || '☀️',
+            temperature: entry.temperature,
+            precipitation: entry.precipitation
+          }));
+        }
+
         // Compute total pages from active layouts
         const totalPages = computed(() => {
           if (!layouts.value || layouts.value.length === 0) return 2;
@@ -1720,11 +2056,142 @@
           return taskList.items.filter(i => i.assignee_profile_id === selectedProfileId.value);
         });
 
+        function getTaskListForWidget(widget) {
+          const list = widget && widget.config && widget.config.listId
+            ? lists.value.find(l => l.id === widget.config.listId)
+            : (lists.value.find(l => l.type === 'tasks') || lists.value[0]);
+          return list && Array.isArray(list.items) ? list.items : [];
+        }
+
+        function getTaskFilterMode(widget) {
+          let cfg = widget && widget.config;
+          if (typeof cfg === 'string') {
+            try { cfg = JSON.parse(cfg); } catch (e) { cfg = {}; }
+          }
+          return (cfg && cfg.task_filter) || 'all';
+        }
+
+        function getTaskFilterButtonLabel(widget) {
+          const mode = getTaskFilterMode(widget);
+          return mode === 'today' ? 'Today' : mode === 'today_or_undated' ? 'Today+Undated' : mode === 'undated' ? 'Undated' : 'All';
+        }
+
+        function cycleTaskFilter(widget) {
+          triggerHaptic('tap');
+          if (!widget.config) widget.config = {};
+          if (typeof widget.config === 'string') {
+            try { widget.config = JSON.parse(widget.config); } catch (e) { widget.config = {}; }
+          }
+          const modes = ['all', 'today', 'today_or_undated', 'undated'];
+          const cur = getTaskFilterMode(widget);
+          const nextIdx = (modes.indexOf(cur) + 1) % modes.length;
+          widget.config.task_filter = modes[nextIdx];
+          saveCurrentLayout();
+        }
+
+        function getFilteredTasksForWidget(widget) {
+          const today = new Date();
+          const todayStr = today.toISOString().slice(0, 10);
+          let items = getTaskListForWidget(widget);
+          if (!selectedProfileId.value) {
+            // no profile filter: keep all items in the selected task list
+          } else {
+            items = items.filter(i => i.assignee_profile_id === selectedProfileId.value);
+          }
+
+          const mode = getTaskFilterMode(widget);
+          if (mode === 'today') {
+            return items.filter(i => i.due_date && i.due_date === todayStr);
+          }
+          if (mode === 'today_or_undated') {
+            return items.filter(i => !i.due_date || i.due_date === todayStr);
+          }
+          if (mode === 'undated') {
+            return items.filter(i => !i.due_date);
+          }
+          return items;
+        }
+
         function targetList(widget) {
           if (widget.config && widget.config.listId) {
             return lists.value.find(l => l.id === widget.config.listId) || lists.value[0];
           }
           return lists.value.find(l => l.type === 'shopping') || lists.value[0];
+        }
+
+        function getDefaultSchoolSchedule() {
+          return [
+            { day: 'Mon', lessons: [
+                { number: 1, start: '08:30', end: '09:15', name: 'Math', room: 'A-101' },
+                { number: 2, start: '09:25', end: '10:10', name: 'Science', room: 'B-204' },
+                { number: 3, start: '10:30', end: '11:15', name: 'Literature', room: 'C-112' },
+                { number: 4, start: '11:35', end: '12:20', name: 'History', room: 'D-220' }
+            ] },
+            { day: 'Tue', lessons: [
+                { number: 1, start: '08:30', end: '09:15', name: 'Physics', room: 'B-118' },
+                { number: 2, start: '09:25', end: '10:10', name: 'Art', room: 'H-305' },
+                { number: 3, start: '10:30', end: '11:15', name: 'English', room: 'E-210' },
+                { number: 4, start: '11:35', end: '12:20', name: 'PE', room: 'Gym' }
+            ] },
+            { day: 'Wed', lessons: [
+                { number: 1, start: '08:30', end: '09:15', name: 'Chemistry', room: 'B-304' },
+                { number: 2, start: '09:25', end: '10:10', name: 'Geography', room: 'D-116' },
+                { number: 3, start: '10:30', end: '11:15', name: 'Music', room: 'M-201' },
+                { number: 4, start: '11:35', end: '12:20', name: 'Coding', room: 'IT-12' }
+            ] },
+            { day: 'Thu', lessons: [
+                { number: 1, start: '08:30', end: '09:15', name: 'Biology', room: 'F-205' },
+                { number: 2, start: '09:25', end: '10:10', name: 'Math', room: 'A-101' },
+                { number: 3, start: '10:30', end: '11:15', name: 'French', room: 'E-115' },
+                { number: 4, start: '11:35', end: '12:20', name: 'Drama', room: 'Theater' }
+            ] },
+            { day: 'Fri', lessons: [
+                { number: 1, start: '08:30', end: '09:15', name: 'Algebra', room: 'A-102' },
+                { number: 2, start: '09:25', end: '10:10', name: 'Biology', room: 'F-205' },
+                { number: 3, start: '10:30', end: '11:15', name: 'German', room: 'E-203' },
+                { number: 4, start: '11:35', end: '12:20', name: 'Project', room: 'C-214' }
+            ] }
+          ];
+        }
+
+        function getSchoolLessonNumbers(widget) {
+          const schedule = getSchoolScheduleRows(widget);
+          const maxLessons = Math.max(...schedule.map(day => day.lessons.length), 1);
+          return Array.from({ length: maxLessons }, (_, idx) => idx + 1);
+        }
+
+        const selectedProfileSchedule = computed(() => {
+          if (!selectedProfileId.value) return schedules.value[0] || null;
+          return schedules.value.find(s => Number(s.profile_id) === Number(selectedProfileId.value)) || schedules.value[0] || null;
+        });
+
+        function getSchoolScheduleRows(widget) {
+          let cfg = widget && widget.config;
+          if (typeof cfg === 'string') {
+            try { cfg = JSON.parse(cfg); } catch (e) { cfg = {}; }
+          }
+          let source = [];
+          if (cfg && Array.isArray(cfg.schedule) && cfg.schedule.length) {
+            source = cfg.schedule;
+          } else if (selectedProfileSchedule.value && Array.isArray(selectedProfileSchedule.value.schedule) && selectedProfileSchedule.value.schedule.length) {
+            source = selectedProfileSchedule.value.schedule;
+          } else {
+            source = getDefaultSchoolSchedule();
+          }
+          const today = new Date();
+          const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          const todayKey = dayNames[today.getDay()];
+
+          return source.map(dayRow => ({
+            ...dayRow,
+            isToday: (dayRow.day || '').toLowerCase() === todayKey.toLowerCase(),
+            lessons: Array.isArray(dayRow.lessons) ? dayRow.lessons.map((lesson, idx) => ({
+              ...lesson,
+              number: lesson.number || idx + 1,
+              name: lesson.name || 'Free',
+              room: lesson.room || '—'
+            })) : []
+          }));
         }
 
         function getColSpanClass(w) {
@@ -2087,15 +2554,18 @@
 
         function addWidget(type) {
           triggerHaptic('tap');
+          const baseConfig = type === 'schedule'
+            ? { assignedProfileId: selectedProfileId.value, schedule: getDefaultSchoolSchedule() }
+            : {};
           const newW = {
             id: Date.now(),
             page: activePage.value,
             widget_type: type,
             x: 0,
             y: 0,
-            w: type === 'clock' || type === 'notes' ? 12 : 6,
-            h: 2,
-            config: {},
+            w: type === 'clock' || type === 'notes' || type === 'schedule' ? 12 : 6,
+            h: type === 'schedule' ? 3 : 2,
+            config: baseConfig,
             position: activePageWidgets.value.length,
             profile_id: selectedProfileId.value
           };
@@ -2293,6 +2763,7 @@
             if (data.notes) notes.value = data.notes;
             if (data.tasks) tasks.value = data.tasks;
             if (data.profiles) profiles.value = data.profiles;
+            if (data.schedules) schedules.value = data.schedules;
             if (data.lists) lists.value = data.lists;
             if (data.profile_layouts) profileLayouts.value = data.profile_layouts;
             if (data.photos && Array.isArray(data.photos)) photos.value = data.photos;
@@ -2378,6 +2849,8 @@
           notes,
           tasks,
           profiles,
+          schedules,
+          selectedProfileSchedule,
           lists,
           layouts,
           photos,
@@ -2426,6 +2899,8 @@
           isListening,
           showDictationModal,
           liveTranscript,
+          getSchoolLessonNumbers,
+          getSchoolScheduleRows,
           getColSpanClass,
           getHeightClass,
           handleTouchStart,
@@ -2460,6 +2935,18 @@
           toggleClockWeather,
           getClockStyle,
           cycleClockStyle,
+          getWeatherStyle,
+          cycleWeatherStyle,
+          getWeatherForecastMode,
+          getWeatherForecastDays,
+          cycleWeatherForecast,
+          getWeatherForecastButtonLabel,
+          getWeatherForecastTitle,
+          getWeatherForecastItems,
+          getTaskFilterMode,
+          getTaskFilterButtonLabel,
+          cycleTaskFilter,
+          getFilteredTasksForWidget,
           getWidgetFontSize,
           getWidgetFontSizeClass,
           pageConfigs,

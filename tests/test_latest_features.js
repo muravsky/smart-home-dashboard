@@ -104,7 +104,46 @@ async function runTests() {
   assert.strictEqual(currentSettings.weather_units, 'fahrenheit');
   console.log('[PASS] Weather location & unit settings properly stored and retrieved');
 
-  console.log('\n--- 5. Testing Calendar URL Normalization & formatTime ---');
+  console.log('\n--- 5. Testing Weather Forecast Output ---');
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      current: {
+        temperature_2m: 22,
+        apparent_temperature: 24,
+        relative_humidity_2m: 58,
+        precipitation: 0.4,
+        weather_code: 2,
+        wind_speed_10m: 12
+      },
+      hourly: {
+        time: Array.from({ length: 24 }, (_, idx) => `2026-09-24T${String(idx).padStart(2, '0')}:00`),
+        temperature_2m: Array.from({ length: 24 }, () => 22),
+        apparent_temperature: Array.from({ length: 24 }, () => 24),
+        precipitation: Array.from({ length: 24 }, () => 0),
+        weather_code: Array.from({ length: 24 }, () => 2),
+        wind_speed_10m: Array.from({ length: 24 }, () => 10)
+      },
+      daily: {
+        time: Array.from({ length: 10 }, (_, idx) => `2026-09-${String(24 + idx).padStart(2, '0')}`),
+        weather_code: Array.from({ length: 10 }, () => 2),
+        temperature_2m_max: Array.from({ length: 10 }, () => 25),
+        temperature_2m_min: Array.from({ length: 10 }, () => 17),
+        precipitation_sum: Array.from({ length: 10 }, () => 0.2)
+      }
+    })
+  });
+  clearWeatherCache();
+  const forecastWeather = await getWeather();
+  assert(Array.isArray(forecastWeather.forecast.hourly), 'Hourly forecast should be an array');
+  assert(forecastWeather.forecast.hourly.length >= 12, 'Hourly forecast should contain several entries');
+  assert(Array.isArray(forecastWeather.forecast.daily), 'Daily forecast should be an array');
+  assert(forecastWeather.forecast.daily.length >= 7, 'Daily forecast should span several days');
+  console.log('[PASS] Weather service exposes hourly and multi-day forecast arrays for dashboard widgets');
+  global.fetch = originalFetch;
+
+  console.log('\n--- 6. Testing Calendar URL Normalization & formatTime ---');
   const { normalizeCalendarUrl } = require('../src/services/calendar');
   const { insertCalendarFeed, getCalendarFeeds, deleteCalendarFeed, updateCalendarFeedSyncTime } = require('../src/db');
   const fs = require('fs');

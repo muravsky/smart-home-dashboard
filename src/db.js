@@ -39,7 +39,17 @@ db.exec(`
     telegram_id TEXT,
     theme TEXT DEFAULT 'dark',
     font_size TEXT DEFAULT 'normal',
+    language TEXT DEFAULT 'en',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS schedules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id INTEGER,
+    name TEXT NOT NULL,
+    schedule_data TEXT DEFAULT '[]',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS page_configs (
@@ -146,6 +156,9 @@ try {
   if (!profCols.includes('font_size')) {
     db.exec("ALTER TABLE profiles ADD COLUMN font_size TEXT DEFAULT 'normal'");
   }
+  if (!profCols.includes('language')) {
+    db.exec("ALTER TABLE profiles ADD COLUMN language TEXT DEFAULT 'en'");
+  }
 } catch (e) {
   console.warn('Migration profiles columns check:', e.message);
 }
@@ -181,6 +194,7 @@ if (existingSettingsCount.count === 0) {
   insertSetting.run('night_mode_start', '22:00');
   insertSetting.run('night_mode_end', '07:00');
   insertSetting.run('screensaver_mode', 'photos');
+  insertSetting.run('language', 'en');
 }
 
 // Seed default layouts if empty
@@ -297,18 +311,18 @@ function getProfileByTelegramId(telegramId) {
   return db.prepare('SELECT * FROM profiles WHERE telegram_id = ?').get(String(telegramId).trim());
 }
 
-function insertProfile({ name, color = '#38bdf8', avatar_type = 'builtin', avatar_value = '🙂', telegram_id = null, theme = 'dark', font_size = 'normal' }) {
-  const stmt = db.prepare('INSERT INTO profiles (name, color, avatar_type, avatar_value, telegram_id, theme, font_size) VALUES (?, ?, ?, ?, ?, ?, ?)');
-  const info = stmt.run(name.trim(), color, avatar_type, avatar_value, telegram_id ? String(telegram_id).trim() : null, theme || 'dark', font_size || 'normal');
+function insertProfile({ name, color = '#38bdf8', avatar_type = 'builtin', avatar_value = '🙂', telegram_id = null, theme = 'dark', font_size = 'normal', language = 'en' }) {
+  const stmt = db.prepare('INSERT INTO profiles (name, color, avatar_type, avatar_value, telegram_id, theme, font_size, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  const info = stmt.run(name.trim(), color, avatar_type, avatar_value, telegram_id ? String(telegram_id).trim() : null, theme || 'dark', font_size || 'normal', language || 'en');
   return getProfileById(info.lastInsertRowid);
 }
 
-function updateProfile(id, { name, color, avatar_type, avatar_value, telegram_id, theme, font_size }) {
+function updateProfile(id, { name, color, avatar_type, avatar_value, telegram_id, theme, font_size, language }) {
   const current = getProfileById(id);
   if (!current) return null;
   const stmt = db.prepare(`
     UPDATE profiles 
-    SET name = ?, color = ?, avatar_type = ?, avatar_value = ?, telegram_id = ?, theme = ?, font_size = ? 
+    SET name = ?, color = ?, avatar_type = ?, avatar_value = ?, telegram_id = ?, theme = ?, font_size = ?, language = ? 
     WHERE id = ?
   `);
   stmt.run(
@@ -319,6 +333,7 @@ function updateProfile(id, { name, color, avatar_type, avatar_value, telegram_id
     telegram_id !== undefined ? (telegram_id ? String(telegram_id).trim() : null) : current.telegram_id,
     theme !== undefined ? theme : (current.theme || 'dark'),
     font_size !== undefined ? font_size : (current.font_size || 'normal'),
+    language !== undefined ? (language || 'en') : (current.language || 'en'),
     id
   );
   return getProfileById(id);
@@ -326,6 +341,97 @@ function updateProfile(id, { name, color, avatar_type, avatar_value, telegram_id
 
 function deleteProfile(id) {
   return db.prepare('DELETE FROM profiles WHERE id = ?').run(id);
+}
+
+function normalizeScheduleArray(schedule) {
+  if (!Array.isArray(schedule)) return [];
+  return schedule.map((dayEntry) => {
+    const lessons = Array.isArray(dayEntry && dayEntry.lessons) ? dayEntry.lessons.map((lesson, idx) => ({
+      number: Number(lesson && lesson.number) || idx + 1,
+      start: lesson && lesson.start ? String(lesson.start) : '08:30',
+      end: lesson && lesson.end ? String(lesson.end) : '09:15',
+      name: lesson && lesson.name ? String(lesson.name) : 'Class',
+      room: lesson && lesson.room ? String(lesson.room) : '—'
+    })) : [];
+    return {
+      day: dayEntry && dayEntry.day ? String(dayEntry.day) : 'Mon',
+      lessons
+    };
+  });
+}
+
+function getSchedules() {
+  const rows = db.prepare(`
+    SELECT s.*, p.name as profile_name, p.color as profile_color
+    FROM schedules s
+    LEFT JOIN profiles p ON s.profile_id = p.id
+    ORDER BY s.id ASC
+  `).all();
+
+  return rows.map((row) => {
+    let schedule = [];
+    try {
+      const parsed = JSON.parse(row.schedule_data || '[]');
+      schedule = normalizeScheduleArray(parsed);
+    } catch (e) {
+      schedule = [];
+    }
+    return {
+      ...row,
+      schedule
+    };
+  });
+}
+
+function getScheduleById(id) {
+  const row = db.prepare(`
+    SELECT s.*, p.name as profile_name, p.color as profile_color
+    FROM schedules s
+    LEFT JOIN profiles p ON s.profile_id = p.id
+    WHERE s.id = ?
+  `).get(id);
+  if (!row) return null;
+  let schedule = [];
+  try {
+    schedule = normalizeScheduleArray(JSON.parse(row.schedule_data || '[]'));
+  } catch (e) {
+    schedule = [];
+  }
+  return {
+    ...row,
+    schedule
+  };
+}
+
+function getProfileSchedules(profileId) {
+  return getSchedules().filter((schedule) => schedule.profile_id === Number(profileId));
+}
+
+function insertSchedule({ profile_id = null, name, schedule = [] }) {
+  const cleanName = (name || 'School Schedule').trim() || 'School Schedule';
+  const info = db.prepare('INSERT INTO schedules (profile_id, name, schedule_data) VALUES (?, ?, ?)').run(
+    profile_id || null,
+    cleanName,
+    JSON.stringify(normalizeScheduleArray(schedule))
+  );
+  return getScheduleById(info.lastInsertRowid);
+}
+
+function updateSchedule(id, { profile_id, name, schedule }) {
+  const current = getScheduleById(id);
+  if (!current) return null;
+  const stmt = db.prepare('UPDATE schedules SET profile_id = ?, name = ?, schedule_data = ? WHERE id = ?');
+  stmt.run(
+    profile_id !== undefined ? (profile_id || null) : current.profile_id,
+    name !== undefined ? (String(name).trim() || current.name) : current.name,
+    JSON.stringify(normalizeScheduleArray(schedule !== undefined ? schedule : current.schedule)),
+    id
+  );
+  return getScheduleById(id);
+}
+
+function deleteSchedule(id) {
+  return db.prepare('DELETE FROM schedules WHERE id = ?').run(id);
 }
 
 /* ==========================================================================
@@ -380,16 +486,17 @@ function insertList({ name, type = 'custom', profile_id = null, color = '#334155
   return getListById(info.lastInsertRowid);
 }
 
-function updateList(id, { name, color, icon, profile_id }) {
+function updateList(id, { name, type, color, icon, profile_id }) {
   const current = getListById(id);
   if (!current) return null;
   const stmt = db.prepare(`
     UPDATE lists 
-    SET name = ?, color = ?, icon = ?, profile_id = ? 
+    SET name = ?, type = ?, color = ?, icon = ?, profile_id = ? 
     WHERE id = ?
   `);
   stmt.run(
     name !== undefined ? name.trim() : current.name,
+    type !== undefined ? type : current.type,
     color !== undefined ? color : current.color,
     icon !== undefined ? icon : current.icon,
     profile_id !== undefined ? profile_id : current.profile_id,
@@ -651,7 +758,8 @@ function getSettings() {
     weather_city: 'Berlin',
     weather_lat: '52.5200',
     weather_lon: '13.4050',
-    weather_units: 'metric'
+    weather_units: 'metric',
+    language: 'en'
   };
   const numericKeys = [
     'sleep_timeout',
@@ -857,6 +965,7 @@ function getDashboardData() {
     notes: getNotes(),
     tasks: getTasks(),
     profiles: getProfiles(),
+    schedules: getSchedules(),
     lists: getLists(),
     layouts: getWidgetLayouts(null),
     profile_layouts: getAllProfileLayouts(),
@@ -883,6 +992,12 @@ module.exports = {
   insertProfile,
   updateProfile,
   deleteProfile,
+  getSchedules,
+  getScheduleById,
+  getProfileSchedules,
+  insertSchedule,
+  updateSchedule,
+  deleteSchedule,
   getLists,
   getListById,
   insertList,

@@ -16,9 +16,16 @@ const {
   getTasks,
   getProfiles,
   getProfileById,
+  getProfileByTelegramId,
   insertProfile,
   updateProfile,
   deleteProfile,
+  getSchedules,
+  getScheduleById,
+  getProfileSchedules,
+  insertSchedule,
+  updateSchedule,
+  deleteSchedule,
   getLists,
   getListById,
   insertList,
@@ -238,9 +245,9 @@ app.get('/api/admin/profiles', (req, res) => {
 });
 
 app.post('/api/admin/profiles', (req, res) => {
-  const { name, color, avatar_type, avatar_value, telegram_id, theme, font_size } = req.body;
+  const { name, color, avatar_type, avatar_value, telegram_id, theme, font_size, language } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
-  const profile = insertProfile({ name, color, avatar_type, avatar_value, telegram_id, theme, font_size });
+  const profile = insertProfile({ name, color, avatar_type, avatar_value, telegram_id, theme, font_size, language });
   io.emit('dashboard_update', getDashboardData());
   res.json({ ok: true, profile });
 });
@@ -254,6 +261,32 @@ app.patch('/api/admin/profiles/:id', (req, res) => {
 
 app.delete('/api/admin/profiles/:id', (req, res) => {
   deleteProfile(req.params.id);
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true });
+});
+
+// Schedules API
+app.get('/api/admin/schedules', (req, res) => {
+  res.json(getSchedules());
+});
+
+app.post('/api/admin/schedules', (req, res) => {
+  const { profile_id, name, schedule } = req.body;
+  if (!name) return res.status(400).json({ error: 'name is required' });
+  const created = insertSchedule({ profile_id, name, schedule: Array.isArray(schedule) ? schedule : [] });
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, schedule: created });
+});
+
+app.patch('/api/admin/schedules/:id', (req, res) => {
+  const updated = updateSchedule(req.params.id, req.body);
+  if (!updated) return res.status(404).json({ error: 'Schedule not found' });
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, schedule: updated });
+});
+
+app.delete('/api/admin/schedules/:id', (req, res) => {
+  deleteSchedule(req.params.id);
   io.emit('dashboard_update', getDashboardData());
   res.json({ ok: true });
 });

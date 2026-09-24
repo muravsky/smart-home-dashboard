@@ -60,18 +60,47 @@ async function runPhase3Tests() {
       name: 'Oliver',
       color: '#38bdf8',
       avatar_type: 'builtin',
-      avatar_value: '🚀'
+      avatar_value: '🚀',
+      language: 'ru'
     });
     assert(createProfileRes.statusCode === 200 && createProfileRes.json.ok, 'POST /api/admin/profiles created profile');
     const profileId = createProfileRes.json.profile.id;
     assert(createProfileRes.json.profile.avatar_value === '🚀', 'Built-in avatar emoji saved accurately');
+    assert(createProfileRes.json.profile.language === 'ru', 'Profile language stored correctly');
 
     // Update Profile
     const updateProfileRes = await makeRequest(`/api/admin/profiles/${profileId}`, 'PATCH', {
       name: 'Oliver Star',
-      color: '#0284c7'
+      color: '#0284c7',
+      language: 'uk'
     });
     assert(updateProfileRes.statusCode === 200 && updateProfileRes.json.profile.name === 'Oliver Star', 'PATCH /api/admin/profiles/:id updated name');
+    assert(updateProfileRes.json.profile.language === 'uk', 'PATCH /api/admin/profiles/:id updated language');
+
+    const globalSettingsRes = await makeRequest('/api/admin/settings', 'POST', {
+      language: 'pl'
+    });
+    assert(globalSettingsRes.statusCode === 200 && globalSettingsRes.json.settings.language === 'pl', 'Global language setting stored correctly');
+
+    console.log('\n--- 1b. Schedule Management API ---');
+    const createScheduleRes = await makeRequest('/api/admin/schedules', 'POST', {
+      profile_id: profileId,
+      name: 'Oliver Weekly Schedule',
+      schedule: [
+        { day: 'Mon', lessons: [{ number: 1, start: '08:30', end: '09:15', name: 'Math', room: 'A-101' }] },
+        { day: 'Tue', lessons: [{ number: 1, start: '08:30', end: '09:15', name: 'Science', room: 'B-204' }] }
+      ]
+    });
+    assert(createScheduleRes.statusCode === 200 && createScheduleRes.json.ok, 'POST /api/admin/schedules created schedule');
+    const scheduleId = createScheduleRes.json.schedule.id;
+
+    const updateScheduleRes = await makeRequest(`/api/admin/schedules/${scheduleId}`, 'PATCH', {
+      name: 'Oliver Weekly Schedule Updated',
+      schedule: [
+        { day: 'Mon', lessons: [{ number: 1, start: '08:30', end: '09:15', name: 'Math', room: 'A-101' }, { number: 2, start: '09:25', end: '10:10', name: 'English', room: 'E-115' }] }
+      ]
+    });
+    assert(updateScheduleRes.statusCode === 200 && updateScheduleRes.json.schedule.name === 'Oliver Weekly Schedule Updated', 'PATCH /api/admin/schedules/:id updated schedule metadata');
 
     console.log('\n--- 2. List & List Items Management API ---');
     // Create Custom Shopping List for Oliver
@@ -94,11 +123,34 @@ async function runPhase3Tests() {
     assert(addItemRes.statusCode === 200 && addItemRes.json.ok, 'POST /api/admin/lists/:id/items added item');
     const itemId = addItemRes.json.item.id;
 
+    // Patch list metadata
+    const patchListRes = await makeRequest(`/api/admin/lists/${listId}`, 'PATCH', {
+      name: 'Oliver School Supplies Updated',
+      type: 'shopping',
+      color: '#f97316',
+      icon: '🧰',
+      profile_id: profileId
+    });
+    assert(patchListRes.statusCode === 200 && patchListRes.json.ok && patchListRes.json.list.type === 'shopping', 'PATCH /api/admin/lists/:id updated list type and metadata');
+
+    // Patch item fields
+    const patchItemRes = await makeRequest(`/api/admin/lists/${listId}/items/${itemId}`, 'PATCH', {
+      content: 'Colored pencils 24pk (updated)',
+      assignee_profile_id: profileId,
+      reward: 12,
+      due_date: '2026-09-30',
+      due_time: '15:30',
+      recurrence: 'weekly',
+      recurrence_interval: 2,
+      recurrence_days: [1, 3]
+    });
+    assert(patchItemRes.statusCode === 200 && patchItemRes.json.ok && patchItemRes.json.item.content.includes('updated') && patchItemRes.json.item.recurrence === 'weekly', 'PATCH /api/admin/lists/:listId/items/:itemId updated item fields');
+
     // Toggle Item Checked
     const toggleItemRes = await makeRequest(`/api/admin/lists/${listId}/items/${itemId}/toggle`, 'PATCH', {
       checked: true
     });
-    assert(toggleItemRes.statusCode === 200 && toggleItemRes.json.item.checked === 1, 'Toggle item checked status');
+    assert(toggleItemRes.statusCode === 200 && toggleItemRes.json.item.checked === 0, 'Toggle item checked status on recurring item resets completion instead of staying checked');
 
     console.log('\n--- 3. Socket.IO Real-Time Lists & Profiles Synchronization ---');
     await new Promise((resolve, reject) => {
@@ -137,6 +189,7 @@ async function runPhase3Tests() {
     });
 
     // Cleanup
+    if (scheduleId) await makeRequest(`/api/admin/schedules/${scheduleId}`, 'DELETE');
     await makeRequest(`/api/admin/lists/${listId}`, 'DELETE');
     await makeRequest(`/api/admin/profiles/${profileId}`, 'DELETE');
 
