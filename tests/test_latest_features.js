@@ -11,6 +11,7 @@ const {
   getSettings
 } = require('../src/db');
 const { searchCity, clearWeatherCache, getWeather } = require('../src/services/weather');
+const { normalizeParsedGeminiPayload } = require('../src/services/gemini');
 
 async function runTests() {
   console.log('\n--- 1. Testing Recurrence Calculation Logic ---');
@@ -104,7 +105,30 @@ async function runTests() {
   assert.strictEqual(currentSettings.weather_units, 'fahrenheit');
   console.log('[PASS] Weather location & unit settings properly stored and retrieved');
 
-  console.log('\n--- 5. Testing Weather Forecast Output ---');
+  console.log('\n--- 5. Testing Gemini Normalization Contract ---');
+  const normalized = normalizeParsedGeminiPayload({
+    notes: ['Remember to take medicine'],
+    tasks: [{
+      title: 'Wash dishes',
+      assignee: 'Leo',
+      reward: 15,
+      due_date: '2026-09-24',
+      due_time: '18:30',
+      recurrence: 'daily'
+    }],
+    shopping_items: [{ content: 'milk' }, { content: 'eggs' }],
+    calendar_events: [{ title: 'Doctor visit', date: '2026-09-25', time: '10:00', all_day: false }],
+    timer: { minutes: 5, action: 'start' }
+  });
+  assert.strictEqual(normalized.tasks[0].title, 'Wash dishes');
+  assert.strictEqual(normalized.tasks[0].assignee, 'Leo');
+  assert.strictEqual(normalized.tasks[0].reward, 15);
+  assert.strictEqual(normalized.shopping_items.length, 2);
+  assert.strictEqual(normalized.calendar_events[0].title, 'Doctor visit');
+  assert.strictEqual(normalized.timer.minutes, 5);
+  console.log('[PASS] Gemini normalization preserves task, shopping, event, and timer details for Telegram actions');
+
+  console.log('\n--- 6. Testing Weather Forecast Output ---');
   const originalFetch = global.fetch;
   global.fetch = async () => ({
     ok: true,
@@ -143,7 +167,7 @@ async function runTests() {
   console.log('[PASS] Weather service exposes hourly and multi-day forecast arrays for dashboard widgets');
   global.fetch = originalFetch;
 
-  console.log('\n--- 6. Testing Calendar URL Normalization & formatTime ---');
+  console.log('\n--- 7. Testing Calendar URL Normalization & formatTime ---');
   const { normalizeCalendarUrl } = require('../src/services/calendar');
   const { insertCalendarFeed, getCalendarFeeds, deleteCalendarFeed, updateCalendarFeedSyncTime } = require('../src/db');
   const fs = require('fs');

@@ -11,6 +11,10 @@ Analyze the user's natural language input and return ONLY raw JSON matching this
       "title": "string",
       "assignee": "string or null",
       "reward": 0,
+      "due_date": "YYYY-MM-DD or null",
+      "due_time": "HH:MM or null",
+      "recurrence": "none|daily|weekly|weekdays|weekends|interval",
+      "recurrence_interval": 1,
       "action": "add"
     }
   ],
@@ -24,7 +28,7 @@ Analyze the user's natural language input and return ONLY raw JSON matching this
     {
       "title": "string",
       "date": "YYYY-MM-DD",
-      "time": "HH:MM",
+      "time": "HH:MM or null",
       "all_day": false
     }
   ],
@@ -39,9 +43,87 @@ Rules:
 1. Shopping items: If the user mentions groceries, shopping, buy X, need X, put them in shopping_items.
 2. Calendar events: If user mentions an appointment, meeting, practice, schedule, event with a date or time, put them in calendar_events with accurate ISO date (e.g. tomorrow = calculate relative to today).
 3. Timer: If user says "set timer for 10 minutes", populate timer object (minutes as number).
-4. Tasks: Chores, to-dos, things to do. If reward is mentioned (e.g. "for 15 points"), set reward number.
+4. Tasks: Chores, to-dos, things to do. If reward is mentioned (e.g. "for 15 points"), set reward number. If the user mentions a date or time, fill due_date and due_time. If they say recurring, use recurrence and recurrence_interval.
 5. Notes: Generic info, reminders, thoughts.
-6. Only return non-empty arrays/objects when detected. If a field is not present, use empty array [] or null for timer.`;
+6. Only return non-empty arrays/objects when detected. If a field is not present, use empty array [] or null for timer. If the request is not clearly actionable, return notes with the user text as a reminder.`;
+}
+
+function normalizeParsedGeminiPayload(parsed = {}) {
+  const toArray = (value) => Array.isArray(value) ? value : [];
+
+  const normalizedTasks = toArray(parsed.tasks).map((task) => {
+    if (typeof task === 'string') {
+      return {
+        title: task.trim(),
+        assignee: null,
+        reward: 0,
+        due_date: null,
+        due_time: null,
+        recurrence: 'none',
+        recurrence_interval: 1
+      };
+    }
+
+    const title = String(task.title || task.content || task.name || '').trim();
+    if (!title) return null;
+
+    return {
+      title,
+      assignee: task.assignee ? String(task.assignee).trim() || null : null,
+      reward: Number(task.reward ?? task.points ?? 0) || 0,
+      due_date: task.due_date || task.date || null,
+      due_time: task.due_time || task.time || null,
+      recurrence: task.recurrence || 'none',
+      recurrence_interval: Number(task.recurrence_interval || task.interval || 1) || 1,
+      recurrence_days: Array.isArray(task.recurrence_days) ? task.recurrence_days : (
+        task.recurrence_days ? [task.recurrence_days] : null
+      )
+    };
+  }).filter(Boolean);
+
+  const normalizedShoppingItems = toArray(parsed.shopping_items).map((item) => {
+    if (typeof item === 'string') {
+      return { content: item.trim() };
+    }
+    const content = String(item.content || item.name || '').trim();
+    return content ? { content } : null;
+  }).filter(Boolean);
+
+  const normalizedCalendarEvents = toArray(parsed.calendar_events).map((event) => {
+    if (typeof event === 'string') {
+      return { title: event.trim(), date: null, time: null, all_day: false };
+    }
+    const title = String(event.title || event.name || '').trim();
+    if (!title) return null;
+    return {
+      title,
+      date: event.date || null,
+      time: event.time || null,
+      all_day: Boolean(event.all_day)
+    };
+  }).filter(Boolean);
+
+  const normalizedNotes = toArray(parsed.notes).map((note) => String(note || '').trim()).filter(Boolean);
+
+  let timer = null;
+  if (parsed.timer && typeof parsed.timer === 'object') {
+    const minutes = Number(parsed.timer.minutes ?? parsed.timer.duration ?? 0);
+    if (minutes > 0) {
+      timer = {
+        action: parsed.timer.action || 'start',
+        minutes
+      };
+    }
+  }
+
+  return {
+    notes: normalizedNotes,
+    tasks: normalizedTasks,
+    shopping_items: normalizedShoppingItems,
+    calendar_events: normalizedCalendarEvents,
+    timer,
+    response_message: typeof parsed.response_message === 'string' ? parsed.response_message : ''
+  };
 }
 
 /**
@@ -123,19 +205,12 @@ async function parseAudioWithGemini(audioBuffer, mimeType = 'audio/ogg', senderN
   rawContent = rawContent.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
   const parsed = JSON.parse(rawContent);
-
-  return {
-    notes: Array.isArray(parsed.notes) ? parsed.notes : [],
-    tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
-    shopping_items: Array.isArray(parsed.shopping_items) ? parsed.shopping_items : [],
-    calendar_events: Array.isArray(parsed.calendar_events) ? parsed.calendar_events : [],
-    timer: parsed.timer && typeof parsed.timer === 'object' ? parsed.timer : null,
-    response_message: parsed.response_message || ''
-  };
+  return normalizeParsedGeminiPayload(parsed);
 }
 
 module.exports = {
   buildSystemPrompt,
+  normalizeParsedGeminiPayload,
   parseTextWithGemini,
   parseAudioWithGemini
 };

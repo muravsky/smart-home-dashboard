@@ -15,8 +15,11 @@ const {
   getCalendarEvents,
   insertCalendarEvent,
   getProfileByTelegramId,
+  getProfiles,
   getLists,
-  insertListItem
+  insertList,
+  insertListItem,
+  updateList
 } = require('./db');
 
 // Save a Telegram photo to disk and DB
@@ -78,6 +81,39 @@ async function saveTelegramPhoto(ctx, io) {
   }
 }
 
+function getOrCreateDashboardList(type, name, icon = '📋') {
+  const allLists = getLists();
+  const existing = allLists.find((list) => list.type === type);
+  if (existing) return existing;
+  return insertList({ name, type, icon });
+}
+
+function resolveProfileIdFromName(rawName, senderProfile) {
+  if (!rawName) return senderProfile ? senderProfile.id : null;
+  const normalized = String(rawName).trim();
+  if (!normalized) return senderProfile ? senderProfile.id : null;
+
+  const profiles = getProfiles();
+  const match = profiles.find((profile) => {
+    const name = (profile.name || '').toLowerCase();
+    return name === normalized.toLowerCase() || name.includes(normalized.toLowerCase());
+  });
+
+  return match ? match.id : (senderProfile ? senderProfile.id : null);
+}
+
+function normalizeDateString(value) {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  if (value.toLowerCase() === 'today') return new Date().toISOString().slice(0, 10);
+  if (value.toLowerCase() === 'tomorrow') {
+    const date = new Date();
+    date.setDate(date.getDate() + 1);
+    return date.toISOString().slice(0, 10);
+  }
+  return null;
+}
+
 /**
  * Creates and configures the Telegraf bot instance.
  * @param {import('socket.io').Server} io - Socket.IO server instance
@@ -117,50 +153,72 @@ function initBot(io) {
   bot.command(['start', 'help'], async (ctx) => {
     const msg =
       `👋 *Welcome to your Smart Home Dashboard Bot!*\n\n` +
-      `Just send me any message and Gemini AI will extract notes and tasks.\n` +
-      `Send a *photo* 📷 to add it to the screensaver slideshow!\n\n` +
+      `You can send natural-language messages and Gemini will turn them into tasks, notes, shopping items, events, or timers.\n\n` +
       `*Commands:*\n` +
-      `• /tasks — View all active tasks\n` +
-      `• /done <id> — Mark a task as completed\n` +
+      `• /tasks — View chores and task list\n` +
+      `• /shopping — View shopping list\n` +
       `• /notes — View recent notes\n` +
+      `• /today — Today's events and tasks\n` +
+      `• /addtask <title> [reward] [assignee] — Add a task\n` +
+      `• /addnote <text> — Save a note\n` +
+      `• /addshopping <item> — Add shopping item\n` +
+      `• /event <YYYY-MM-DD> <HH:MM> <title> — Add event\n` +
+      `• /timer <minutes> — Start kitchen timer\n` +
+      `• /done <id> — Mark a task item complete\n` +
       `• /photos — List screensaver photos\n` +
       `• /help — Show this message`;
     await ctx.replyWithMarkdown(msg);
   });
 
-  // Command: /tasks
-  bot.command('tasks', async (ctx) => {
-    const tasks = getTasks();
-    if (tasks.length === 0) return ctx.reply('📋 No tasks recorded yet.');
+  bot.command('status', async (ctx) => {
+    const tasksList = getOrCreateDashboardList('tasks', 'Family Tasks', '✅');
+    const shoppingList = getOrCreateDashboardList('shopping', 'Shopping List', '🛒');
+    const notes = getNotes(5);
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayEvents = getCalendarEvents({ limit: 20 }).filter(e => e.start_datetime && e.start_datetime.startsWith(todayStr));
 
-    let reply = `📋 *Active Tasks (${tasks.length}):*\n\n`;
-    for (const t of tasks) {
-      const statusIcon = t.status === 'completed' ? '✅' : '⏳';
-      const who = t.assignee ? `(@${t.assignee}) ` : '';
-      const rew = t.reward ? `[+${t.reward}] ` : '';
-      reply += `${statusIcon} *#${t.id}*: ${t.title} ${who}${rew}\n`;
+    const taskCount = (tasksList.items || []).filter(item => item.checked !== 1).length;
+    const shoppingCount = (shoppingList.items || []).filter(item => item.checked !== 1).length;
+
+    const reply = `📊 *Dashboard Snapshot*\n\n` +
+      `• Tasks pending: ${taskCount}\n` +
+      `• Shopping pending: ${shoppingCount}\n` +
+      `• Notes today: ${notes.length}\n` +
+      `• Events today: ${todayEvents.length}\n\n` +
+      `Use /tasks, /shopping, /notes, or just send a normal message to Gemini.`;
+    await ctx.replyWithMarkdown(reply);
+  });
+
+  bot.command('tasks', async (ctx) => {
+    const taskList = getOrCreateDashboardList('tasks', 'Family Tasks', '✅');
+    const items = Array.isArray(taskList.items) ? taskList.items : [];
+    if (items.length === 0) return ctx.reply('📋 No tasks recorded yet.');
+
+    let reply = `📋 *Tasks (${items.length}):*\n\n`;
+    for (const item of items) {
+      const checked = item.checked === 1 ? '✅' : '⏳';
+      const due = item.due_date ? ` • ${item.due_date}` : '';
+      const reward = item.reward ? ` • +${item.reward} pts` : '';
+      const assignee = item.assignee_name ? ` • @${item.assignee_name}` : '';
+      reply += `${checked} #${item.id}: ${item.content}${assignee}${due}${reward}\n`;
     }
     reply += `\n_Tip: /done <id> to complete a task._`;
     await ctx.replyWithMarkdown(reply);
   });
 
-  // Command: /done <id>
-  bot.command('done', async (ctx) => {
-    const args = ctx.message.text.split(' ').slice(1);
-    const taskId = parseInt(args[0], 10);
+  bot.command('shopping', async (ctx) => {
+    const shoppingList = getOrCreateDashboardList('shopping', 'Shopping List', '🛒');
+    const items = Array.isArray(shoppingList.items) ? shoppingList.items : [];
+    if (items.length === 0) return ctx.reply('🛒 Shopping list is empty.');
 
-    if (isNaN(taskId)) return ctx.reply('Usage: /done <task_id>  e.g. /done 3');
-
-    const tasks = getTasks();
-    const task = tasks.find((t) => t.id === taskId);
-    if (!task) return ctx.reply(`❌ Task #${taskId} not found.`);
-
-    updateTaskStatus(taskId, 'completed');
-    io.emit('dashboard_update', getDashboardData());
-    await ctx.reply(`✅ Task #${taskId} "${task.title}" marked complete!`);
+    let reply = `🛒 *Shopping List (${items.length}):*\n\n`;
+    for (const item of items) {
+      const checked = item.checked === 1 ? '✅' : '⬜';
+      reply += `${checked} ${item.content}\n`;
+    }
+    await ctx.replyWithMarkdown(reply);
   });
 
-  // Command: /notes
   bot.command('notes', async (ctx) => {
     const notes = getNotes(15);
     if (notes.length === 0) return ctx.reply('📝 No notes recorded yet.');
@@ -170,7 +228,66 @@ function initBot(io) {
     await ctx.replyWithMarkdown(reply);
   });
 
-  // Command: /photos — List screensaver photos
+  bot.command('addnote', async (ctx) => {
+    const text = ctx.message.text.replace(/^\/addnote\s*/i, '').trim();
+    if (!text) return ctx.reply('Usage: /addnote <text>');
+    const note = insertNote(text);
+    io.emit('dashboard_update', getDashboardData());
+    await ctx.replyWithMarkdown(`✅ *Note saved:*\n\n_${note.content}_`);
+  });
+
+  bot.command('addtask', async (ctx) => {
+    const text = ctx.message.text.replace(/^\/addtask\s*/i, '').trim();
+    if (!text) return ctx.reply('Usage: /addtask <title> [reward] [assignee]');
+
+    const tokens = text.split(/\s+/);
+    const reward = Number(tokens.find((token) => /^\+?\d+$/.test(token)) || 0) || 0;
+    const assignee = tokens.find((token) => token.startsWith('@')) ? tokens.find((token) => token.startsWith('@')).replace('@', '') : null;
+    const titleTokens = tokens.filter((token) => !(/^\+?\d+$/.test(token)) && !token.startsWith('@'));
+    const title = titleTokens.join(' ');
+
+    const senderProfile = getProfileByTelegramId(String(ctx.from.id));
+    const tasksList = getOrCreateDashboardList('tasks', 'Family Tasks', '✅');
+    const item = insertListItem({
+      list_id: tasksList.id,
+      content: title.trim(),
+      assignee_profile_id: resolveProfileIdFromName(assignee || (senderProfile ? senderProfile.name : null), senderProfile),
+      reward,
+      due_date: new Date().toISOString().slice(0, 10)
+    });
+
+    insertTask({
+      assignee: assignee || (senderProfile ? senderProfile.name : null),
+      title: title.trim(),
+      reward
+    });
+
+    io.emit('dashboard_update', getDashboardData());
+    await ctx.replyWithMarkdown(`✅ *Task added:*\n\n• #${item.id} ${title.trim()}${reward ? ` [+${reward} pts]` : ''}`);
+  });
+
+  bot.command('addshopping', async (ctx) => {
+    const text = ctx.message.text.replace(/^\/addshopping\s*/i, '').trim();
+    if (!text) return ctx.reply('Usage: /addshopping <item>');
+
+    const shoppingList = getOrCreateDashboardList('shopping', 'Shopping List', '🛒');
+    const item = insertListItem({
+      list_id: shoppingList.id,
+      content: text
+    });
+
+    io.emit('dashboard_update', getDashboardData());
+    await ctx.replyWithMarkdown(`✅ *Added to shopping list:*\n\n• ${text}`);
+  });
+
+  bot.command('timer', async (ctx) => {
+    const text = ctx.message.text.replace(/^\/timer\s*/i, '').trim();
+    const minutes = Number(text) || 0;
+    if (!minutes || minutes <= 0) return ctx.reply('Usage: /timer <minutes>');
+    io.emit('timer:set', { minutes, action: 'start' });
+    await ctx.replyWithMarkdown(`⏳ *Kitchen timer set for ${minutes} minutes!*`);
+  });
+
   bot.command('photos', async (ctx) => {
     const photos = getPhotos({ screensaverOnly: false });
     if (photos.length === 0) {
@@ -192,7 +309,8 @@ function initBot(io) {
     const todayStr = new Date().toISOString().slice(0, 10);
     const allEvents = getCalendarEvents({ limit: 100 });
     const todayEvents = allEvents.filter(e => e.start_datetime && e.start_datetime.startsWith(todayStr));
-    const tasks = getTasks().filter(t => t.status !== 'completed');
+    const taskList = getOrCreateDashboardList('tasks', 'Family Tasks', '✅');
+    const tasks = (taskList.items || []).filter(item => item.checked !== 1);
 
     let reply = `📅 *Today's Schedule & Tasks (${todayStr}):*\n\n`;
     if (todayEvents.length === 0) {
@@ -214,8 +332,8 @@ function initBot(io) {
     } else {
       reply += `*Pending Tasks (${tasks.length}):*\n`;
       for (const t of tasks.slice(0, 5)) {
-        const who = t.assignee ? `(@${t.assignee}) ` : '';
-        reply += `• #${t.id}: ${t.title} ${who}\n`;
+        const who = t.assignee_name ? `(@${t.assignee_name}) ` : '';
+        reply += `• #${t.id}: ${t.content} ${who}\n`;
       }
       if (tasks.length > 5) reply += `_...and ${tasks.length - 5} more._\n`;
     }
@@ -230,7 +348,7 @@ function initBot(io) {
       return ctx.reply('Usage: /event <YYYY-MM-DD> <HH:MM> <title>\nExample: /event 2026-09-25 18:00 Soccer match');
     }
 
-    const dateStr = parts[1];
+    const dateStr = normalizeDateString(parts[1]) || parts[1];
     const timeStr = parts[2];
     const title = parts.slice(3).join(' ');
 
@@ -247,6 +365,41 @@ function initBot(io) {
     } catch (err) {
       await ctx.reply(`❌ Failed to add event: ${err.message}`);
     }
+  });
+
+  // Command: /done <id>
+  bot.command('done', async (ctx) => {
+    const args = ctx.message.text.split(' ').slice(1);
+    const taskId = parseInt(args[0], 10);
+
+    if (isNaN(taskId)) return ctx.reply('Usage: /done <task_id>  e.g. /done 3');
+
+    const tasks = getTasks();
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) {
+      const taskLists = getLists();
+      for (const list of taskLists) {
+        if (list.type === 'tasks' && Array.isArray(list.items)) {
+          const found = list.items.find(item => item.id === taskId);
+          if (found) {
+            const itemId = found.id;
+            const targetList = list;
+            const current = targetList.items.find((it) => it.id === itemId);
+            if (current) {
+              current.checked = 1;
+              io.emit('dashboard_update', getDashboardData());
+              await ctx.reply(`✅ Task #${taskId} "${current.content}" marked complete!`);
+              return;
+            }
+          }
+        }
+      }
+      return ctx.reply(`❌ Task #${taskId} not found.`);
+    }
+
+    updateTaskStatus(taskId, 'completed');
+    io.emit('dashboard_update', getDashboardData());
+    await ctx.reply(`✅ Task #${taskId} "${task.title}" marked complete!`);
   });
 
   // Handle incoming PHOTO messages — save to screensaver
