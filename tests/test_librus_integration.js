@@ -1,4 +1,5 @@
 const assert = require('assert');
+const db = require('../src/db');
 const { normalizeTimetableData, buildMorningSummary, buildSchoolDaySummary } = require('../src/services/librus');
 
 const sampleTimetable = {
@@ -35,5 +36,20 @@ assert(daySummary.includes('21'), 'day summary should include weather temperatur
 assert(daySummary.includes('Clean room'), 'day summary should include tasks');
 assert(daySummary.includes('Math'), 'day summary should include schedule');
 assert(daySummary.includes('School event'), 'day summary should include notifications');
+
+const profile = db.insertProfile({
+  name: 'Test Kid',
+  color: '#00ff00',
+  avatar_type: 'builtin',
+  avatar_value: '🧒',
+  librus_login: 'kid-login',
+  librus_password: 'kid-pass'
+});
+assert.strictEqual(profile.librus_login, 'kid-login', 'profile should store Librus login');
+assert.strictEqual(profile.librus_password, 'kid-pass', 'profile should store Librus password');
+
+const updatedProfile = db.updateProfile(profile.id, { librus_login: 'new-login', librus_password: 'new-pass' });
+assert.strictEqual(updatedProfile.librus_login, 'new-login', 'profile update should change Librus login');
+assert.strictEqual(updatedProfile.librus_password, 'new-pass', 'profile update should change Librus password');
 
 console.log('Librus timetable normalization and summary checks passed');

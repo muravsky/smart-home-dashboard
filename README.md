@@ -49,6 +49,13 @@ GEMINI_API_KEY=your_gemini_api_key
 
 ---
 
+## 🧱 Database & Development Safety
+
+- Do not recreate or overwrite the local SQLite database during routine development.
+- The app uses layered, non-destructive schema checks instead of destructive resets: if a column or table is missing, it is added safely during startup.
+- Seed data is only inserted when the corresponding table is empty; it is not intended to wipe or replace an existing database.
+- For per-child integrations (for example Librus), prefer storing credentials on the profile itself instead of relying only on a single global `.env` value.
+
 ## 🏃 Quick Start
 
 ### 1. Start the Server

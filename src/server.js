@@ -247,9 +247,9 @@ app.get('/api/admin/profiles', (req, res) => {
 });
 
 app.post('/api/admin/profiles', (req, res) => {
-  const { name, color, avatar_type, avatar_value, telegram_id, theme, font_size, language } = req.body;
+  const { name, color, avatar_type, avatar_value, telegram_id, theme, font_size, language, librus_login, librus_password } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
-  const profile = insertProfile({ name, color, avatar_type, avatar_value, telegram_id, theme, font_size, language });
+  const profile = insertProfile({ name, color, avatar_type, avatar_value, telegram_id, theme, font_size, language, librus_login, librus_password });
   io.emit('dashboard_update', getDashboardData());
   res.json({ ok: true, profile });
 });

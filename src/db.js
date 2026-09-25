@@ -204,6 +204,12 @@ try {
   if (!profCols.includes('telegram_id')) {
     db.exec('ALTER TABLE profiles ADD COLUMN telegram_id TEXT');
   }
+  if (!profCols.includes('librus_login')) {
+    db.exec('ALTER TABLE profiles ADD COLUMN librus_login TEXT');
+  }
+  if (!profCols.includes('librus_password')) {
+    db.exec('ALTER TABLE profiles ADD COLUMN librus_password TEXT');
+  }
   if (!profCols.includes('theme')) {
     db.exec("ALTER TABLE profiles ADD COLUMN theme TEXT DEFAULT 'dark'");
   }
@@ -368,18 +374,29 @@ function getProfileByTelegramId(telegramId) {
   return db.prepare('SELECT * FROM profiles WHERE telegram_id = ?').get(String(telegramId).trim());
 }
 
-function insertProfile({ name, color = '#38bdf8', avatar_type = 'builtin', avatar_value = '🙂', telegram_id = null, theme = 'dark', font_size = 'normal', language = 'en' }) {
-  const stmt = db.prepare('INSERT INTO profiles (name, color, avatar_type, avatar_value, telegram_id, theme, font_size, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-  const info = stmt.run(name.trim(), color, avatar_type, avatar_value, telegram_id ? String(telegram_id).trim() : null, theme || 'dark', font_size || 'normal', language || 'en');
+function insertProfile({ name, color = '#38bdf8', avatar_type = 'builtin', avatar_value = '🙂', telegram_id = null, theme = 'dark', font_size = 'normal', language = 'en', librus_login = null, librus_password = null }) {
+  const stmt = db.prepare('INSERT INTO profiles (name, color, avatar_type, avatar_value, telegram_id, theme, font_size, language, librus_login, librus_password) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+  const info = stmt.run(
+    name.trim(),
+    color,
+    avatar_type,
+    avatar_value,
+    telegram_id ? String(telegram_id).trim() : null,
+    theme || 'dark',
+    font_size || 'normal',
+    language || 'en',
+    librus_login ? String(librus_login).trim() : null,
+    librus_password ? String(librus_password) : null
+  );
   return getProfileById(info.lastInsertRowid);
 }
 
-function updateProfile(id, { name, color, avatar_type, avatar_value, telegram_id, theme, font_size, language }) {
+function updateProfile(id, { name, color, avatar_type, avatar_value, telegram_id, theme, font_size, language, librus_login, librus_password }) {
   const current = getProfileById(id);
   if (!current) return null;
   const stmt = db.prepare(`
     UPDATE profiles 
-    SET name = ?, color = ?, avatar_type = ?, avatar_value = ?, telegram_id = ?, theme = ?, font_size = ?, language = ? 
+    SET name = ?, color = ?, avatar_type = ?, avatar_value = ?, telegram_id = ?, theme = ?, font_size = ?, language = ?, librus_login = ?, librus_password = ?
     WHERE id = ?
   `);
   stmt.run(
@@ -391,6 +408,8 @@ function updateProfile(id, { name, color, avatar_type, avatar_value, telegram_id
     theme !== undefined ? theme : (current.theme || 'dark'),
     font_size !== undefined ? font_size : (current.font_size || 'normal'),
     language !== undefined ? (language || 'en') : (current.language || 'en'),
+    librus_login !== undefined ? (librus_login ? String(librus_login).trim() : null) : current.librus_login,
+    librus_password !== undefined ? (librus_password ? String(librus_password) : null) : current.librus_password,
     id
   );
   return getProfileById(id);
