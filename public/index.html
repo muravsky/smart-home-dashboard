@@ -2634,7 +2634,9 @@
         const isRealSchedule = (schedule) => {
           if (!schedule || !Array.isArray(schedule.schedule) || schedule.schedule.length === 0) return false;
           const name = String(schedule.profile_name || schedule.name || '').toLowerCase();
-          return !/(test|sample|demo|placeholder)/.test(name);
+          if (/(test|sample|demo|placeholder)/.test(name)) return false;
+          const hasLessonData = schedule.schedule.some(day => Array.isArray(day.lessons) && day.lessons.some(lesson => (lesson.name || '').trim().length > 0 || (lesson.room || '').trim().length > 0));
+          return hasLessonData;
         };
 
         const selectedProfileSchedule = computed(() => {

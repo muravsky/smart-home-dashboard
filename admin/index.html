@@ -2142,18 +2142,12 @@
           lessons: [makeScheduleLesson()]
         });
 
-        const defaultScheduleDays = () => [
-          makeScheduleDay('Mon'),
-          makeScheduleDay('Tue'),
-          makeScheduleDay('Wed'),
-          makeScheduleDay('Thu'),
-          makeScheduleDay('Fri')
-        ];
+        const defaultScheduleDays = () => [];
 
         const scheduleDraft = ref({
           name: '',
           profile_id: null,
-          schedule: defaultScheduleDays()
+          schedule: []
         });
         const editingSchedule = ref(null);
 
@@ -2210,7 +2204,7 @@
           scheduleDraft.value = {
             name: '',
             profile_id: null,
-            schedule: defaultScheduleDays()
+            schedule: []
           };
         }
 
@@ -2221,7 +2215,7 @@
             profile_id: schedule.profile_id ?? null,
             schedule: Array.isArray(schedule.schedule) && schedule.schedule.length > 0
               ? JSON.parse(JSON.stringify(schedule.schedule))
-              : defaultScheduleDays()
+              : []
           };
         }
 
