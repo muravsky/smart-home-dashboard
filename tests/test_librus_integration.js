@@ -1,4 +1,14 @@
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+
+const testDbPath = path.join(__dirname, '../data/test-smart-home.db');
+for (const suffix of ['.db', '.db-wal', '.db-shm']) {
+  const candidate = path.join(__dirname, '../data', `test-smart-home.db${suffix}`);
+  if (fs.existsSync(candidate)) fs.rmSync(candidate, { force: true });
+}
+process.env.DB_PATH = testDbPath;
+
 const db = require('../src/db');
 const { normalizeTimetableData, buildMorningSummary, buildSchoolDaySummary } = require('../src/services/librus');
 const { getWeather } = require('../src/services/weather');
@@ -21,6 +31,19 @@ assert(Array.isArray(normalized), 'expected normalized timetable array');
 assert.strictEqual(normalized[0].day, 'Monday', 'Monday should be first day');
 assert.strictEqual(normalized[0].lessons.length, 2, 'two lessons should be parsed for Monday');
 assert.strictEqual(normalized[0].lessons[0].name, 'Math', 'Math lesson should be preserved');
+
+const hourBasedTimetable = {
+  hours: ['08:00-08:45', '09:00-09:45', '10:00-10:45'],
+  table: {
+    Monday: [
+      { subject: 'Math', teacher: 'Mrs. Brown', room: '101' },
+      { subject: 'Biology', teacher: 'Mr. Green', room: 'B2' }
+    ]
+  }
+};
+const hourBasedNormalized = normalizeTimetableData(hourBasedTimetable);
+assert.strictEqual(hourBasedNormalized[0].lessons[0].start, '08:00', 'first lesson should use the first hour slot from Librus data');
+assert.strictEqual(hourBasedNormalized[0].lessons[1].start, '09:00', 'second lesson should use the second hour slot from Librus data');
 
 const summary = buildMorningSummary({ name: 'Mia' }, sampleTimetable);
 assert(summary.includes('Mia'), 'summary should mention the person');

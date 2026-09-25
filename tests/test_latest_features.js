@@ -1,5 +1,14 @@
 const assert = require('assert');
-const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+const testDbPath = path.join(__dirname, '../data/test-smart-home.db');
+for (const suffix of ['.db', '.db-wal', '.db-shm']) {
+  const candidate = path.join(__dirname, '../data', `test-smart-home.db${suffix}`);
+  if (fs.existsSync(candidate)) fs.rmSync(candidate, { force: true });
+}
+process.env.DB_PATH = testDbPath;
+
 const { 
   initDatabase, 
   calculateNextDueDate, 

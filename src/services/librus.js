@@ -56,9 +56,41 @@ function parseLessonTime(rawLesson) {
   return fallback;
 }
 
-function normalizeSingleLesson(lesson, idx = 0) {
+function extractTimeFromHours(hours, lesson, idx = 0) {
+  if (!Array.isArray(hours) || hours.length === 0) return null;
+
+  const lessonNumber = Number(lesson && (lesson.number || lesson.no || lesson.lessonNumber || lesson.hour || lesson.period || lesson.index || idx + 1));
+  const slotIndex = Number.isFinite(lessonNumber) && lessonNumber > 0 ? lessonNumber - 1 : idx;
+  const slot = hours[slotIndex] || hours[idx] || hours[0];
+  if (!slot) return null;
+
+  if (typeof slot === 'string') {
+    if (slot.includes('-')) {
+      const [start, end] = slot.split('-').map((p) => p.trim()).filter(Boolean);
+      if (start && end) return { start, end, time: slot };
+    }
+    if (slot.includes(' ')) {
+      const [start, end] = slot.split(' ').map((p) => p.trim()).filter(Boolean);
+      if (start && end) return { start, end, time: slot };
+    }
+    if (slot.length >= 5) {
+      return { start: slot.slice(0, 5), end: slot.slice(0, 5), time: slot };
+    }
+  }
+
+  if (slot && typeof slot === 'object') {
+    const start = slot.start || slot.from || slot.begin || slot.time_start || slot.timeStart || null;
+    const end = slot.end || slot.to || slot.finish || slot.time_end || slot.timeEnd || null;
+    if (start && end) return { start: String(start).slice(0, 5), end: String(end).slice(0, 5), time: `${start}-${end}` };
+  }
+
+  return null;
+}
+
+function normalizeSingleLesson(lesson, idx = 0, hours = []) {
   const source = lesson || {};
-  const { start, end, time } = parseLessonTime(source);
+  const timeFromHours = extractTimeFromHours(hours, source, idx);
+  const { start, end, time } = timeFromHours || parseLessonTime(source);
   const name = source.subject || source.name || source.title || `Lesson ${idx + 1}`;
   const room = source.room || source.classroom || source.className || source.clazz || '—';
   const teacher = source.teacher || source.teacherName || source.instructor || null;
@@ -84,6 +116,7 @@ function normalizeSingleLesson(lesson, idx = 0) {
 function normalizeTimetableData(rawTimetable) {
   if (!rawTimetable) return [];
 
+  const hours = Array.isArray(rawTimetable.hours) ? rawTimetable.hours : Array.isArray(rawTimetable.time_slots) ? rawTimetable.time_slots : [];
   const sourceTable = rawTimetable.table || rawTimetable.days || rawTimetable;
   if (Array.isArray(sourceTable)) {
     return sourceTable.map((dayEntry, index) => {
@@ -91,7 +124,7 @@ function normalizeTimetableData(rawTimetable) {
       const lessons = Array.isArray(dayEntry && dayEntry.lessons) ? dayEntry.lessons : Array.isArray(dayEntry) ? dayEntry : [];
       return {
         day: toDisplayDayName(dayName),
-        lessons: lessons.map((lesson, lessonIndex) => normalizeSingleLesson(lesson, lessonIndex))
+        lessons: lessons.map((lesson, lessonIndex) => normalizeSingleLesson(lesson, lessonIndex, hours))
       };
     });
   }
@@ -99,7 +132,7 @@ function normalizeTimetableData(rawTimetable) {
   if (sourceTable && typeof sourceTable === 'object') {
     return Object.entries(sourceTable).map(([dayName, lessons]) => ({
       day: toDisplayDayName(dayName),
-      lessons: Array.isArray(lessons) ? lessons.map((lesson, lessonIndex) => normalizeSingleLesson(lesson, lessonIndex)) : []
+      lessons: Array.isArray(lessons) ? lessons.map((lesson, lessonIndex) => normalizeSingleLesson(lesson, lessonIndex, hours)) : []
     }));
   }
 
