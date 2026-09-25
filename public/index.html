@@ -1192,8 +1192,6 @@
                 <span class="font-mono text-xs uppercase tracking-widest text-violet-400 font-semibold">{{ getLocalizedWidgetLabel('summary', 'DAY SUMMARY') }}</span>
                 <div class="flex items-center gap-2">
                   <span class="text-[10px] font-mono text-neutral-500">{{ currentDate.short }}</span>
-                  <button @click.stop="refreshSchoolSummary" class="text-[9px] font-mono uppercase tracking-widest text-violet-200 hover:text-white border border-violet-800/70 rounded px-1.5 py-0.5">Generate</button>
-                  <button @click.stop="refreshDashboardData" class="text-[9px] font-mono uppercase tracking-widest text-violet-200 hover:text-white border border-violet-800/70 rounded px-1.5 py-0.5">Refresh</button>
                 </div>
               </div>
 
@@ -1698,7 +1696,6 @@
         const events = ref([]);
         const pageConfigs = ref({});
         const weather = ref(null);
-        const schoolSummaryText = ref('');
         const librusData = ref({
           grades: [],
           notifications: [],
@@ -2057,37 +2054,6 @@
           return profiles.value.find(p => p.id === selectedProfileId.value) || null;
         });
 
-        async function refreshSchoolSummary() {
-          const summaryPayload = {
-            language: effectiveLanguage.value || 'en',
-            profile_name: selectedProfile.value ? selectedProfile.value.name : 'kid',
-            weather: weather.value,
-            tasks: getFilteredTasksForWidget({ widget_type: 'tasks', config: { filter: 'today' } }),
-            schedule: selectedProfileSchedule.value && Array.isArray(selectedProfileSchedule.value.schedule) ? selectedProfileSchedule.value.schedule : [],
-            grades: getNormalizedGrades(),
-            notifications: Array.isArray(librusData.value.notifications) ? librusData.value.notifications : [],
-            announcements: Array.isArray(librusData.value.announcements) ? librusData.value.announcements : []
-          };
-
-          if (!summaryPayload.weather && !summaryPayload.tasks.length && !summaryPayload.schedule.length && !summaryPayload.grades.length && !summaryPayload.notifications.length && !summaryPayload.announcements.length) {
-            schoolSummaryText.value = '';
-            return;
-          }
-
-          try {
-            const res = await fetch('/api/summary/school-day', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(summaryPayload)
-            });
-            if (!res.ok) return;
-            const data = await res.json();
-            schoolSummaryText.value = data && typeof data.summary === 'string' ? data.summary : '';
-          } catch (err) {
-            console.warn('School summary refresh failed', err);
-          }
-        }
-
         async function refreshDashboardData() {
           try {
             const res = await fetch('/api/admin/data');
@@ -2104,7 +2070,6 @@
             if (data.events && Array.isArray(data.events)) events.value = data.events;
             if (data.photos && Array.isArray(data.photos)) photos.value = data.photos;
             if (data.layouts) layouts.value = data.layouts;
-            await refreshSchoolSummary();
           } catch (err) {
             console.warn('Refresh failed', err);
           }
@@ -2507,41 +2472,6 @@
           return lists.value.find(l => l.type === 'shopping') || lists.value[0];
         }
 
-        function getDefaultSchoolSchedule() {
-          return [
-            { day: 'Mon', lessons: [
-                { number: 1, start: '08:30', end: '09:15', name: 'Math', room: 'A-101' },
-                { number: 2, start: '09:25', end: '10:10', name: 'Science', room: 'B-204' },
-                { number: 3, start: '10:30', end: '11:15', name: 'Literature', room: 'C-112' },
-                { number: 4, start: '11:35', end: '12:20', name: 'History', room: 'D-220' }
-            ] },
-            { day: 'Tue', lessons: [
-                { number: 1, start: '08:30', end: '09:15', name: 'Physics', room: 'B-118' },
-                { number: 2, start: '09:25', end: '10:10', name: 'Art', room: 'H-305' },
-                { number: 3, start: '10:30', end: '11:15', name: 'English', room: 'E-210' },
-                { number: 4, start: '11:35', end: '12:20', name: 'PE', room: 'Gym' }
-            ] },
-            { day: 'Wed', lessons: [
-                { number: 1, start: '08:30', end: '09:15', name: 'Chemistry', room: 'B-304' },
-                { number: 2, start: '09:25', end: '10:10', name: 'Geography', room: 'D-116' },
-                { number: 3, start: '10:30', end: '11:15', name: 'Music', room: 'M-201' },
-                { number: 4, start: '11:35', end: '12:20', name: 'Coding', room: 'IT-12' }
-            ] },
-            { day: 'Thu', lessons: [
-                { number: 1, start: '08:30', end: '09:15', name: 'Biology', room: 'F-205' },
-                { number: 2, start: '09:25', end: '10:10', name: 'Math', room: 'A-101' },
-                { number: 3, start: '10:30', end: '11:15', name: 'French', room: 'E-115' },
-                { number: 4, start: '11:35', end: '12:20', name: 'Drama', room: 'Theater' }
-            ] },
-            { day: 'Fri', lessons: [
-                { number: 1, start: '08:30', end: '09:15', name: 'Algebra', room: 'A-102' },
-                { number: 2, start: '09:25', end: '10:10', name: 'Biology', room: 'F-205' },
-                { number: 3, start: '10:30', end: '11:15', name: 'German', room: 'E-203' },
-                { number: 4, start: '11:35', end: '12:20', name: 'Project', room: 'C-214' }
-            ] }
-          ];
-        }
-
         function timeToMinutes(value) {
           if (!value) return 0;
           const [hours, minutes = 0] = String(value).split(':').map(Number);
@@ -2585,7 +2515,7 @@
         }
 
         function getSchoolDaySummary(widget, options = {}) {
-          const aiSummary = schoolSummaryText.value && schoolSummaryText.value.trim();
+          const aiSummary = typeof librusData.value.summary === 'string' && librusData.value.summary.trim();
           if (aiSummary) return aiSummary;
 
           const includeWeather = options.includeWeather !== false;
@@ -2714,10 +2644,6 @@
           }
           return schedules.value.find(s => s.profile_id === null || s.profile_id === 0) || null;
         });
-
-        watch([selectedProfileId, effectiveLanguage, weather, tasks, schedules, librusData, settings], () => {
-          refreshSchoolSummary();
-        }, { deep: true, immediate: true });
 
         function getSchoolScheduleRows(widget) {
           let cfg = widget && widget.config;
@@ -3107,7 +3033,7 @@
         function addWidget(type) {
           triggerHaptic('tap');
           const baseConfig = type === 'schedule'
-            ? { assignedProfileId: selectedProfileId.value, schedule: getDefaultSchoolSchedule() }
+            ? { assignedProfileId: selectedProfileId.value }
             : {};
           const newW = {
             id: Date.now(),

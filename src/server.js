@@ -206,39 +206,6 @@ app.get('/api/admin/data', (req, res) => {
   res.json(getDashboardData());
 });
 
-app.post('/api/summary/school-day', async (req, res) => {
-  try {
-    const payload = req.body || {};
-    const settings = getSettings();
-    const summary = await generateSchoolDaySummaryWithGemini({
-      language: payload.language || settings.language || 'en',
-      profile_name: payload.profile_name || payload.profileName || 'kid',
-      weather: payload.weather || null,
-      tasks: Array.isArray(payload.tasks) ? payload.tasks : [],
-      schedule: Array.isArray(payload.schedule) ? payload.schedule : [],
-      grades: Array.isArray(payload.grades) ? payload.grades : [],
-      notifications: Array.isArray(payload.notifications) ? payload.notifications : [],
-      announcements: Array.isArray(payload.announcements) ? payload.announcements : []
-    });
-
-    res.json({
-      ok: true,
-      summary: summary || buildSchoolDaySummary({
-        weather: payload.weather || null,
-        tasks: Array.isArray(payload.tasks) ? payload.tasks : [],
-        schedule: Array.isArray(payload.schedule) ? payload.schedule : [],
-        grades: Array.isArray(payload.grades) ? payload.grades : [],
-        notifications: Array.isArray(payload.notifications) ? payload.notifications : [],
-        announcements: Array.isArray(payload.announcements) ? payload.announcements : [],
-        language: payload.language || settings.language || 'en'
-      })
-    });
-  } catch (error) {
-    console.error('[Summary] failed:', error.message);
-    res.status(500).json({ error: 'Summary generation failed' });
-  }
-});
-
 app.post('/api/admin/notes', (req, res) => {
   const { content } = req.body;
   if (!content) return res.status(400).json({ error: 'content is required' });

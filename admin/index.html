@@ -1172,17 +1172,6 @@
               <textarea v-model="settings.gemini_summary_prompt" rows="5" class="w-full bg-neutral-950 border border-neutral-800 focus:border-purple-500 rounded-lg p-2.5 text-[11px] text-neutral-200 font-mono outline-none resize-y"></textarea>
             </div>
 
-            <div class="pt-2">
-              <div class="flex items-center justify-between mb-2">
-                <label class="block text-[10px] font-mono text-neutral-400">Preview</label>
-                <button type="button" @click="previewSchoolSummary" :disabled="summaryPreviewLoading" class="font-mono text-[10px] text-violet-200 hover:text-white disabled:opacity-50">
-                  {{ summaryPreviewLoading ? 'Generating...' : 'Test Summary' }}
-                </button>
-              </div>
-              <div class="min-h-[72px] rounded-lg border border-neutral-800 bg-neutral-950 p-2.5 text-[11px] leading-relaxed text-neutral-200 whitespace-pre-line">
-                {{ summaryPreview || 'No preview yet. Click “Test Summary” to generate one from the current dashboard context.' }}
-              </div>
-            </div>
           </div>
 
           <div v-if="simResult" class="mt-4 pt-3 border-t border-neutral-800">
@@ -2018,9 +2007,6 @@
           gemini_voice_prompt: 'Please listen carefully to this voice recording, transcribe it, and extract the smart home actions according to the schema.',
           gemini_summary_prompt: 'You are a cheerful school-day helper for a family dashboard. Read the full context and write a short, warm, and relevant summary for the child in the requested language. Include weather, first lesson, required materials, chores/todos, reminders, and school notices only when they are actually present. Do not invent missing facts. Keep it encouraging and human, like a caring parent or teacher. Return plain text only, no JSON, no markdown.'
         });
-        const summaryPreview = ref('');
-        const summaryPreviewLoading = ref(false);
-
         const librusConfig = ref({
           login: '',
           password: '',
@@ -2864,48 +2850,6 @@
           }
         }
 
-        async function previewSchoolSummary() {
-          summaryPreviewLoading.value = true;
-          summaryPreview.value = '';
-          try {
-            const profile = profiles.value[0] || null;
-            const primarySchedule = schedules.value.find(s => profile && Number(s.profile_id) === Number(profile.id)) || schedules.value[0] || { schedule: [] };
-            const payload = {
-              language: profile && profile.language ? profile.language : (settings.value.language || 'en'),
-              profile_name: profile ? profile.name : 'Kid',
-              weather: (settings.value.weather_lat && settings.value.weather_lon)
-                ? {
-                    temperature: 15,
-                    condition: 'Cloudy',
-                    unit: settings.value.weather_units === 'imperial' ? 'F' : 'C'
-                  }
-                : null,
-              tasks: [
-                { content: 'Pack school bag' },
-                { content: 'Do homework' }
-              ],
-              schedule: Array.isArray(primarySchedule.schedule) ? primarySchedule.schedule : [],
-              grades: [{ value: '5' }, { value: '4' }],
-              notifications: [{ title: 'School trip reminder' }],
-              announcements: [{ title: 'Math test next week', author: 'Teacher', date: new Date().toISOString().slice(0, 10), time: '08:00' }]
-            };
-
-            const res = await fetch('/api/summary/school-day', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            });
-
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
-            summaryPreview.value = data.summary || 'No summary generated.';
-          } catch (err) {
-            summaryPreview.value = 'Preview failed: ' + err.message;
-          } finally {
-            summaryPreviewLoading.value = false;
-          }
-        }
-
         async function saveSettings() {
           try {
             const res = await fetch('/api/admin/settings', {
@@ -2964,9 +2908,6 @@
           alertSuccess,
           settings,
           saveSettings,
-          summaryPreview,
-          summaryPreviewLoading,
-          previewSchoolSummary,
           profiles,
           lists,
           notes,
