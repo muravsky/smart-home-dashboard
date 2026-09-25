@@ -2533,7 +2533,7 @@
           const rows = getSchoolScheduleRows(widget);
           const today = new Date();
           const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][today.getDay()];
-          const row = rows.find((dayRow) => String(dayRow.day).toLowerCase() === weekday.toLowerCase()) || rows[0];
+          const row = rows.find((dayRow) => normalizeSchoolDayLabel(dayRow.day) === normalizeSchoolDayLabel(weekday)) || rows[0];
           const lessons = Array.isArray(row && row.lessons) ? row.lessons.filter(Boolean) : [];
           const lessonNames = lessons.map(lesson => lesson.name || lesson.subject || '').filter(Boolean);
           const summaryParts = [];
@@ -2642,9 +2642,24 @@
           return '';
         }
 
+        const normalizeSchoolDayLabel = (label) => {
+          if (label === null || label === undefined) return '';
+          const raw = String(label).trim().toLowerCase();
+          const aliases = {
+            'monday': 'monday', 'mon': 'monday',
+            'tuesday': 'tuesday', 'tue': 'tuesday',
+            'wednesday': 'wednesday', 'wed': 'wednesday',
+            'thursday': 'thursday', 'thu': 'thursday',
+            'friday': 'friday', 'fri': 'friday',
+            'saturday': 'saturday', 'sat': 'saturday',
+            'sunday': 'sunday', 'sun': 'sunday'
+          };
+          return aliases[raw] || raw.replace(/[^a-z]/g, '');
+        };
+
         const isSchoolDayLabel = (label) => {
-          const day = String(label || '').trim().toLowerCase();
-          return ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].includes(day);
+          const day = normalizeSchoolDayLabel(label);
+          return ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].includes(day);
         };
 
         const isRealSchedule = (schedule) => {
@@ -2698,14 +2713,14 @@
             source = selectedProfileSchedule.value.schedule;
           }
           const today = new Date();
-          const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
           const todayKey = dayNames[today.getDay()];
 
           return source
             .filter(dayRow => isSchoolDayLabel(dayRow && dayRow.day))
             .map(dayRow => ({
               ...dayRow,
-              isToday: (dayRow.day || '').toLowerCase() === todayKey.toLowerCase(),
+              isToday: normalizeSchoolDayLabel(dayRow.day) === todayKey,
               lessons: Array.isArray(dayRow.lessons)
                 ? dayRow.lessons
                     .filter(isMeaningfulSchoolLesson)
