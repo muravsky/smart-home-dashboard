@@ -6,9 +6,11 @@ const {
   insertListItem, 
   toggleListItemChecked, 
   getLists,
+  getSchedules,
   insertList,
   updateSettings,
-  getSettings
+  getSettings,
+  upsertLibrusSchedule
 } = require('../src/db');
 const { searchCity, clearWeatherCache, getWeather } = require('../src/services/weather');
 const { normalizeParsedGeminiPayload } = require('../src/services/gemini');
@@ -74,7 +76,22 @@ async function runTests() {
   assert.strictEqual(isOverdue, true, 'Item with past date should be flagged as overdue');
   console.log('[PASS] Overdue detection accurately identifies past uncompleted items');
 
-  console.log('\n--- 4. Testing Weather Geocoding and Unit Settings ---');
+  console.log('\n--- 4. Testing Librus Schedule Upsert Logic ---');
+  const firstPass = upsertLibrusSchedule({
+    profile_id: 1,
+    profile_name: 'Test Kid',
+    schedule: [{ day: 'Mon', lessons: [{ number: 1, start: '08:30', end: '09:15', name: 'Math', room: 'A1' }] }]
+  });
+  const secondPass = upsertLibrusSchedule({
+    profile_id: 1,
+    profile_name: 'Test Kid',
+    schedule: [{ day: 'Mon', lessons: [{ number: 1, start: '08:30', end: '09:15', name: 'Math', room: 'A1' }, { number: 2, start: '09:20', end: '10:05', name: 'Biology', room: 'B2' }] }]
+  });
+  assert.strictEqual(firstPass.id, secondPass.id, 'Librus sync should update the same schedule record instead of creating duplicates');
+  assert.strictEqual(getSchedules().filter(s => s.profile_id === 1 && s.name.includes('Librus')).length, 1, 'Only one Librus schedule row should exist for a profile');
+  console.log('[PASS] Librus sync updates an existing schedule instead of creating duplicates');
+
+  console.log('\n--- 5. Testing Weather Geocoding and Unit Settings ---');
   // Geocoding search test with a well-known city
   try {
     const results = await searchCity('London');

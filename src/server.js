@@ -24,6 +24,7 @@ const {
   getScheduleById,
   getProfileSchedules,
   insertSchedule,
+  upsertLibrusSchedule,
   updateSchedule,
   deleteSchedule,
   getLists,
@@ -314,9 +315,9 @@ app.post('/api/admin/librus/sync', async (req, res) => {
     const timetable = normalizeTimetableData(data.timetable);
     const profile = profile_id ? getProfileById(profile_id) : null;
     const profileLanguage = profile && profile.language ? profile.language : 'en';
-    const created = insertSchedule({
+    const created = upsertLibrusSchedule({
       profile_id: profile_id || null,
-      name: profile_name ? `${profile_name} Librus timetable` : 'Librus timetable',
+      profile_name: profile_name || (profile && profile.name) || null,
       schedule: timetable
     });
 

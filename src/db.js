@@ -494,6 +494,42 @@ function insertSchedule({ profile_id = null, name, schedule = [] }) {
   return getScheduleById(info.lastInsertRowid);
 }
 
+function upsertLibrusSchedule({ profile_id = null, profile_name = null, schedule = [] } = {}) {
+  const profileLabel = (profile_name || 'Student').trim() || 'Student';
+  const desiredName = `${profileLabel} Librus timetable`;
+  const legacyName = 'Librus timetable';
+  const rows = db.prepare(`
+    SELECT *
+    FROM schedules
+    WHERE profile_id IS ?
+      AND (name = ? OR name = ? OR name LIKE ?)
+    ORDER BY id DESC
+  `).all(profile_id ?? null, desiredName, legacyName, `${profileLabel}%`);
+
+  const normalizedSchedule = normalizeScheduleArray(schedule);
+
+  if (rows.length > 0) {
+    const target = rows[0];
+    updateSchedule(target.id, {
+      profile_id: profile_id ?? target.profile_id,
+      name: desiredName,
+      schedule: normalizedSchedule
+    });
+
+    for (const duplicate of rows.slice(1)) {
+      deleteSchedule(duplicate.id);
+    }
+
+    return getScheduleById(target.id);
+  }
+
+  return insertSchedule({
+    profile_id: profile_id || null,
+    name: desiredName,
+    schedule: normalizedSchedule
+  });
+}
+
 function updateSchedule(id, { profile_id, name, schedule }) {
   const current = getScheduleById(id);
   if (!current) return null;
@@ -1125,6 +1161,7 @@ module.exports = {
   getScheduleById,
   getProfileSchedules,
   insertSchedule,
+  upsertLibrusSchedule,
   updateSchedule,
   deleteSchedule,
   getLists,

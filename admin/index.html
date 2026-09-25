@@ -1070,9 +1070,14 @@
                 </div>
               </div>
             </div>
-            <button type="button" @click="syncLibrusSchedule" :disabled="syncingLibrus" class="w-full font-mono text-xs bg-violet-600 hover:bg-violet-500 disabled:opacity-60 text-white py-2.5 rounded-lg font-semibold transition">
-              {{ syncingLibrus ? 'Syncing…' : 'Sync Librus Timetable' }}
-            </button>
+            <div class="flex gap-2">
+              <button type="button" @click="saveSettings" class="flex-1 font-mono text-xs bg-neutral-800 hover:bg-neutral-700 text-neutral-200 py-2.5 rounded-lg transition">
+                Save Sync Settings
+              </button>
+              <button type="button" @click="syncLibrusSchedule" :disabled="syncingLibrus" class="flex-1 font-mono text-xs bg-violet-600 hover:bg-violet-500 disabled:opacity-60 text-white py-2.5 rounded-lg font-semibold transition">
+                {{ syncingLibrus ? 'Syncing…' : 'Sync Librus Timetable' }}
+              </button>
+            </div>
           </div>
         </div>
 
