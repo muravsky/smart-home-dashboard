@@ -2478,6 +2478,16 @@
           return (Number(hours) || 0) * 60 + (Number(minutes) || 0);
         }
 
+        function isMeaningfulSchoolLesson(lesson) {
+          if (!lesson || typeof lesson !== 'object') return false;
+          const rawName = String(lesson.name ?? lesson.subject ?? '').trim();
+          const normalized = rawName.toLowerCase();
+          if (!normalized || normalized === '-' || normalized === '—') return false;
+          if (/^(?:-|—|\s+)$/.test(rawName)) return false;
+          if (/^(?:lexxon|lexx|lesson|lekcja|lekcje)\s*\d+$/i.test(normalized)) return false;
+          return true;
+        }
+
         function getSchoolLessonNumbers(widget) {
           const schedule = getSchoolScheduleRows(widget);
           const maxLessons = Math.max(...schedule.map(day => day.lessons.length), 1);
@@ -2509,6 +2519,7 @@
         function getLessonForSlot(dayLessons, slotKey) {
           if (!Array.isArray(dayLessons)) return null;
           return dayLessons.find((lesson) => {
+            if (!isMeaningfulSchoolLesson(lesson)) return false;
             const lessonKey = `${lesson.start || '00:00'}-${lesson.end || '00:45'}`;
             return lessonKey === slotKey;
           }) || null;
@@ -2695,12 +2706,16 @@
             .map(dayRow => ({
               ...dayRow,
               isToday: (dayRow.day || '').toLowerCase() === todayKey.toLowerCase(),
-              lessons: Array.isArray(dayRow.lessons) ? dayRow.lessons.map((lesson, idx) => ({
-                ...lesson,
-                number: lesson.number || idx + 1,
-                name: lesson.name || 'Free',
-                room: lesson.room || '—'
-              })) : []
+              lessons: Array.isArray(dayRow.lessons)
+                ? dayRow.lessons
+                    .filter(isMeaningfulSchoolLesson)
+                    .map((lesson, idx) => ({
+                      ...lesson,
+                      number: lesson.number || idx + 1,
+                      name: lesson.name || 'Free',
+                      room: lesson.room || '—'
+                    }))
+                : []
             }));
         }
 
