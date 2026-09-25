@@ -30,12 +30,36 @@ const daySummary = buildSchoolDaySummary({
   tasks: [{ content: 'Clean room' }],
   schedule: sampleTimetable,
   grade: 'A',
-  notifications: [{ title: 'School event' }]
+  notifications: [{ title: 'School event' }],
+  announcements: [{ title: 'Trip notice', author: 'Marta', date: '2026-09-25', time: '08:15' }],
+  language: 'en'
 });
 assert(daySummary.includes('21'), 'day summary should include weather temperature');
 assert(daySummary.includes('Clean room'), 'day summary should include tasks');
 assert(daySummary.includes('Math'), 'day summary should include schedule');
 assert(daySummary.includes('School event'), 'day summary should include notifications');
+assert(daySummary.includes('Trip notice'), 'day summary should include announcements');
+
+const polishSummary = buildSchoolDaySummary({
+  weather: { temperature: 18, condition: 'Cloudy' },
+  tasks: [{ content: 'Sprzątanie pokoju' }],
+  schedule: sampleTimetable,
+  notifications: [{ title: 'Wydarzenie szkolne' }],
+  announcements: [{ title: 'Wycieczka', author: 'Marta', date: '2026-09-25', time: '08:15' }],
+  language: 'pl'
+});
+assert(polishSummary.includes('Pogoda') || polishSummary.includes('Sprzątanie pokoju') || polishSummary.includes('Wydarzenie'), 'polish summary should be localized and descriptive');
+assert(polishSummary.toLowerCase().includes('pogoda') || polishSummary.toLowerCase().includes('zadania') || polishSummary.toLowerCase().includes('plan'), 'summary should use localized school-day wording in Polish');
+
+const substitutedLesson = {
+  day: 'Monday',
+  lessons: [
+    { number: 1, start: '08:00', end: '08:45', name: 'Math', room: '101', teacher: 'Mr. Novak', cancelled: true },
+    { number: 2, start: '09:00', end: '09:45', name: 'Biology', room: 'B2', teacher: 'Mrs. Nowak', replacement: true }
+  ]
+};
+assert.strictEqual(substitutedLesson.lessons[0].cancelled, true, 'cancelled lessons should be marked');
+assert.strictEqual(substitutedLesson.lessons[1].replacement, true, 'replacement teachers should be marked');
 
 const profile = db.insertProfile({
   name: 'Test Kid',

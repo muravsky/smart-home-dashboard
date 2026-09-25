@@ -56,7 +56,7 @@ const {
 } = require('./db');
 const { parseTextWithGemini } = require('./services/gemini');
 const { getWeather, searchCity, clearWeatherCache } = require('./services/weather');
-const { fetchLibrusData, normalizeTimetableData, buildMorningSummary } = require('./services/librus');
+const { fetchLibrusData, normalizeTimetableData, buildSchoolDaySummary } = require('./services/librus');
 const { initBot } = require('./bot');
 const { uploadAvatar, uploadPhoto } = require('./middleware/upload');
 const { normalizeCalendarUrl, syncFeed, syncAllFeeds, startCalendarSyncCron } = require('./services/calendar');
@@ -312,6 +312,8 @@ app.post('/api/admin/librus/sync', async (req, res) => {
 
     const data = await fetchLibrusData({ login, password });
     const timetable = normalizeTimetableData(data.timetable);
+    const profile = profile_id ? getProfileById(profile_id) : null;
+    const profileLanguage = profile && profile.language ? profile.language : 'en';
     const created = insertSchedule({
       profile_id: profile_id || null,
       name: profile_name ? `${profile_name} Librus timetable` : 'Librus timetable',
@@ -322,7 +324,15 @@ app.post('/api/admin/librus/sync', async (req, res) => {
       grades: Array.isArray(data.grades) ? data.grades : [],
       notifications: Array.isArray(data.notifications) ? data.notifications : [],
       announcements: Array.isArray(data.announcements) ? data.announcements : [],
-      summary: buildMorningSummary({ name: profile_name || 'Student' }, timetable),
+      summary: buildSchoolDaySummary({
+        weather: null,
+        tasks: [],
+        schedule: timetable,
+        grades: Array.isArray(data.grades) ? data.grades : [],
+        notifications: Array.isArray(data.notifications) ? data.notifications : [],
+        announcements: Array.isArray(data.announcements) ? data.announcements : [],
+        language: profileLanguage
+      }),
       timetable,
       account: data.accountInfo || null
     });

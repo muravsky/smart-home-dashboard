@@ -336,6 +336,7 @@
        Font Size Sizing System (Proportional Scaling per Page & Widget)
        ========================================================================== */
     .fs-small {
+      --widget-text-scale: 0.85;
       font-size: 0.8rem;
     }
     .fs-small .text-xs { font-size: 0.68rem !important; }
@@ -348,10 +349,12 @@
     .fs-small .responsive-clock-text { font-size: clamp(2.2rem, 6vw, 5.5rem) !important; }
 
     .fs-normal {
+      --widget-text-scale: 1;
       /* standard browser & tailwind defaults */
     }
 
     .fs-large {
+      --widget-text-scale: 1.12;
       font-size: 1.12rem;
     }
     .fs-large .text-xs { font-size: 0.85rem !important; }
@@ -364,6 +367,7 @@
     .fs-large .responsive-clock-text { font-size: clamp(3.2rem, 9vw, 8.5rem) !important; }
 
     .fs-xlarge {
+      --widget-text-scale: 1.26;
       font-size: 1.26rem;
     }
     .fs-xlarge .text-xs { font-size: 0.98rem !important; }
@@ -376,6 +380,7 @@
     .fs-xlarge .responsive-clock-text { font-size: clamp(3.6rem, 11vw, 9.5rem) !important; }
 
     .fs-xxlarge {
+      --widget-text-scale: 1.45;
       font-size: 1.45rem;
     }
     .fs-xxlarge .text-xs { font-size: 1.12rem !important; }
@@ -386,6 +391,29 @@
     .fs-xxlarge .text-2xl { font-size: 2.5rem !important; }
     .fs-xxlarge .text-3xl { font-size: 3.1rem !important; }
     .fs-xxlarge .responsive-clock-text { font-size: clamp(4.5rem, 14vw, 12rem) !important; }
+
+    .widget-card {
+      --widget-text-scale: var(--widget-text-scale, 1);
+    }
+    .widget-card .text-\[8px\],
+    .widget-card .text-\[9px\],
+    .widget-card .text-\[10px\],
+    .widget-card .text-\[11px\],
+    .widget-card .text-\[12px\],
+    .widget-card .text-xs,
+    .widget-card .text-sm,
+    .widget-card .text-base,
+    .widget-card .text-lg,
+    .widget-card .text-xl,
+    .widget-card .text-2xl,
+    .widget-card .text-3xl {
+      font-size: calc(var(--widget-text-scale, 1) * 1em) !important;
+    }
+    .widget-card .text-\[8px\] { font-size: calc(8px * var(--widget-text-scale, 1)) !important; }
+    .widget-card .text-\[9px\] { font-size: calc(9px * var(--widget-text-scale, 1)) !important; }
+    .widget-card .text-\[10px\] { font-size: calc(10px * var(--widget-text-scale, 1)) !important; }
+    .widget-card .text-\[11px\] { font-size: calc(11px * var(--widget-text-scale, 1)) !important; }
+    .widget-card .text-\[12px\] { font-size: calc(12px * var(--widget-text-scale, 1)) !important; }
   </style>
 </head>
 <body class="h-full bg-black text-white font-sans antialiased overflow-hidden select-none">
@@ -1113,7 +1141,7 @@
             <div v-else-if="w.widget_type === 'schedule'" class="h-full flex flex-col justify-between overflow-hidden">
               <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
                 <div class="flex items-center gap-2">
-                  <span class="font-mono text-xs uppercase tracking-widest text-violet-400 font-semibold">SCHOOL SCHEDULE</span>
+                  <span class="font-mono text-xs uppercase tracking-widest text-violet-400 font-semibold">{{ getLocalizedWidgetLabel('schedule', 'SCHOOL SCHEDULE') }}</span>
                 </div>
                 <span v-if="selectedProfile" class="text-[10px] font-mono px-2 py-0.5 rounded-full" :style="{ backgroundColor: selectedProfile.color + '22', color: selectedProfile.color }">
                   {{ selectedProfile.name }}
@@ -1121,28 +1149,35 @@
                 <span v-else class="text-[10px] font-mono text-neutral-500">Student</span>
               </div>
 
-              <div v-if="getSchoolDaySummary(w)" class="mb-2 rounded-lg border border-violet-900/60 bg-violet-950/30 p-2">
-                <div class="text-[9px] font-mono uppercase tracking-widest text-violet-300 mb-1">TODAY</div>
-                <div class="text-[10px] text-neutral-100 leading-snug">{{ getSchoolDaySummary(w) }}</div>
+              <div v-if="getSchoolDaySummary(w, { includeWeather: false })" class="mb-2 rounded-lg border border-violet-900/60 bg-violet-950/30 p-2">
+                <div class="text-[9px] font-mono uppercase tracking-widest text-violet-300 mb-1">{{ getLocalizedWidgetLabel('today', 'TODAY') }}</div>
+                <div class="text-[10px] text-neutral-100 leading-snug">{{ getSchoolDaySummary(w, { includeWeather: false }) }}</div>
               </div>
 
               <div class="overflow-auto rounded-xl border border-neutral-800 bg-neutral-950/60">
                 <table class="w-full border-collapse text-[9px] text-neutral-200">
                   <thead>
                     <tr class="bg-neutral-900/80 text-neutral-400">
-                      <th class="px-2 py-1 text-left font-mono uppercase tracking-wide">Day</th>
-                      <th v-for="lessonNumber in getSchoolLessonNumbers(w)" :key="lessonNumber" class="px-2 py-1 text-center font-mono uppercase tracking-wide">
-                        {{ lessonNumber }}
+                      <th class="px-2 py-1 text-left font-mono uppercase tracking-wide">{{ getLocalizedWidgetLabel('day', 'Day') }}</th>
+                      <th v-for="slot in getSchoolScheduleColumns(w)" :key="slot.key" class="px-2 py-1 text-center font-mono uppercase tracking-wide min-w-[90px]">
+                        {{ slot.label }}
                       </th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr v-for="dayRow in getSchoolScheduleRows(w)" :key="dayRow.day" :class="dayRow.isToday ? 'bg-violet-500/10' : 'bg-transparent'">
                       <td class="px-2 py-2 border-t border-neutral-800 font-semibold text-white whitespace-nowrap">{{ dayRow.day }}</td>
-                      <td v-for="lesson in dayRow.lessons" :key="lesson.number" class="px-1.5 py-2 border-t border-l border-neutral-800 align-top text-center min-w-[86px]">
-                        <div class="text-[8px] text-neutral-400 font-mono">{{ lesson.start }}–{{ lesson.end }}</div>
-                        <div class="mt-1 font-bold text-white text-[10px] leading-tight">{{ lesson.name }}</div>
-                        <div class="mt-0.5 text-[8px] text-violet-300">Rm {{ lesson.room }}</div>
+                      <td v-for="slot in getSchoolScheduleColumns(w)" :key="slot.key + '-' + dayRow.day" class="px-1.5 py-2 border-t border-l border-neutral-800 align-top text-center min-w-[90px]">
+                        <div v-if="getLessonForSlot(dayRow.lessons, slot.key)" class="space-y-1 text-left rounded-md bg-neutral-900/60 p-1.5 border border-neutral-800">
+                          <div v-if="getLessonForSlot(dayRow.lessons, slot.key).cancelled || getLessonForSlot(dayRow.lessons, slot.key).replacement || getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher" class="flex flex-wrap gap-1 text-[8px] font-mono">
+                            <span v-if="getLessonForSlot(dayRow.lessons, slot.key).cancelled" class="px-1 rounded bg-red-900/70 text-red-200">CANCELLED</span>
+                            <span v-else-if="getLessonForSlot(dayRow.lessons, slot.key).replacement || getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher" class="px-1 rounded bg-amber-900/70 text-amber-200">REPLACEMENT</span>
+                          </div>
+                          <div class="font-bold text-white text-[10px] leading-tight">{{ getLessonForSlot(dayRow.lessons, slot.key).name }}</div>
+                          <div v-if="getLessonForSlot(dayRow.lessons, slot.key).teacher" class="text-[8px] text-violet-300">{{ getLessonForSlot(dayRow.lessons, slot.key).teacher }}</div>
+                          <div class="text-[8px] text-neutral-400">{{ getLessonForSlot(dayRow.lessons, slot.key).room }}</div>
+                        </div>
+                        <div v-else class="text-[8px] text-neutral-600">—</div>
                       </td>
                     </tr>
                   </tbody>
@@ -1153,30 +1188,30 @@
             <!-- ================= WIDGET TYPE 9: SCHOOL SUMMARY ================= -->
             <div v-else-if="w.widget_type === 'school_summary'" class="h-full flex flex-col justify-between overflow-hidden">
               <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
-                <span class="font-mono text-xs uppercase tracking-widest text-violet-400 font-semibold">DAY SUMMARY</span>
+                <span class="font-mono text-xs uppercase tracking-widest text-violet-400 font-semibold">{{ getLocalizedWidgetLabel('summary', 'DAY SUMMARY') }}</span>
                 <span class="text-[10px] font-mono text-neutral-500">{{ currentDate.short }}</span>
               </div>
 
               <div class="space-y-2 overflow-y-auto pr-1">
                 <div class="rounded-lg border border-violet-800/60 bg-violet-950/20 p-2">
-                  <div class="text-[9px] font-mono uppercase tracking-widest text-violet-300 mb-1">Overview</div>
-                  <div class="text-[11px] text-neutral-100 leading-relaxed">{{ getSchoolDaySummary(w) || 'No school summary available yet.' }}</div>
+                  <div class="text-[9px] font-mono uppercase tracking-widest text-violet-300 mb-1">{{ getLocalizedWidgetLabel('overview', 'Overview') }}</div>
+                  <div class="text-[11px] text-neutral-100 leading-relaxed">{{ getSchoolDaySummary(w, { includeWeather: true }) || 'No school summary available yet.' }}</div>
                 </div>
 
                 <div v-if="weather" class="rounded-lg border border-sky-800/60 bg-sky-950/20 p-2">
-                  <div class="text-[9px] font-mono uppercase tracking-widest text-sky-300 mb-1">Weather</div>
+                  <div class="text-[9px] font-mono uppercase tracking-widest text-sky-300 mb-1">{{ getLocalizedWidgetLabel('weather', 'Weather') }}</div>
                   <div class="text-[11px] text-neutral-100">{{ weather.icon }} {{ weather.temperature }}°{{ weather.unit || 'C' }} • {{ weather.condition }}</div>
                 </div>
 
                 <div v-if="getFilteredTasksForWidget({ widget_type: 'tasks', config: { filter: 'today' }}).length" class="rounded-lg border border-emerald-800/60 bg-emerald-950/20 p-2">
-                  <div class="text-[9px] font-mono uppercase tracking-widest text-emerald-300 mb-1">Tasks</div>
+                  <div class="text-[9px] font-mono uppercase tracking-widest text-emerald-300 mb-1">{{ getLocalizedWidgetLabel('tasks', 'Tasks') }}</div>
                   <div class="space-y-1 text-[11px] text-neutral-100">
                     <div v-for="task in getFilteredTasksForWidget({ widget_type: 'tasks', config: { filter: 'today' }}).slice(0,3)" :key="task.id">• {{ task.content }}</div>
                   </div>
                 </div>
 
                 <div v-if="librusData.notifications && librusData.notifications.length" class="rounded-lg border border-amber-800/60 bg-amber-950/20 p-2">
-                  <div class="text-[9px] font-mono uppercase tracking-widest text-amber-300 mb-1">Notifications</div>
+                  <div class="text-[9px] font-mono uppercase tracking-widest text-amber-300 mb-1">{{ getLocalizedWidgetLabel('notifications', 'Notifications') }}</div>
                   <div class="space-y-1 text-[11px] text-neutral-100">
                     <div v-for="note in librusData.notifications.slice(0,2)" :key="note.title || note.id || note.message">• {{ note.title || note.name || note.message || 'Notice' }}</div>
                   </div>
@@ -1187,20 +1222,20 @@
             <!-- ================= WIDGET TYPE 10: LIBRUS GRADES ================= -->
             <div v-else-if="w.widget_type === 'school_grades'" class="h-full flex flex-col justify-between overflow-hidden">
               <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
-                <span class="font-mono text-xs uppercase tracking-widest text-yellow-400 font-semibold">Librus Grades</span>
-                <span class="text-[10px] font-mono text-neutral-500">{{ librusData.grades.length }} items</span>
+                <span class="font-mono text-xs uppercase tracking-widest text-yellow-400 font-semibold">{{ getLocalizedWidgetLabel('grades', 'Librus Grades') }}</span>
+                <span class="text-[10px] font-mono text-neutral-500">{{ getNormalizedGrades().length }} items</span>
               </div>
 
-              <div v-if="!librusData.grades || librusData.grades.length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
+              <div v-if="!getNormalizedGrades() || getNormalizedGrades().length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
                 No grades synced yet.
               </div>
               <ul v-else class="space-y-1.5 overflow-y-auto pr-1 flex-1">
-                <li v-for="grade in librusData.grades.slice(0, 8)" :key="grade.id || grade.name || grade.value || grade.subject" class="border-b border-neutral-900/60 pb-1 text-[11px] text-neutral-200">
+                <li v-for="grade in getNormalizedGrades().slice(0, 8)" :key="grade.key || grade.subject || grade.value || grade.date" class="border-b border-neutral-900/60 pb-1 text-[11px] text-neutral-200">
                   <div class="flex items-center justify-between gap-2">
-                    <span class="font-semibold text-white">{{ grade.subject || grade.name || grade.title || 'Grade' }}</span>
-                    <span class="text-yellow-300 font-mono font-bold">{{ grade.value || grade.grade || '-' }}</span>
+                    <span class="font-semibold text-white">{{ grade.subject }}</span>
+                    <span class="text-yellow-300 font-mono font-bold">{{ grade.value }}</span>
                   </div>
-                  <div v-if="grade.comment || grade.description || grade.date" class="text-[10px] text-neutral-400 mt-0.5">{{ grade.comment || grade.description || grade.date }}</div>
+                  <div v-if="grade.comment || grade.date" class="text-[10px] text-neutral-400 mt-0.5">{{ grade.comment || grade.date }}</div>
                 </li>
               </ul>
             </div>
@@ -1226,17 +1261,20 @@
             <!-- ================= WIDGET TYPE 12: LIBRUS ANNOUNCEMENTS ================= -->
             <div v-else-if="w.widget_type === 'school_announcements'" class="h-full flex flex-col justify-between overflow-hidden">
               <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
-                <span class="font-mono text-xs uppercase tracking-widest text-cyan-400 font-semibold">Announcements</span>
-                <span class="text-[10px] font-mono text-neutral-500">{{ librusData.announcements.length }}</span>
+                <span class="font-mono text-xs uppercase tracking-widest text-cyan-400 font-semibold">{{ getLocalizedWidgetLabel('announcements', 'Announcements') }}</span>
+                <span class="text-[10px] font-mono text-neutral-500">{{ getNormalizedAnnouncements().length }}</span>
               </div>
 
-              <div v-if="!librusData.announcements || librusData.announcements.length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
+              <div v-if="!getNormalizedAnnouncements() || getNormalizedAnnouncements().length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
                 No announcements synced yet.
               </div>
               <ul v-else class="space-y-1.5 overflow-y-auto pr-1 flex-1">
-                <li v-for="item in librusData.announcements.slice(0, 8)" :key="item.id || item.title || item.name || item.message" class="border-b border-neutral-900/60 pb-1 text-[11px] text-neutral-200">
-                  <div class="font-semibold text-white">{{ item.title || item.name || 'Announcement' }}</div>
-                  <div v-if="item.message || item.content || item.text || item.body" class="text-[10px] text-neutral-400 mt-0.5">{{ item.message || item.content || item.text || item.body }}</div>
+                <li v-for="item in getNormalizedAnnouncements().slice(0, 8)" :key="item.key || item.title || item.date || item.time" class="border-b border-neutral-900/60 pb-1 text-[11px] text-neutral-200">
+                  <div class="font-semibold text-white">{{ item.title }}</div>
+                  <div v-if="item.author || item.date || item.time" class="text-[10px] text-neutral-400 mt-0.5">
+                    {{ item.author ? item.author : 'School' }} • {{ item.date || '—' }} {{ item.time ? '• ' + item.time : '' }}
+                  </div>
+                  <div v-if="item.message" class="text-[10px] text-neutral-400 mt-0.5">{{ item.message }}</div>
                 </li>
               </ul>
             </div>
@@ -2319,6 +2357,64 @@
           saveCurrentLayout();
         }
 
+        function getLocalizedWidgetLabel(key, fallback = '') {
+          const labels = {
+            en: { schedule: 'SCHOOL SCHEDULE', summary: 'DAY SUMMARY', overview: 'Overview', today: 'TODAY', day: 'Day', weather: 'Weather', tasks: 'Tasks', notifications: 'Notifications', announcements: 'Announcements', grades: 'Librus Grades' },
+            ru: { schedule: 'РАСПИСАНИЕ', summary: 'ИТОГ ДНЯ', overview: 'Обзор', today: 'СЕГОДНЯ', day: 'День', weather: 'Погода', tasks: 'Задачи', notifications: 'Уведомления', announcements: 'Объявления', grades: 'Оценки' },
+            pl: { schedule: 'PLAN LEKCJI', summary: 'PODSUMOWANIE DNIA', overview: 'Przegląd', today: 'DZISIAJ', day: 'Dzień', weather: 'Pogoda', tasks: 'Zadania', notifications: 'Powiadomienia', announcements: 'Ogłoszenia', grades: 'Oceny' },
+            uk: { schedule: 'РОЗКЛАД', summary: 'ПІДСУМОК ДНЯ', overview: 'Огляд', today: 'СЬОГОДНІ', day: 'День', weather: 'Погода', tasks: 'Завдання', notifications: 'Сповіщення', announcements: 'Оголошення', grades: 'Оцінки' }
+          };
+          const lang = normalizeLanguage(effectiveLanguage.value);
+          return (labels[lang] && labels[lang][key]) || (labels.en && labels.en[key]) || fallback;
+        }
+
+        function normalizeLibrusGradeEntries(rawGrades) {
+          if (!Array.isArray(rawGrades)) return [];
+          return rawGrades
+            .map((grade, idx) => {
+              const subject = grade.subject || grade.name || grade.title || grade.course || `Grade ${idx + 1}`;
+              const value = grade.value ?? grade.grade ?? grade.mark ?? grade.score ?? '-';
+              const date = grade.date || grade.assigned_at || grade.created_at || grade.timestamp || null;
+              const comment = grade.comment || grade.description || grade.note || grade.teacher || null;
+              return {
+                key: grade.id || `${subject}-${date || idx}`,
+                subject: String(subject).trim() || `Grade ${idx + 1}`,
+                value: String(value).trim() || '-',
+                date: date ? String(date).trim() : null,
+                comment: comment ? String(comment).trim() : null
+              };
+            })
+            .filter(item => item && item.subject)
+            .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+        }
+
+        function getNormalizedGrades() {
+          return normalizeLibrusGradeEntries(librusData.value.grades);
+        }
+
+        function normalizeLibrusAnnouncements(rawAnnouncements) {
+          if (!Array.isArray(rawAnnouncements)) return [];
+          return rawAnnouncements.map((item, idx) => {
+            const title = item.title || item.name || item.subject || item.message || `Announcement ${idx + 1}`;
+            const author = item.author || item.publisher || item.created_by || item.createdBy || null;
+            const date = item.date || item.created_at || item.createdAt || item.updated_at || null;
+            const time = item.time || item.created_time || item.createdTime || null;
+            const message = item.message || item.content || item.text || item.body || null;
+            return {
+              key: item.id || `${title}-${date || idx}`,
+              title: String(title).trim() || `Announcement ${idx + 1}`,
+              author: author ? String(author).trim() : null,
+              date: date ? String(date).trim() : null,
+              time: time ? String(time).trim() : null,
+              message: message ? String(message).trim() : null
+            };
+          }).filter(item => item.title);
+        }
+
+        function getNormalizedAnnouncements() {
+          return normalizeLibrusAnnouncements(librusData.value.announcements);
+        }
+
         function getFilteredTasksForWidget(widget) {
           const today = new Date();
           const todayStr = today.toISOString().slice(0, 10);
@@ -2384,13 +2480,49 @@
           ];
         }
 
+        function timeToMinutes(value) {
+          if (!value) return 0;
+          const [hours, minutes = 0] = String(value).split(':').map(Number);
+          return (Number(hours) || 0) * 60 + (Number(minutes) || 0);
+        }
+
         function getSchoolLessonNumbers(widget) {
           const schedule = getSchoolScheduleRows(widget);
           const maxLessons = Math.max(...schedule.map(day => day.lessons.length), 1);
           return Array.from({ length: maxLessons }, (_, idx) => idx + 1);
         }
 
-        function getSchoolDaySummary(widget) {
+        function getSchoolScheduleColumns(widget) {
+          const rows = getSchoolScheduleRows(widget);
+          const slotMap = new Map();
+          rows.forEach((dayRow) => {
+            (dayRow.lessons || []).forEach((lesson) => {
+              const start = lesson.start || '00:00';
+              const end = lesson.end || '00:45';
+              const key = `${start}-${end}`;
+              if (!slotMap.has(key)) {
+                slotMap.set(key, {
+                  key,
+                  label: `${start}–${end}`,
+                  startMinutes: timeToMinutes(start),
+                  endMinutes: timeToMinutes(end)
+                });
+              }
+            });
+          });
+          return [...slotMap.values()].sort((a, b) => a.startMinutes - b.startMinutes);
+        }
+
+        function getLessonForSlot(dayLessons, slotKey) {
+          if (!Array.isArray(dayLessons)) return null;
+          return dayLessons.find((lesson) => {
+            const lessonKey = `${lesson.start || '00:00'}-${lesson.end || '00:45'}`;
+            return lessonKey === slotKey;
+          }) || null;
+        }
+
+        function getSchoolDaySummary(widget, options = {}) {
+          const includeWeather = options.includeWeather !== false;
           const rows = getSchoolScheduleRows(widget);
           const today = new Date();
           const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][today.getDay()];
@@ -2398,7 +2530,7 @@
           const lessonSummary = Array.isArray(row && row.lessons) ? row.lessons.slice(0, 3) : [];
           const summaryParts = [];
 
-          if (weather.value) {
+          if (includeWeather && weather.value) {
             summaryParts.push(`Weather: ${weather.value.temperature}°${weather.value.unit || 'C'} • ${weather.value.condition}`);
           }
 
@@ -2408,7 +2540,14 @@
           }
 
           if (lessonSummary.length) {
-            summaryParts.push(`Schedule: ${lessonSummary.map(lesson => `${lesson.start}-${lesson.end} ${lesson.name}`).join(' • ')}`);
+            const lessonText = lessonSummary.map((lesson) => {
+              const flags = [];
+              if (lesson.cancelled) flags.push('cancelled');
+              if (lesson.replacement || lesson.replacementTeacher) flags.push('replacement');
+              const base = `${lesson.start || '08:00'}-${lesson.end || '08:45'} ${lesson.name || 'Class'}`;
+              return flags.length ? `${base} (${flags.join(', ')})` : base;
+            });
+            summaryParts.push(`Schedule: ${lessonText.join(' • ')}`);
           }
 
           const notifSummary = Array.isArray(librusData.value.notifications) ? librusData.value.notifications.slice(0, 2).map(item => item.title || item.name || item.message || 'Notice') : [];

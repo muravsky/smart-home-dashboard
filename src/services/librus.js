@@ -62,6 +62,8 @@ function normalizeSingleLesson(lesson, idx = 0) {
   const name = source.subject || source.name || source.title || `Lesson ${idx + 1}`;
   const room = source.room || source.classroom || source.className || source.clazz || '—';
   const teacher = source.teacher || source.teacherName || source.instructor || null;
+  const replacementTeacher = source.replacementTeacher || source.replacement_teacher || source.substituteTeacher || source.substitute_teacher || null;
+  const replacement = Boolean(source.replacement || source.is_replacement || source.substitute || replacementTeacher || source.flag === 'replacement' || source.flag === 'zastępstwo');
 
   return {
     number: Number(source.number || source.no || idx + 1) || idx + 1,
@@ -71,7 +73,9 @@ function normalizeSingleLesson(lesson, idx = 0) {
     name: String(name).trim() || `Lesson ${idx + 1}`,
     room: String(room).trim() || '—',
     teacher: teacher ? String(teacher).trim() : null,
-    cancelled: Boolean(source.cancelled || source.flag === 'odwołane' || source.flag === 'cancelled'),
+    replacementTeacher: replacementTeacher ? String(replacementTeacher).trim() : null,
+    replacement,
+    cancelled: Boolean(source.cancelled || source.canceled || source.flag === 'odwołane' || source.flag === 'cancelled' || source.flag === 'canceled'),
     flag: source.flag || null,
     original: source.original || null
   };
@@ -128,19 +132,120 @@ function buildMorningSummary(person, timetableData) {
   return `${name}'s school day: ${todayEntry.day || 'Today'} — ${preview}.`;
 }
 
-function buildSchoolDaySummary({ weather = null, tasks = [], schedule = [], grades = [], notifications = [], announcements = [] } = {}) {
+const SUMMARY_TEXT = {
+  en: {
+    weather: 'Weather',
+    tasks: 'Tasks',
+    schedule: 'Schedule',
+    grades: 'Grades',
+    notifications: 'Notifications',
+    announcements: 'Announcements',
+    today: 'today',
+    noData: 'School day overview: no items yet.',
+    noLessons: 'No lessons scheduled for',
+    lesson: 'lesson',
+    lessons: 'lessons',
+    cancelled: 'cancelled',
+    replacement: 'replacement teacher',
+    author: 'Author',
+    date: 'Date',
+    time: 'Time'
+  },
+  pl: {
+    weather: 'Pogoda',
+    tasks: 'Zadania',
+    schedule: 'Plan lekcji',
+    grades: 'Oceny',
+    notifications: 'Powiadomienia',
+    announcements: 'Ogłoszenia',
+    today: 'dziś',
+    noData: 'Podsumowanie dnia szkolnego: brak danych.',
+    noLessons: 'Brak lekcji na',
+    lesson: 'lekcja',
+    lessons: 'lekcje',
+    cancelled: 'odwołana',
+    replacement: 'zastępstwo',
+    author: 'Autor',
+    date: 'Data',
+    time: 'Godzina'
+  },
+  ru: {
+    weather: 'Погода',
+    tasks: 'Задачи',
+    schedule: 'Расписание',
+    grades: 'Оценки',
+    notifications: 'Уведомления',
+    announcements: 'Объявления',
+    today: 'сегодня',
+    noData: 'Итог школьного дня: данных пока нет.',
+    noLessons: 'Нет занятий на',
+    lesson: 'урок',
+    lessons: 'уроки',
+    cancelled: 'отменено',
+    replacement: 'замена',
+    author: 'Автор',
+    date: 'Дата',
+    time: 'Время'
+  },
+  uk: {
+    weather: 'Погода',
+    tasks: 'Завдання',
+    schedule: 'Розклад',
+    grades: 'Оцінки',
+    notifications: 'Сповіщення',
+    announcements: 'Оголошення',
+    today: 'сьогодні',
+    noData: 'Підсумок шкільного дня: даних поки немає.',
+    noLessons: 'Немає уроків на',
+    lesson: 'урок',
+    lessons: 'уроки',
+    cancelled: 'скасовано',
+    replacement: 'заміна',
+    author: 'Автор',
+    date: 'Дата',
+    time: 'Час'
+  }
+};
+
+function normalizeLanguage(language = 'en') {
+  const lang = String(language || 'en').toLowerCase();
+  return SUMMARY_TEXT[lang] ? lang : 'en';
+}
+
+function normalizeAnnouncement(item = {}) {
+  if (!item || typeof item !== 'object') return null;
+  const title = item.title || item.name || item.subject || item.message || item.content || 'Announcement';
+  const author = item.author || item.publisher || item.created_by || item.createdBy || null;
+  const date = item.date || item.created_at || item.createdAt || item.dateAdded || null;
+  const time = item.time || item.time_created || item.created_time || item.createdTime || null;
+  return {
+    title: String(title).trim() || 'Announcement',
+    author: author ? String(author).trim() : null,
+    date: date ? String(date).trim() : null,
+    time: time ? String(time).trim() : null,
+    message: item.message || item.content || item.text || item.body || null
+  };
+}
+
+function cleanList(values) {
+  return Array.isArray(values) ? values.filter(Boolean) : [];
+}
+
+function buildSchoolDaySummary({ weather = null, tasks = [], schedule = [], grades = [], notifications = [], announcements = [], language = 'en' } = {}) {
+  const lang = normalizeLanguage(language);
+  const labels = SUMMARY_TEXT[lang];
   const parts = [];
 
   if (weather) {
     const temp = Number(weather.temperature ?? weather.temp ?? weather.current ?? 0);
-    const condition = weather.condition || weather.summary || 'Weather';
+    const condition = weather.condition || weather.summary || labels.weather;
     const safeTemp = Number.isFinite(temp) ? `${Math.round(temp)}°` : '—';
-    parts.push(`Weather: ${safeTemp} ${condition}`);
+    parts.push(`${labels.weather}: ${safeTemp} ${condition}`);
   }
 
-  const taskList = Array.isArray(tasks) ? tasks.map((task) => task.content || task.title || task.name || 'Task') : [];
+  const taskList = cleanList(Array.isArray(tasks) ? tasks : []).map((task) => task.content || task.title || task.name || 'Task');
   if (taskList.length) {
-    parts.push(`Tasks: ${taskList.slice(0, 3).join(', ')}`);
+    parts.push(`${labels.tasks}: ${taskList.slice(0, 3).join(', ')}`);
   }
 
   const normalizedSchedule = normalizeTimetableData(schedule);
@@ -149,28 +254,39 @@ function buildSchoolDaySummary({ weather = null, tasks = [], schedule = [], grad
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const todayLabel = dayNames[today.getDay()];
     const todayEntry = normalizedSchedule.find((entry) => String(entry.day).toLowerCase() === todayLabel.toLowerCase()) || normalizedSchedule[0];
-    const lessonNames = (todayEntry && Array.isArray(todayEntry.lessons) ? todayEntry.lessons : []).slice(0, 3).map((lesson) => lesson.name || 'Class');
-    if (lessonNames.length) {
-      parts.push(`Schedule: ${lessonNames.join(' • ')}`);
+    const lessons = Array.isArray(todayEntry && todayEntry.lessons) ? todayEntry.lessons.filter(Boolean) : [];
+    const lessonSummary = lessons.slice(0, 3).map((lesson) => {
+      const flags = [];
+      if (lesson.cancelled) flags.push(labels.cancelled.toLowerCase());
+      if (lesson.replacement || lesson.replacementTeacher) flags.push(labels.replacement.toLowerCase());
+      const base = `${lesson.start || '08:00'}-${lesson.end || '08:45'} ${lesson.name || 'Class'}`;
+      return flags.length ? `${base} (${flags.join(', ')})` : base;
+    });
+    if (lessonSummary.length) {
+      parts.push(`${labels.schedule}: ${lessonSummary.join(' • ')}`);
     }
   }
 
-  const gradeList = Array.isArray(grades) ? grades.map((grade) => grade.value || grade.name || grade.grade || 'Grade') : [];
+  const gradeList = cleanList(Array.isArray(grades) ? grades : []).map((grade) => grade.value || grade.name || grade.grade || grade.subject || 'Grade');
   if (gradeList.length) {
-    parts.push(`Grades: ${gradeList.slice(0, 3).join(', ')}`);
+    parts.push(`${labels.grades}: ${gradeList.slice(0, 3).join(', ')}`);
   }
 
-  const notificationList = Array.isArray(notifications) ? notifications.map((entry) => entry.title || entry.name || entry.message || entry.content || 'Notification') : [];
+  const notificationList = cleanList(Array.isArray(notifications) ? notifications : []).map((entry) => entry.title || entry.name || entry.message || entry.content || 'Notification');
   if (notificationList.length) {
-    parts.push(`Notifications: ${notificationList.slice(0, 2).join(' • ')}`);
+    parts.push(`${labels.notifications}: ${notificationList.slice(0, 2).join(' • ')}`);
   }
 
-  const announcementList = Array.isArray(announcements) ? announcements.map((entry) => entry.title || entry.name || entry.message || entry.content || 'Announcement') : [];
+  const announcementList = cleanList(Array.isArray(announcements) ? announcements : []).map((entry) => normalizeAnnouncement(entry));
   if (announcementList.length) {
-    parts.push(`Announcements: ${announcementList.slice(0, 2).join(' • ')}`);
+    const summary = announcementList.slice(0, 2).map((item) => {
+      const meta = [item.author, item.date, item.time].filter(Boolean).join(' • ');
+      return meta ? `${item.title} (${meta})` : item.title;
+    });
+    parts.push(`${labels.announcements}: ${summary.join(' • ')}`);
   }
 
-  return parts.length ? parts.join(' • ') : 'School day overview: no items yet.';
+  return parts.length ? parts.join(' • ') : labels.noData;
 }
 
 function summarizeLibrusNotifications(notifications, limit = 5) {
