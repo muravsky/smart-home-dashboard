@@ -63,7 +63,21 @@ const { uploadAvatar, uploadPhoto } = require('./middleware/upload');
 const { normalizeCalendarUrl, syncFeed, syncAllFeeds, startCalendarSyncCron } = require('./services/calendar');
 
 const app = express();
-const server = http.createServer(app);
+const liveSettings = getSettings();
+const configuredCertPath = process.env.HTTPS_CERT_PATH || liveSettings.https_cert_path || null;
+const configuredKeyPath = process.env.HTTPS_KEY_PATH || liveSettings.https_key_path || null;
+const enableHttps = Boolean(Number(liveSettings.https_enabled || 0) === 1 || (process.env.HTTPS_CERT_PATH && process.env.HTTPS_KEY_PATH)) && Boolean(configuredCertPath && configuredKeyPath);
+const sslCertPath = configuredCertPath || null;
+const sslKeyPath = configuredKeyPath || null;
+const httpsPort = Number(process.env.HTTPS_PORT || liveSettings.https_port || 443) || 443;
+const httpPort = Number(process.env.PORT) || 3000;
+
+const server = enableHttps
+  ? require('https').createServer({
+      key: require('fs').readFileSync(sslKeyPath),
+      cert: require('fs').readFileSync(sslCertPath)
+    }, app)
+  : http.createServer(app);
 
 // Initialize Socket.IO
 const io = new Server(server, {
@@ -777,14 +791,34 @@ const bot = initBot(io);
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 
 if (require.main === module) {
-  server.listen(PORT, () => {
+  const listenOnPort = enableHttps ? httpsPort : PORT;
+  const scheme = enableHttps ? 'https' : 'http';
+
+  if (enableHttps) {
+    console.log(`HTTPS enabled using certificate: ${sslCertPath}`);
+  } else {
+    console.log('HTTPS not enabled. Set HTTPS_CERT_PATH and HTTPS_KEY_PATH to serve TLS/SSL.');
+  }
+
+  server.listen(listenOnPort, () => {
     console.log(`==============================================`);
     console.log(`  Smart Home Dashboard Server`);
-    console.log(`  Port: ${PORT}`);
-    console.log(`  Dashboard URL: http://localhost:${PORT}/?token=${process.env.DASHBOARD_TOKEN || 'your_secret_token'}`);
-    console.log(`  Admin Panel:   http://localhost:${PORT}/admin`);
+    console.log(`  Port: ${listenOnPort}`);
+    console.log(`  Dashboard URL: ${scheme}://localhost:${listenOnPort}/?token=${process.env.DASHBOARD_TOKEN || 'your_secret_token'}`);
+    console.log(`  Admin Panel:   ${scheme}://localhost:${listenOnPort}/admin`);
     console.log(`==============================================`);
   });
+
+  const redirectHttpToHttps = process.env.HTTPS_REDIRECT_HTTP === '1' || Number(liveSettings.https_redirect_http || 0) === 1;
+  if (redirectHttpToHttps && enableHttps) {
+    http.createServer((req, res) => {
+      const target = `https://${req.headers.host || 'localhost'}${req.url}`;
+      res.writeHead(301, { Location: target });
+      res.end();
+    }).listen(PORT, () => {
+      console.log(`HTTP redirect active: http://localhost:${PORT} -> https://localhost:${httpsPort}`);
+    });
+  }
 }
 
 module.exports = { app, server, io, bot };

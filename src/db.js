@@ -873,6 +873,13 @@ function getSettings() {
     weather_lon: '',
     weather_units: 'metric',
     language: 'en',
+    https_enabled: 0,
+    https_cert_path: '/etc/letsencrypt/live/your-domain/fullchain.pem',
+    https_key_path: '/etc/letsencrypt/live/your-domain/privkey.pem',
+    https_port: 443,
+    https_redirect_http: 1,
+    notification_items_limit: 5,
+    announcement_items_limit: 5,
     librus_sync_timetable: 'manual',
     librus_sync_grades: 'daily',
     librus_sync_notifications: 'daily',
@@ -889,7 +896,12 @@ function getSettings() {
     'photo_interval',
     'photo_interval_day',
     'photo_interval_night',
-    'night_mode_enabled'
+    'night_mode_enabled',
+    'https_enabled',
+    'https_port',
+    'https_redirect_http',
+    'notification_items_limit',
+    'announcement_items_limit'
   ];
   for (const r of rows) {
     if (numericKeys.includes(r.key)) {

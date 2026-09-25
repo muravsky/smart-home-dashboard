@@ -798,6 +798,16 @@
                 {{ getWeatherForecastButtonLabel(w) }}
               </button>
 
+              <!-- Cycle item limit for notifications / announcements -->
+              <button 
+                v-if="w.widget_type === 'school_notifications' || w.widget_type === 'school_announcements'"
+                @click.stop="cycleWidgetItemLimit(w, w.widget_type === 'school_notifications' ? (Number(settings.notification_items_limit) || 5) : (Number(settings.announcement_items_limit) || 5))"
+                title="Adjust how many items are shown in this widget"
+                class="px-2 py-1 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 text-amber-300 font-semibold"
+              >
+                {{ getWidgetItemLimit(w, w.widget_type === 'school_notifications' ? (Number(settings.notification_items_limit) || 5) : (Number(settings.announcement_items_limit) || 5)) }}i
+              </button>
+
               <!-- Cycle Task Filter Button -->
               <button 
                 v-if="w.widget_type === 'tasks'"
@@ -1257,7 +1267,7 @@
                 No notifications synced yet.
               </div>
               <ul v-else class="space-y-1.5 overflow-y-auto pr-1 flex-1">
-                <li v-for="note in librusData.notifications.slice(0, 8)" :key="note.id || note.title || note.message || note.name" class="border-b border-neutral-900/60 pb-1 text-[11px] text-neutral-200">
+                <li v-for="note in librusData.notifications.slice(0, getWidgetItemLimit(w, Number(settings.notification_items_limit) || 5))" :key="note.id || note.title || note.message || note.name" class="border-b border-neutral-900/60 pb-1 text-[11px] text-neutral-200">
                   <div class="font-semibold text-white">{{ note.title || note.name || 'Notification' }}</div>
                   <div v-if="note.message || note.content || note.body" class="text-[10px] text-neutral-400 mt-0.5">{{ note.message || note.content || note.body }}</div>
                 </li>
@@ -1275,7 +1285,7 @@
                 No announcements synced yet.
               </div>
               <ul v-else class="space-y-1.5 overflow-y-auto pr-1 flex-1">
-                <li v-for="item in getNormalizedAnnouncements().slice(0, 8)" :key="item.key || item.title || item.date || item.time" class="border-b border-neutral-900/60 pb-1 text-[11px] text-neutral-200">
+                <li v-for="item in getNormalizedAnnouncements().slice(0, getWidgetItemLimit(w, Number(settings.announcement_items_limit) || 5))" :key="item.key || item.title || item.date || item.time" class="border-b border-neutral-900/60 pb-1 text-[11px] text-neutral-200">
                   <div class="font-semibold text-white">{{ item.title }}</div>
                   <div v-if="item.author || item.date || item.time" class="text-[10px] text-neutral-400 mt-0.5">
                     {{ item.author ? item.author : 'School' }} • {{ item.date || '—' }} {{ item.time ? '• ' + item.time : '' }}
@@ -1717,8 +1727,37 @@
           night_mode_enabled: 0,
           night_mode_start: '22:00',
           night_mode_end: '07:00',
-          language: 'en'
+          language: 'en',
+          notification_items_limit: 5,
+          announcement_items_limit: 5
         });
+
+        function getWidgetConfig(w) {
+          let cfg = w && w.config;
+          if (typeof cfg === 'string') {
+            try { cfg = JSON.parse(cfg); } catch (e) { cfg = {}; }
+          }
+          return cfg || {};
+        }
+
+        function getWidgetItemLimit(w, fallback = 5) {
+          const cfg = getWidgetConfig(w);
+          const value = Number(cfg.items_limit ?? cfg.item_limit ?? cfg.limit ?? fallback);
+          return Number.isFinite(value) && value > 0 ? value : fallback;
+        }
+
+        function cycleWidgetItemLimit(w, fallback = 5) {
+          triggerHaptic('tap');
+          if (!w.config) w.config = {};
+          const cfg = getWidgetConfig(w);
+          const values = [3, 5, 8, 12];
+          const current = values.includes(Number(cfg.items_limit ?? cfg.item_limit ?? cfg.limit ?? fallback))
+            ? Number(cfg.items_limit ?? cfg.item_limit ?? cfg.limit ?? fallback)
+            : fallback;
+          const next = values[(values.indexOf(current) + 1) % values.length];
+          w.config.items_limit = next;
+          saveCurrentLayout();
+        }
 
         const localeMap = { en: 'en-US', ru: 'ru-RU', pl: 'pl-PL', uk: 'uk-UA' };
         const uiText = {
@@ -3048,12 +3087,15 @@
           if (sortableInstance) sortableInstance.destroy();
 
           sortableInstance = new Sortable(widgetGridRef.value, {
-            animation: 200,
+            animation: 180,
             ghostClass: 'sortable-ghost',
             handle: '.widget-touch-handle',
-            delay: 100,
+            delay: 80,
             delayOnTouchOnly: true,
-            touchStartThreshold: 5,
+            touchStartThreshold: 8,
+            forceFallback: true,
+            fallbackOnBody: true,
+            scroll: false,
             onEnd: () => {
               const domIds = Array.from(widgetGridRef.value.children).map(c => c.getAttribute('data-id'));
               const pageWidgets = layouts.value.filter(w => (w.page || 0) === activePage.value);
