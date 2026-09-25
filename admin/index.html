@@ -1965,6 +1965,14 @@
         const librusStatus = ref({ configured: false, status: 'unknown' });
         const syncingLibrus = ref(false);
 
+        watch(() => librusConfig.value.profile_id, (profileId) => {
+          if (!profileId) return;
+          const profile = profiles.value.find(p => Number(p.id) === Number(profileId));
+          if (!profile) return;
+          librusConfig.value.login = profile.librus_login || '';
+          librusConfig.value.password = profile.librus_password || '';
+        });
+
         const weatherSearchQuery = ref('');
         const weatherSearchResults = ref([]);
         const weatherSearchLoading = ref(false);

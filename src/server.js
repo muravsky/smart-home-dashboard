@@ -280,15 +280,33 @@ app.get('/api/admin/librus/status', (req, res) => {
 app.post('/api/admin/librus/sync', async (req, res) => {
   try {
     const {
-      login = process.env.LIBRUS_LOGIN,
-      password = process.env.LIBRUS_PASSWORD,
+      login: incomingLogin,
+      password: incomingPassword,
       profile_id = null,
       profile_name = null
     } = req.body || {};
 
+    let login = typeof incomingLogin === 'string' ? incomingLogin.trim() : '';
+    let password = typeof incomingPassword === 'string' ? incomingPassword.trim() : '';
+
+    if (profile_id) {
+      const profile = getProfileById(profile_id);
+      if (profile) {
+        login = login || String(profile.librus_login || '').trim();
+        password = password || String(profile.librus_password || '').trim();
+      }
+    }
+
+    if (!login) {
+      login = String(process.env.LIBRUS_LOGIN || '').trim();
+    }
+    if (!password) {
+      password = String(process.env.LIBRUS_PASSWORD || '').trim();
+    }
+
     if (!login || !password) {
       return res.status(400).json({
-        error: 'Missing Librus credentials. Add LIBRUS_LOGIN and LIBRUS_PASSWORD to your environment or send them in the request.'
+        error: 'Missing Librus credentials. Save them on the selected profile or configure LIBRUS_LOGIN and LIBRUS_PASSWORD as a fallback.'
       });
     }
 
