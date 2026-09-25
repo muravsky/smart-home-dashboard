@@ -43,7 +43,20 @@ const hourBasedTimetable = {
 };
 const hourBasedNormalized = normalizeTimetableData(hourBasedTimetable);
 assert.strictEqual(hourBasedNormalized[0].lessons[0].start, '08:00', 'first lesson should use the first hour slot from Librus data');
+assert.strictEqual(hourBasedNormalized[0].lessons[0].end, '08:45', 'first lesson should end at the expected lesson block length');
 assert.strictEqual(hourBasedNormalized[0].lessons[1].start, '09:00', 'second lesson should use the second hour slot from Librus data');
+
+const weekendSchedule = {
+  hours: ['08:00-08:45', '09:00-09:45'],
+  table: {
+    Monday: [{ subject: 'Math', time: '08:00' }],
+    Saturday: [{ subject: 'Art', time: '08:00' }],
+    Sunday: [{ subject: 'Free', time: '08:00' }]
+  }
+};
+const weekendFiltered = normalizeTimetableData(weekendSchedule);
+assert.strictEqual(weekendFiltered.length, 1, 'weekend entries should be excluded from the school timetable');
+assert.strictEqual(weekendFiltered[0].day, 'Monday', 'only school week days should remain');
 
 const summary = buildMorningSummary({ name: 'Mia' }, sampleTimetable);
 assert(summary.includes('Mia'), 'summary should mention the person');

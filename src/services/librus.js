@@ -30,6 +30,24 @@ function toDisplayDayName(value) {
   return map[cleaned.toLowerCase()] || cleaned;
 }
 
+function addMinutesToTime(timeString, minutesToAdd) {
+  if (!timeString || !/^\d{1,2}:\d{2}$/.test(String(timeString).trim())) {
+    return timeString || '08:00';
+  }
+
+  const [hours, mins] = String(timeString).trim().split(':').map(Number);
+  const total = hours * 60 + mins + minutesToAdd;
+  const nextHours = Math.floor(total / 60) % 24;
+  const nextMinutes = total % 60;
+  return `${String(nextHours).padStart(2, '0')}:${String(nextMinutes).padStart(2, '0')}`;
+}
+
+function isSchoolDayName(value) {
+  if (!value) return false;
+  const day = String(value).trim().toLowerCase();
+  return ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].includes(day);
+}
+
 function parseLessonTime(rawLesson) {
   const fallback = { start: '08:00', end: '08:45', time: null };
   if (!rawLesson || typeof rawLesson !== 'object') return fallback;
@@ -49,8 +67,9 @@ function parseLessonTime(rawLesson) {
     }
   }
 
-  if (typeof rawTime === 'string' && rawTime.length >= 5) {
-    return { start: rawTime.slice(0, 5), end: rawTime.slice(0, 5), time: rawTime };
+  if (typeof rawTime === 'string' && /^\d{1,2}:\d{2}$/.test(rawTime.trim())) {
+    const start = rawTime.trim();
+    return { start, end: addMinutesToTime(start, 45), time: start };
   }
 
   return fallback;
@@ -118,22 +137,31 @@ function normalizeTimetableData(rawTimetable) {
 
   const hours = Array.isArray(rawTimetable.hours) ? rawTimetable.hours : Array.isArray(rawTimetable.time_slots) ? rawTimetable.time_slots : [];
   const sourceTable = rawTimetable.table || rawTimetable.days || rawTimetable;
+
   if (Array.isArray(sourceTable)) {
-    return sourceTable.map((dayEntry, index) => {
-      const dayName = dayEntry && (dayEntry.day || dayEntry.name || dayEntry.label) ? String(dayEntry.day || dayEntry.name || dayEntry.label) : `Day ${index + 1}`;
-      const lessons = Array.isArray(dayEntry && dayEntry.lessons) ? dayEntry.lessons : Array.isArray(dayEntry) ? dayEntry : [];
-      return {
-        day: toDisplayDayName(dayName),
-        lessons: lessons.map((lesson, lessonIndex) => normalizeSingleLesson(lesson, lessonIndex, hours))
-      };
-    });
+    return sourceTable
+      .map((dayEntry, index) => {
+        const dayName = dayEntry && (dayEntry.day || dayEntry.name || dayEntry.label) ? String(dayEntry.day || dayEntry.name || dayEntry.label) : `Day ${index + 1}`;
+        const lessons = Array.isArray(dayEntry && dayEntry.lessons) ? dayEntry.lessons : Array.isArray(dayEntry) ? dayEntry : [];
+        if (!isSchoolDayName(dayName)) return null;
+        return {
+          day: toDisplayDayName(dayName),
+          lessons: lessons.map((lesson, lessonIndex) => normalizeSingleLesson(lesson, lessonIndex, hours))
+        };
+      })
+      .filter(Boolean);
   }
 
   if (sourceTable && typeof sourceTable === 'object') {
-    return Object.entries(sourceTable).map(([dayName, lessons]) => ({
-      day: toDisplayDayName(dayName),
-      lessons: Array.isArray(lessons) ? lessons.map((lesson, lessonIndex) => normalizeSingleLesson(lesson, lessonIndex, hours)) : []
-    }));
+    return Object.entries(sourceTable)
+      .map(([dayName, lessons]) => {
+        if (!isSchoolDayName(dayName)) return null;
+        return {
+          day: toDisplayDayName(dayName),
+          lessons: Array.isArray(lessons) ? lessons.map((lesson, lessonIndex) => normalizeSingleLesson(lesson, lessonIndex, hours)) : []
+        };
+      })
+      .filter(Boolean);
   }
 
   return [];
