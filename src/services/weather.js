@@ -65,10 +65,14 @@ async function getWeather() {
     settings = getSettings();
   } catch(e) {}
 
-  const lat = settings.weather_lat || process.env.WEATHER_LAT || '52.5200';
-  const lon = settings.weather_lon || process.env.WEATHER_LON || '13.4050';
-  const city = settings.weather_city || 'Berlin';
+  const lat = settings.weather_lat || process.env.WEATHER_LAT || '';
+  const lon = settings.weather_lon || process.env.WEATHER_LON || '';
+  const city = settings.weather_city || '';
   const units = settings.weather_units || 'metric'; // 'metric' or 'imperial'
+
+  if (!lat || !lon) {
+    return null;
+  }
 
   const currentSettingsHash = `${lat}_${lon}_${units}`;
   if (cachedWeather && currentSettingsHash === lastSettingsHash && now - lastFetchTime < CACHE_TTL_MS) {

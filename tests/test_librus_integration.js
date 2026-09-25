@@ -1,6 +1,7 @@
 const assert = require('assert');
 const db = require('../src/db');
 const { normalizeTimetableData, buildMorningSummary, buildSchoolDaySummary } = require('../src/services/librus');
+const { getWeather } = require('../src/services/weather');
 
 const sampleTimetable = {
   hours: ['08:00', '09:00'],
@@ -51,6 +52,9 @@ const friendlySummary = buildSchoolDaySummary({
 });
 assert(friendlySummary.toLowerCase().includes('dress') || friendlySummary.toLowerCase().includes('warm') || friendlySummary.toLowerCase().includes('books'), 'friendly summary should include practical guidance for the school day');
 
+const settings = db.getSettings();
+assert(settings.gemini_summary_prompt && settings.gemini_summary_prompt.toLowerCase().includes('language'), 'default summary prompt should be configurable and language-aware');
+
 const polishSummary = buildSchoolDaySummary({
   weather: { temperature: 18, condition: 'Cloudy' },
   tasks: [{ content: 'Sprzątanie pokoju' }],
@@ -87,4 +91,21 @@ const updatedProfile = db.updateProfile(profile.id, { librus_login: 'new-login',
 assert.strictEqual(updatedProfile.librus_login, 'new-login', 'profile update should change Librus login');
 assert.strictEqual(updatedProfile.librus_password, 'new-pass', 'profile update should change Librus password');
 
-console.log('Librus timetable normalization and summary checks passed');
+(async () => {
+  const previous = db.getSettings();
+  db.updateSettings({
+    weather_city: '',
+    weather_lat: '',
+    weather_lon: '',
+    weather_units: 'metric'
+  });
+
+  try {
+    const weather = await getWeather();
+    assert.strictEqual(weather, null, 'weather should stay unset until a real location is configured');
+  } finally {
+    db.updateSettings(previous);
+  }
+
+  console.log('Librus timetable normalization and summary checks passed');
+})();

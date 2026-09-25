@@ -1152,7 +1152,10 @@
                 </div>
               </div>
 
-              <div class="overflow-auto rounded-xl border border-neutral-800 bg-neutral-950/60">
+              <div v-if="getSchoolScheduleRows(w).length === 0" class="flex items-center justify-center rounded-xl border border-dashed border-neutral-700 bg-neutral-950/40 text-[11px] text-neutral-500 min-h-[120px]">
+                No timetable synced yet.
+              </div>
+              <div v-else class="overflow-auto rounded-xl border border-neutral-800 bg-neutral-950/60">
                 <table class="w-full border-collapse text-[9px] text-neutral-200">
                   <thead>
                     <tr class="bg-neutral-900/80 text-neutral-400">
@@ -1189,6 +1192,7 @@
                 <span class="font-mono text-xs uppercase tracking-widest text-violet-400 font-semibold">{{ getLocalizedWidgetLabel('summary', 'DAY SUMMARY') }}</span>
                 <div class="flex items-center gap-2">
                   <span class="text-[10px] font-mono text-neutral-500">{{ currentDate.short }}</span>
+                  <button @click.stop="refreshSchoolSummary" class="text-[9px] font-mono uppercase tracking-widest text-violet-200 hover:text-white border border-violet-800/70 rounded px-1.5 py-0.5">Generate</button>
                   <button @click.stop="refreshDashboardData" class="text-[9px] font-mono uppercase tracking-widest text-violet-200 hover:text-white border border-violet-800/70 rounded px-1.5 py-0.5">Refresh</button>
                 </div>
               </div>
@@ -1694,6 +1698,7 @@
         const events = ref([]);
         const pageConfigs = ref({});
         const weather = ref(null);
+        const schoolSummaryText = ref('');
         const librusData = ref({
           grades: [],
           notifications: [],
@@ -2052,6 +2057,37 @@
           return profiles.value.find(p => p.id === selectedProfileId.value) || null;
         });
 
+        async function refreshSchoolSummary() {
+          const summaryPayload = {
+            language: effectiveLanguage.value || 'en',
+            profile_name: selectedProfile.value ? selectedProfile.value.name : 'kid',
+            weather: weather.value,
+            tasks: getFilteredTasksForWidget({ widget_type: 'tasks', config: { filter: 'today' } }),
+            schedule: selectedProfileSchedule.value && Array.isArray(selectedProfileSchedule.value.schedule) ? selectedProfileSchedule.value.schedule : [],
+            grades: getNormalizedGrades(),
+            notifications: Array.isArray(librusData.value.notifications) ? librusData.value.notifications : [],
+            announcements: Array.isArray(librusData.value.announcements) ? librusData.value.announcements : []
+          };
+
+          if (!summaryPayload.weather && !summaryPayload.tasks.length && !summaryPayload.schedule.length && !summaryPayload.grades.length && !summaryPayload.notifications.length && !summaryPayload.announcements.length) {
+            schoolSummaryText.value = '';
+            return;
+          }
+
+          try {
+            const res = await fetch('/api/summary/school-day', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(summaryPayload)
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            schoolSummaryText.value = data && typeof data.summary === 'string' ? data.summary : '';
+          } catch (err) {
+            console.warn('School summary refresh failed', err);
+          }
+        }
+
         async function refreshDashboardData() {
           try {
             const res = await fetch('/api/admin/data');
@@ -2068,6 +2104,7 @@
             if (data.events && Array.isArray(data.events)) events.value = data.events;
             if (data.photos && Array.isArray(data.photos)) photos.value = data.photos;
             if (data.layouts) layouts.value = data.layouts;
+            await refreshSchoolSummary();
           } catch (err) {
             console.warn('Refresh failed', err);
           }
@@ -2519,6 +2556,7 @@
 
         function getSchoolScheduleColumns(widget) {
           const rows = getSchoolScheduleRows(widget);
+          if (!rows.length) return [];
           const slotMap = new Map();
           rows.forEach((dayRow) => {
             (dayRow.lessons || []).forEach((lesson) => {
@@ -2547,6 +2585,9 @@
         }
 
         function getSchoolDaySummary(widget, options = {}) {
+          const aiSummary = schoolSummaryText.value && schoolSummaryText.value.trim();
+          if (aiSummary) return aiSummary;
+
           const includeWeather = options.includeWeather !== false;
           const rows = getSchoolScheduleRows(widget);
           const today = new Date();
@@ -2671,8 +2712,12 @@
             });
             if (byName) return byName;
           }
-          return schedules.value.find(s => s.profile_id === null || s.profile_id === 0) || schedules.value[0] || null;
+          return schedules.value.find(s => s.profile_id === null || s.profile_id === 0) || null;
         });
+
+        watch([selectedProfileId, effectiveLanguage, weather, tasks, schedules, librusData, settings], () => {
+          refreshSchoolSummary();
+        }, { deep: true, immediate: true });
 
         function getSchoolScheduleRows(widget) {
           let cfg = widget && widget.config;
@@ -2684,8 +2729,6 @@
             source = cfg.schedule;
           } else if (selectedProfileSchedule.value && Array.isArray(selectedProfileSchedule.value.schedule) && selectedProfileSchedule.value.schedule.length) {
             source = selectedProfileSchedule.value.schedule;
-          } else {
-            source = getDefaultSchoolSchedule();
           }
           const today = new Date();
           const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

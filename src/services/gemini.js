@@ -48,13 +48,15 @@ Rules:
 
 const DEFAULT_GEMINI_TEXT_PROMPT = 'Extract actionable family dashboard items from the message and return only the structured JSON schema described above.';
 const DEFAULT_GEMINI_VOICE_PROMPT = 'Please listen carefully to this voice recording, transcribe it, and extract the smart home actions according to the schema.';
+const DEFAULT_GEMINI_SUMMARY_PROMPT = `You are a cheerful school-day helper for a family dashboard. Read the full context below and write a short, warm, and relevant summary for the child in the requested language. Include weather, first lesson, required materials, chores/todos, reminders, and school notices only when they are actually present. Do not invent missing facts. Keep it encouraging and human, like a caring parent or teacher. Return plain text only, no JSON, no markdown.`;
 
 function resolveGeminiPromptSettings() {
   const settings = getSettings ? getSettings() : {};
   return {
     system: String(settings.gemini_system_prompt || '').trim() || DEFAULT_GEMINI_SYSTEM_PROMPT,
     text: String(settings.gemini_text_prompt || '').trim() || DEFAULT_GEMINI_TEXT_PROMPT,
-    voice: String(settings.gemini_voice_prompt || '').trim() || DEFAULT_GEMINI_VOICE_PROMPT
+    voice: String(settings.gemini_voice_prompt || '').trim() || DEFAULT_GEMINI_VOICE_PROMPT,
+    summary: String(settings.gemini_summary_prompt || '').trim() || DEFAULT_GEMINI_SUMMARY_PROMPT
   };
 }
 
@@ -144,6 +146,47 @@ function normalizeParsedGeminiPayload(parsed = {}) {
     timer,
     response_message: typeof parsed.response_message === 'string' ? parsed.response_message : ''
   };
+}
+
+async function generateSchoolDaySummaryWithGemini(context = {}) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return null;
+  }
+
+  const { summary } = resolveGeminiPromptSettings();
+  const language = String(context.language || 'en').trim() || 'en';
+  const profileName = String(context.profile_name || context.profileName || 'kid').trim() || 'kid';
+  const payload = JSON.stringify({
+    language,
+    profile_name: profileName,
+    weather: context.weather || null,
+    tasks: Array.isArray(context.tasks) ? context.tasks : [],
+    schedule: Array.isArray(context.schedule) ? context.schedule : [],
+    grades: Array.isArray(context.grades) ? context.grades : [],
+    notifications: Array.isArray(context.notifications) ? context.notifications : [],
+    announcements: Array.isArray(context.announcements) ? context.announcements : []
+  }, null, 2);
+
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-3.5-flash-lite',
+      systemInstruction: summary,
+      generationConfig: {
+        temperature: 0.7,
+        responseMimeType: 'text/plain'
+      }
+    });
+
+    const response = await model.generateContent(`Language: ${language}\nProfile: ${profileName}\nContext:\n${payload}`);
+    const rawText = response.response.text ? response.response.text() : String(response || '');
+    const summaryText = String(rawText || '').trim();
+    return summaryText || null;
+  } catch (error) {
+    console.warn('[Gemini] School summary generation failed:', error.message || error);
+    return null;
+  }
 }
 
 /**
