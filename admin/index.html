@@ -983,6 +983,36 @@
       </div>
 
       <div class="lg:col-span-2 space-y-4">
+        <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-4 shadow-lg">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <div class="text-[10px] font-mono uppercase tracking-[0.2em] text-violet-300">Librus Sync</div>
+              <div class="text-xs text-neutral-500 font-mono mt-1">{{ librusStatusLabel }}</div>
+            </div>
+          </div>
+
+          <div class="space-y-3 mb-4">
+            <div>
+              <label class="block text-neutral-400 text-[11px] font-mono mb-1">LIBRUS LOGIN</label>
+              <input v-model="librusConfig.login" type="text" class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-100 outline-none" placeholder="student login" />
+            </div>
+            <div>
+              <label class="block text-neutral-400 text-[11px] font-mono mb-1">LIBRUS PASSWORD</label>
+              <input v-model="librusConfig.password" type="password" class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-100 outline-none" placeholder="password" />
+            </div>
+            <div>
+              <label class="block text-neutral-400 text-[11px] font-mono mb-1">ASSIGN TO PROFILE</label>
+              <select v-model="librusConfig.profile_id" class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 outline-none">
+                <option :value="null">Family Shared</option>
+                <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
+              </select>
+            </div>
+            <button type="button" @click="syncLibrusSchedule" :disabled="syncingLibrus" class="w-full font-mono text-xs bg-violet-600 hover:bg-violet-500 disabled:opacity-60 text-white py-2.5 rounded-lg font-semibold transition">
+              {{ syncingLibrus ? 'Syncing…' : 'Sync Librus Timetable' }}
+            </button>
+          </div>
+        </div>
+
         <div v-if="schedules.length === 0" class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-8 text-center text-xs font-mono text-neutral-500">
           No schedules created yet.
         </div>
@@ -1902,9 +1932,67 @@
           gemini_voice_prompt: 'Please listen carefully to this voice recording, transcribe it, and extract the smart home actions according to the schema.'
         });
 
+        const librusConfig = ref({
+          login: '',
+          password: '',
+          profile_id: null,
+          profile_name: ''
+        });
+        const librusStatus = ref({ configured: false, status: 'unknown' });
+        const syncingLibrus = ref(false);
+
         const weatherSearchQuery = ref('');
         const weatherSearchResults = ref([]);
         const weatherSearchLoading = ref(false);
+
+        const librusStatusLabel = computed(() => {
+          if (librusStatus.value.configured) return 'Configured';
+          return 'Not configured';
+        });
+
+        async function checkLibrusStatus() {
+          try {
+            const res = await fetch('/api/admin/librus/status');
+            if (!res.ok) return;
+            librusStatus.value = await res.json();
+          } catch (err) {
+            librusStatus.value = { configured: false, status: 'error' };
+          }
+        }
+
+        async function syncLibrusSchedule() {
+          const login = librusConfig.value.login.trim();
+          const password = librusConfig.value.password.trim();
+          if (!login || !password) {
+            showAlert('Enter your Librus login and password first.', false);
+            return;
+          }
+
+          syncingLibrus.value = true;
+          try {
+            const selectedProfile = profiles.value.find(p => Number(p.id) === Number(librusConfig.value.profile_id));
+            const res = await fetch('/api/admin/librus/sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                login,
+                password,
+                profile_id: librusConfig.value.profile_id ?? null,
+                profile_name: selectedProfile ? selectedProfile.name : ''
+              })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+            showAlert('Librus timetable synced successfully!');
+            librusConfig.value.password = '';
+            await checkLibrusStatus();
+            await loadData();
+          } catch (err) {
+            showAlert('Librus sync failed: ' + err.message, false);
+          } finally {
+            syncingLibrus.value = false;
+          }
+        }
 
         async function searchWeatherCity() {
           const q = weatherSearchQuery.value.trim();
@@ -2687,6 +2775,7 @@
 
         onMounted(() => {
           loadData();
+          checkLibrusStatus();
         });
 
         return {
@@ -2702,6 +2791,12 @@
           cancelEditSchedule,
           saveSchedule,
           deleteSchedule,
+          librusConfig,
+          librusStatus,
+          librusStatusLabel,
+          syncingLibrus,
+          checkLibrusStatus,
+          syncLibrusSchedule,
           weatherSearchQuery,
           weatherSearchResults,
           weatherSearchLoading,

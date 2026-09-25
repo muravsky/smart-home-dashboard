@@ -1121,6 +1121,11 @@
                 <span v-else class="text-[10px] font-mono text-neutral-500">Student</span>
               </div>
 
+              <div v-if="getSchoolDaySummary(w)" class="mb-2 rounded-lg border border-violet-900/60 bg-violet-950/30 p-2">
+                <div class="text-[9px] font-mono uppercase tracking-widest text-violet-300 mb-1">TODAY</div>
+                <div class="text-[10px] text-neutral-100 leading-snug">{{ getSchoolDaySummary(w) }}</div>
+              </div>
+
               <div class="overflow-auto rounded-xl border border-neutral-800 bg-neutral-950/60">
                 <table class="w-full border-collapse text-[9px] text-neutral-200">
                   <thead>
@@ -1145,7 +1150,98 @@
               </div>
             </div>
 
-            <!-- ================= WIDGET TYPE 9: CALENDAR ================= -->
+            <!-- ================= WIDGET TYPE 9: SCHOOL SUMMARY ================= -->
+            <div v-else-if="w.widget_type === 'school_summary'" class="h-full flex flex-col justify-between overflow-hidden">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+                <span class="font-mono text-xs uppercase tracking-widest text-violet-400 font-semibold">DAY SUMMARY</span>
+                <span class="text-[10px] font-mono text-neutral-500">{{ currentDate.short }}</span>
+              </div>
+
+              <div class="space-y-2 overflow-y-auto pr-1">
+                <div class="rounded-lg border border-violet-800/60 bg-violet-950/20 p-2">
+                  <div class="text-[9px] font-mono uppercase tracking-widest text-violet-300 mb-1">Overview</div>
+                  <div class="text-[11px] text-neutral-100 leading-relaxed">{{ getSchoolDaySummary(w) || 'No school summary available yet.' }}</div>
+                </div>
+
+                <div v-if="weather" class="rounded-lg border border-sky-800/60 bg-sky-950/20 p-2">
+                  <div class="text-[9px] font-mono uppercase tracking-widest text-sky-300 mb-1">Weather</div>
+                  <div class="text-[11px] text-neutral-100">{{ weather.icon }} {{ weather.temperature }}°{{ weather.unit || 'C' }} • {{ weather.condition }}</div>
+                </div>
+
+                <div v-if="getFilteredTasksForWidget({ widget_type: 'tasks', config: { filter: 'today' }}).length" class="rounded-lg border border-emerald-800/60 bg-emerald-950/20 p-2">
+                  <div class="text-[9px] font-mono uppercase tracking-widest text-emerald-300 mb-1">Tasks</div>
+                  <div class="space-y-1 text-[11px] text-neutral-100">
+                    <div v-for="task in getFilteredTasksForWidget({ widget_type: 'tasks', config: { filter: 'today' }}).slice(0,3)" :key="task.id">• {{ task.content }}</div>
+                  </div>
+                </div>
+
+                <div v-if="librusData.notifications && librusData.notifications.length" class="rounded-lg border border-amber-800/60 bg-amber-950/20 p-2">
+                  <div class="text-[9px] font-mono uppercase tracking-widest text-amber-300 mb-1">Notifications</div>
+                  <div class="space-y-1 text-[11px] text-neutral-100">
+                    <div v-for="note in librusData.notifications.slice(0,2)" :key="note.title || note.id || note.message">• {{ note.title || note.name || note.message || 'Notice' }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ================= WIDGET TYPE 10: LIBRUS GRADES ================= -->
+            <div v-else-if="w.widget_type === 'school_grades'" class="h-full flex flex-col justify-between overflow-hidden">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+                <span class="font-mono text-xs uppercase tracking-widest text-yellow-400 font-semibold">Librus Grades</span>
+                <span class="text-[10px] font-mono text-neutral-500">{{ librusData.grades.length }} items</span>
+              </div>
+
+              <div v-if="!librusData.grades || librusData.grades.length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
+                No grades synced yet.
+              </div>
+              <ul v-else class="space-y-1.5 overflow-y-auto pr-1 flex-1">
+                <li v-for="grade in librusData.grades.slice(0, 8)" :key="grade.id || grade.name || grade.value || grade.subject" class="border-b border-neutral-900/60 pb-1 text-[11px] text-neutral-200">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="font-semibold text-white">{{ grade.subject || grade.name || grade.title || 'Grade' }}</span>
+                    <span class="text-yellow-300 font-mono font-bold">{{ grade.value || grade.grade || '-' }}</span>
+                  </div>
+                  <div v-if="grade.comment || grade.description || grade.date" class="text-[10px] text-neutral-400 mt-0.5">{{ grade.comment || grade.description || grade.date }}</div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- ================= WIDGET TYPE 11: LIBRUS NOTIFICATIONS ================= -->
+            <div v-else-if="w.widget_type === 'school_notifications'" class="h-full flex flex-col justify-between overflow-hidden">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+                <span class="font-mono text-xs uppercase tracking-widest text-amber-400 font-semibold">Notifications</span>
+                <span class="text-[10px] font-mono text-neutral-500">{{ librusData.notifications.length }}</span>
+              </div>
+
+              <div v-if="!librusData.notifications || librusData.notifications.length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
+                No notifications synced yet.
+              </div>
+              <ul v-else class="space-y-1.5 overflow-y-auto pr-1 flex-1">
+                <li v-for="note in librusData.notifications.slice(0, 8)" :key="note.id || note.title || note.message || note.name" class="border-b border-neutral-900/60 pb-1 text-[11px] text-neutral-200">
+                  <div class="font-semibold text-white">{{ note.title || note.name || 'Notification' }}</div>
+                  <div v-if="note.message || note.content || note.body" class="text-[10px] text-neutral-400 mt-0.5">{{ note.message || note.content || note.body }}</div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- ================= WIDGET TYPE 12: LIBRUS ANNOUNCEMENTS ================= -->
+            <div v-else-if="w.widget_type === 'school_announcements'" class="h-full flex flex-col justify-between overflow-hidden">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+                <span class="font-mono text-xs uppercase tracking-widest text-cyan-400 font-semibold">Announcements</span>
+                <span class="text-[10px] font-mono text-neutral-500">{{ librusData.announcements.length }}</span>
+              </div>
+
+              <div v-if="!librusData.announcements || librusData.announcements.length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
+                No announcements synced yet.
+              </div>
+              <ul v-else class="space-y-1.5 overflow-y-auto pr-1 flex-1">
+                <li v-for="item in librusData.announcements.slice(0, 8)" :key="item.id || item.title || item.name || item.message" class="border-b border-neutral-900/60 pb-1 text-[11px] text-neutral-200">
+                  <div class="font-semibold text-white">{{ item.title || item.name || 'Announcement' }}</div>
+                  <div v-if="item.message || item.content || item.text || item.body" class="text-[10px] text-neutral-400 mt-0.5">{{ item.message || item.content || item.text || item.body }}</div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- ================= WIDGET TYPE 13: CALENDAR ================= -->
             <div v-else-if="w.widget_type === 'calendar'" class="h-full flex flex-col justify-between overflow-hidden">
               <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
                 <div class="flex items-center gap-2">
@@ -1556,6 +1652,14 @@
         const events = ref([]);
         const pageConfigs = ref({});
         const weather = ref(null);
+        const librusData = ref({
+          grades: [],
+          notifications: [],
+          announcements: [],
+          summary: '',
+          timetable: [],
+          account: null
+        });
         const settings = ref({
           sleep_timeout: 300,
           sleep_timeout_day: 300,
@@ -1859,6 +1963,10 @@
           { type: 'timer', name: 'Kitchen Timer', icon: '⏳', desc: 'Countdown with audio chime' },
           { type: 'photo', name: 'Photo Frame', icon: '🖼️', desc: 'Rotating family photos' },
           { type: 'schedule', name: 'School Schedule', icon: '📚', desc: 'Day-by-day school timetable' },
+          { type: 'school_summary', name: 'School Day Summary', icon: '📋', desc: 'Weather, tasks, classes & alerts' },
+          { type: 'school_grades', name: 'Librus Grades', icon: '🧾', desc: 'Student marks and grade snapshot' },
+          { type: 'school_notifications', name: 'Librus Notifications', icon: '🔔', desc: 'Recent notices and updates' },
+          { type: 'school_announcements', name: 'Librus Announcements', icon: '📣', desc: 'School news and messages' },
           { type: 'calendar', name: 'Calendar Agenda', icon: '📅', desc: 'Mini month & Google Cal sync' },
           { type: 'leaderboard', name: 'Chores Leaderboard', icon: '🏆', desc: 'Kids rewards & points ranks' },
           { type: 'quick_actions', name: 'Quick Scenes', icon: '⚡', desc: '1-tap shortcuts & night mode' },
@@ -2280,6 +2388,37 @@
           const schedule = getSchoolScheduleRows(widget);
           const maxLessons = Math.max(...schedule.map(day => day.lessons.length), 1);
           return Array.from({ length: maxLessons }, (_, idx) => idx + 1);
+        }
+
+        function getSchoolDaySummary(widget) {
+          const rows = getSchoolScheduleRows(widget);
+          const today = new Date();
+          const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][today.getDay()];
+          const row = rows.find((dayRow) => String(dayRow.day).toLowerCase() === weekday.toLowerCase()) || rows[0];
+          const lessonSummary = Array.isArray(row && row.lessons) ? row.lessons.slice(0, 3) : [];
+          const summaryParts = [];
+
+          if (weather.value) {
+            summaryParts.push(`Weather: ${weather.value.temperature}°${weather.value.unit || 'C'} • ${weather.value.condition}`);
+          }
+
+          const taskSummary = getFilteredTasksForWidget({ widget_type: 'tasks', config: { filter: 'today' }}).slice(0, 3);
+          if (taskSummary.length) {
+            summaryParts.push(`Tasks: ${taskSummary.map(item => item.content).join(', ')}`);
+          }
+
+          if (lessonSummary.length) {
+            summaryParts.push(`Schedule: ${lessonSummary.map(lesson => `${lesson.start}-${lesson.end} ${lesson.name}`).join(' • ')}`);
+          }
+
+          const notifSummary = Array.isArray(librusData.value.notifications) ? librusData.value.notifications.slice(0, 2).map(item => item.title || item.name || item.message || 'Notice') : [];
+          if (notifSummary.length) {
+            summaryParts.push(`Alerts: ${notifSummary.join(' • ')}`);
+          }
+
+          if (summaryParts.length) return summaryParts.join(' • ');
+          if (lessonSummary.length) return `${row.day}: ${lessonSummary.map(lesson => `${lesson.start}-${lesson.end} ${lesson.name}`).join(' • ')}`;
+          return '';
         }
 
         const selectedProfileSchedule = computed(() => {
@@ -2892,6 +3031,7 @@
             if (data.events && Array.isArray(data.events)) events.value = data.events;
             if (data.settings) settings.value = { ...settings.value, ...data.settings };
             if (data.page_configs) pageConfigs.value = data.page_configs;
+            if (data.librus) librusData.value = { ...librusData.value, ...data.librus };
 
             // Apply profile layout if matching
             const pKey = selectedProfileId.value !== null ? String(selectedProfileId.value) : 'family';
@@ -2985,6 +3125,7 @@
           formatEventTimeDisplay,
           weather,
           localizedWeather,
+          librusData,
           effectiveLanguage,
           settings,
           isNightModeActive,
@@ -3068,6 +3209,7 @@
           getWeatherForecastButtonLabel,
           getWeatherForecastTitle,
           getWeatherForecastItems,
+          getSchoolDaySummary,
           getTaskFilterMode,
           getTaskFilterButtonLabel,
           cycleTaskFilter,

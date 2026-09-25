@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const https = require('https');
 const { parseTextWithGemini, parseAudioWithGemini } = require('./services/gemini');
+const { fetchLibrusData, normalizeTimetableData, buildMorningSummary } = require('./services/librus');
 const {
   insertNote,
   insertTask,
@@ -302,6 +303,32 @@ function initBot(io) {
     }
     reply += `\nSend a photo to add more!`;
     await ctx.replyWithMarkdown(reply);
+  });
+
+  bot.command('school', async (ctx) => {
+    const login = process.env.LIBRUS_LOGIN;
+    const password = process.env.LIBRUS_PASSWORD;
+
+    if (!login || !password) {
+      return ctx.reply('📚 School sync is not configured. Set LIBRUS_LOGIN and LIBRUS_PASSWORD in the environment first.');
+    }
+
+    try {
+      const senderProfile = getProfileByTelegramId(String(ctx.from.id));
+      const data = await fetchLibrusData({ login, password });
+      const summary = buildMorningSummary(senderProfile || { name: ctx.from.first_name || 'Student' }, data.normalizedTimetable || data.timetable);
+      const notifications = (data.notifications || []).slice(0, 3);
+
+      const parts = [`📚 *School Summary*\n\n${summary}`];
+      if (notifications.length > 0) {
+        parts.push(`\n*Notifications:*\n${notifications.map((n) => `• ${n.title || n.name || 'Notice'}`).join('\n')}`);
+      }
+
+      await ctx.replyWithMarkdown(parts.join('\n'));
+    } catch (err) {
+      console.error('[Telegram] School sync failed:', err.message);
+      await ctx.reply(`❌ Failed to load school data: ${err.message}`);
+    }
   });
 
   // Command: /today — Today's events and tasks overview

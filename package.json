@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node tests/test_phase1.js && node tests/test_phase2.js && node tests/test_phase3.js && node tests/test_phase4.js && node tests/test_phase5.js && node tests/test_phase6.js && node tests/test_full_system.js"
+    "test": "node tests/test_phase1.js && node tests/test_phase2.js && node tests/test_phase3.js && node tests/test_phase4.js && node tests/test_phase5.js && node tests/test_phase6.js && node tests/test_librus_integration.js && node tests/test_full_system.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.0",
@@ -16,6 +16,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-basic-auth": "^1.2.1",
+    "librus-api": "^2.19.0",
     "multer": "^2.4.0",
     "node-ical": "^0.27.2",
     "socket.io": "^4.8.1",

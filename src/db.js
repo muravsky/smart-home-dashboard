@@ -152,6 +152,12 @@ db.exec(`
     value TEXT
   );
 
+  CREATE TABLE IF NOT EXISTS librus_data (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS photos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     filename TEXT NOT NULL,
@@ -982,6 +988,49 @@ function deleteCalendarEvent(id) {
   return db.prepare('DELETE FROM calendar_events WHERE id = ?').run(id);
 }
 
+function getLibrusData() {
+  const rows = db.prepare('SELECT key, value, updated_at FROM librus_data').all();
+  const payload = {};
+  for (const row of rows) {
+    try {
+      payload[row.key] = JSON.parse(row.value);
+    } catch (e) {
+      payload[row.key] = row.value;
+    }
+  }
+  return {
+    grades: Array.isArray(payload.grades) ? payload.grades : [],
+    notifications: Array.isArray(payload.notifications) ? payload.notifications : [],
+    announcements: Array.isArray(payload.announcements) ? payload.announcements : [],
+    summary: typeof payload.summary === 'string' ? payload.summary : '',
+    timetable: Array.isArray(payload.timetable) ? payload.timetable : [],
+    account: payload.account || null,
+    updated_at: payload.updated_at || null
+  };
+}
+
+function saveLibrusData(payload = {}) {
+  const clean = {
+    grades: Array.isArray(payload.grades) ? payload.grades : [],
+    notifications: Array.isArray(payload.notifications) ? payload.notifications : [],
+    announcements: Array.isArray(payload.announcements) ? payload.announcements : [],
+    summary: typeof payload.summary === 'string' ? payload.summary : '',
+    timetable: Array.isArray(payload.timetable) ? payload.timetable : [],
+    account: payload.account || null,
+    updated_at: new Date().toISOString()
+  };
+
+  for (const [key, value] of Object.entries(clean)) {
+    db.prepare(`
+      INSERT INTO librus_data (key, value, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(key, JSON.stringify(value), clean.updated_at);
+  }
+
+  return getLibrusData();
+}
+
 /* ==========================================================================
    Page Configs (Theme & Font Size per page / profile)
    ========================================================================== */
@@ -1027,7 +1076,8 @@ function getDashboardData() {
     photos: getPhotos({ screensaverOnly: true }),
     events: getCalendarEvents({ limit: 50 }),
     feeds: getCalendarFeeds(),
-    settings: getSettings()
+    settings: getSettings(),
+    librus: getLibrusData()
   };
 }
 
@@ -1083,5 +1133,7 @@ module.exports = {
   insertCalendarEvent,
   upsertCalendarEventByUid,
   deleteCalendarEvent,
+  saveLibrusData,
+  getLibrusData,
   getDashboardData
 };

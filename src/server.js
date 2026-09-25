@@ -51,10 +51,12 @@ const {
   deleteCalendarFeed,
   getCalendarEvents,
   insertCalendarEvent,
-  deleteCalendarEvent
+  deleteCalendarEvent,
+  saveLibrusData
 } = require('./db');
 const { parseTextWithGemini } = require('./services/gemini');
 const { getWeather, searchCity, clearWeatherCache } = require('./services/weather');
+const { fetchLibrusData, normalizeTimetableData, buildMorningSummary } = require('./services/librus');
 const { initBot } = require('./bot');
 const { uploadAvatar, uploadPhoto } = require('./middleware/upload');
 const { normalizeCalendarUrl, syncFeed, syncAllFeeds, startCalendarSyncCron } = require('./services/calendar');
@@ -268,6 +270,61 @@ app.delete('/api/admin/profiles/:id', (req, res) => {
 // Schedules API
 app.get('/api/admin/schedules', (req, res) => {
   res.json(getSchedules());
+});
+
+app.get('/api/admin/librus/status', (req, res) => {
+  const configured = Boolean(process.env.LIBRUS_LOGIN && process.env.LIBRUS_PASSWORD);
+  res.json({ configured, status: configured ? 'ready' : 'missing_credentials' });
+});
+
+app.post('/api/admin/librus/sync', async (req, res) => {
+  try {
+    const {
+      login = process.env.LIBRUS_LOGIN,
+      password = process.env.LIBRUS_PASSWORD,
+      profile_id = null,
+      profile_name = null
+    } = req.body || {};
+
+    if (!login || !password) {
+      return res.status(400).json({
+        error: 'Missing Librus credentials. Add LIBRUS_LOGIN and LIBRUS_PASSWORD to your environment or send them in the request.'
+      });
+    }
+
+    const data = await fetchLibrusData({ login, password });
+    const timetable = normalizeTimetableData(data.timetable);
+    const created = insertSchedule({
+      profile_id: profile_id || null,
+      name: profile_name ? `${profile_name} Librus timetable` : 'Librus timetable',
+      schedule: timetable
+    });
+
+    const saved = saveLibrusData({
+      grades: Array.isArray(data.grades) ? data.grades : [],
+      notifications: Array.isArray(data.notifications) ? data.notifications : [],
+      announcements: Array.isArray(data.announcements) ? data.announcements : [],
+      summary: buildMorningSummary({ name: profile_name || 'Student' }, timetable),
+      timetable,
+      account: data.accountInfo || null
+    });
+
+    io.emit('dashboard_update', getDashboardData());
+
+    res.json({
+      ok: true,
+      schedule: created,
+      timetable,
+      notifications: saved.notifications || [],
+      announcements: saved.announcements || [],
+      grades: saved.grades || [],
+      account: saved.account || null,
+      summary: saved.summary || ''
+    });
+  } catch (error) {
+    console.error('[Librus] Sync failed:', error.message);
+    res.status(500).json({ error: error.message || 'Librus sync failed' });
+  }
 });
 
 app.post('/api/admin/schedules', (req, res) => {
