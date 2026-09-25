@@ -2631,18 +2631,41 @@
           return '';
         }
 
+        const isRealSchedule = (schedule) => {
+          if (!schedule || !Array.isArray(schedule.schedule) || schedule.schedule.length === 0) return false;
+          const name = String(schedule.profile_name || schedule.name || '').toLowerCase();
+          return !/(test|sample|demo|placeholder)/.test(name);
+        };
+
         const selectedProfileSchedule = computed(() => {
           const currentProfile = selectedProfile.value;
-          const matches = schedules.value.filter(s => Number(s.profile_id) === Number(selectedProfileId.value));
-          if (matches.length) return matches[0];
-          if (currentProfile) {
-            const byName = schedules.value.find(s => {
-              const name = String(s.profile_name || s.name || '').toLowerCase();
-              return name.includes(String(currentProfile.name || '').toLowerCase());
-            });
-            if (byName) return byName;
+
+          if (selectedProfileId.value !== null && selectedProfileId.value !== undefined) {
+            const exactMatches = schedules.value
+              .filter(s => Number(s.profile_id) === Number(selectedProfileId.value))
+              .filter(isRealSchedule)
+              .sort((a, b) => Number(b.id) - Number(a.id));
+            if (exactMatches.length) return exactMatches[0];
+
+            if (currentProfile) {
+              const nameMatches = schedules.value
+                .filter(isRealSchedule)
+                .filter(s => {
+                  const name = String(s.profile_name || s.name || '').toLowerCase();
+                  return name.includes(String(currentProfile.name || '').toLowerCase());
+                })
+                .sort((a, b) => Number(b.id) - Number(a.id));
+              if (nameMatches.length) return nameMatches[0];
+            }
+
+            return null;
           }
-          return schedules.value.find(s => s.profile_id === null || s.profile_id === 0) || null;
+
+          const shared = schedules.value
+            .filter(s => (s.profile_id === null || s.profile_id === 0) && isRealSchedule(s))
+            .sort((a, b) => Number(b.id) - Number(a.id));
+
+          return shared[0] || null;
         });
 
         function getSchoolScheduleRows(widget) {

@@ -442,7 +442,7 @@ function getSchedules() {
     SELECT s.*, p.name as profile_name, p.color as profile_color
     FROM schedules s
     LEFT JOIN profiles p ON s.profile_id = p.id
-    ORDER BY s.id ASC
+    ORDER BY s.id DESC
   `).all();
 
   return rows.map((row) => {
