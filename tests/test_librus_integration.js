@@ -40,6 +40,17 @@ assert(daySummary.includes('Math'), 'day summary should include schedule');
 assert(daySummary.includes('School event'), 'day summary should include notifications');
 assert(daySummary.includes('Trip notice'), 'day summary should include announcements');
 
+const friendlySummary = buildSchoolDaySummary({
+  weather: { temperature: 2, condition: 'Snow' },
+  tasks: [{ content: 'Brush teeth' }],
+  schedule: sampleTimetable,
+  grades: [{ value: '5' }],
+  notifications: [{ title: 'School event' }],
+  announcements: [{ title: 'Trip notice', author: 'Marta', date: '2026-09-25', time: '08:15' }],
+  language: 'en'
+});
+assert(friendlySummary.toLowerCase().includes('dress') || friendlySummary.toLowerCase().includes('warm') || friendlySummary.toLowerCase().includes('books'), 'friendly summary should include practical guidance for the school day');
+
 const polishSummary = buildSchoolDaySummary({
   weather: { temperature: 18, condition: 'Cloudy' },
   tasks: [{ content: 'Sprzątanie pokoju' }],

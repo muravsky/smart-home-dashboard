@@ -1149,11 +1149,6 @@
                 <span v-else class="text-[10px] font-mono text-neutral-500">Student</span>
               </div>
 
-              <div v-if="getSchoolDaySummary(w, { includeWeather: false })" class="mb-2 rounded-lg border border-violet-900/60 bg-violet-950/30 p-2">
-                <div class="text-[9px] font-mono uppercase tracking-widest text-violet-300 mb-1">{{ getLocalizedWidgetLabel('today', 'TODAY') }}</div>
-                <div class="text-[10px] text-neutral-100 leading-snug">{{ getSchoolDaySummary(w, { includeWeather: false }) }}</div>
-              </div>
-
               <div class="overflow-auto rounded-xl border border-neutral-800 bg-neutral-950/60">
                 <table class="w-full border-collapse text-[9px] text-neutral-200">
                   <thead>
@@ -1230,7 +1225,7 @@
                 No grades synced yet.
               </div>
               <ul v-else class="space-y-1.5 overflow-y-auto pr-1 flex-1">
-                <li v-for="grade in getNormalizedGrades().slice(0, 8)" :key="grade.key || grade.subject || grade.value || grade.date" class="border-b border-neutral-900/60 pb-1 text-[11px] text-neutral-200">
+                <li v-for="grade in getNormalizedGrades()" :key="grade.key || grade.subject || grade.value || grade.date" class="border-b border-neutral-900/60 pb-1 text-[11px] text-neutral-200">
                   <div class="flex items-center justify-between gap-2">
                     <span class="font-semibold text-white">{{ grade.subject }}</span>
                     <span class="text-yellow-300 font-mono font-bold">{{ grade.value }}</span>
@@ -2527,36 +2522,50 @@
           const today = new Date();
           const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][today.getDay()];
           const row = rows.find((dayRow) => String(dayRow.day).toLowerCase() === weekday.toLowerCase()) || rows[0];
-          const lessonSummary = Array.isArray(row && row.lessons) ? row.lessons.slice(0, 3) : [];
+          const lessons = Array.isArray(row && row.lessons) ? row.lessons.filter(Boolean) : [];
+          const lessonNames = lessons.map(lesson => lesson.name || lesson.subject || '').filter(Boolean);
           const summaryParts = [];
 
           if (includeWeather && weather.value) {
-            summaryParts.push(`Weather: ${weather.value.temperature}°${weather.value.unit || 'C'} • ${weather.value.condition}`);
+            const temp = Number(weather.value.temperature ?? weather.value.temp ?? weather.value.current ?? 0);
+            const condition = String(weather.value.condition || '').trim();
+            const coldWeather = Number.isFinite(temp) && temp <= 5;
+            const snowWeather = /snow|sleet|storm|freeze|freez|cold/i.test(condition) || coldWeather;
+            if (snowWeather) {
+              summaryParts.push('Dress warmly — snow is expected today.');
+            } else if (Number.isFinite(temp) && temp < 12) {
+              summaryParts.push('Dress warmly — it is cold outside.');
+            } else {
+              summaryParts.push(`Weather: ${temp}°${weather.value.unit || 'C'} • ${condition || 'Clear'}`);
+            }
           }
 
-          const taskSummary = getFilteredTasksForWidget({ widget_type: 'tasks', config: { filter: 'today' }}).slice(0, 3);
+          if (lessons.length) {
+            const firstLesson = lessons[0];
+            const schoolTime = firstLesson.start && firstLesson.end ? `${firstLesson.start}-${firstLesson.end}` : firstLesson.start || '08:00';
+            summaryParts.push(`Your first lesson is ${firstLesson.name || 'Class'} (${schoolTime}).`);
+            if (lessonNames.length > 1) {
+              summaryParts.push(`Take books for ${lessonNames.slice(0, 3).join(', ')}.`);
+            }
+          }
+
+          const taskSummary = getFilteredTasksForWidget({ widget_type: 'tasks', config: { filter: 'today' }}).slice(0, 2);
           if (taskSummary.length) {
-            summaryParts.push(`Tasks: ${taskSummary.map(item => item.content).join(', ')}`);
+            summaryParts.push(`You have ${taskSummary.length} home task${taskSummary.length > 1 ? 's' : ''} planned: ${taskSummary.map(item => item.content).join(', ')}.`);
           }
 
-          if (lessonSummary.length) {
-            const lessonText = lessonSummary.map((lesson) => {
-              const flags = [];
-              if (lesson.cancelled) flags.push('cancelled');
-              if (lesson.replacement || lesson.replacementTeacher) flags.push('replacement');
-              const base = `${lesson.start || '08:00'}-${lesson.end || '08:45'} ${lesson.name || 'Class'}`;
-              return flags.length ? `${base} (${flags.join(', ')})` : base;
-            });
-            summaryParts.push(`Schedule: ${lessonText.join(' • ')}`);
+          const gradeSummary = getNormalizedGrades().slice(0, 2).map(grade => grade.value).filter(Boolean);
+          if (gradeSummary.length) {
+            summaryParts.push(`You did great yesterday with ${gradeSummary.join(', ')}.`);
           }
 
           const notifSummary = Array.isArray(librusData.value.notifications) ? librusData.value.notifications.slice(0, 2).map(item => item.title || item.name || item.message || 'Notice') : [];
           if (notifSummary.length) {
-            summaryParts.push(`Alerts: ${notifSummary.join(' • ')}`);
+            summaryParts.push(`School note: ${notifSummary.join(' • ')}.`);
           }
 
-          if (summaryParts.length) return summaryParts.join(' • ');
-          if (lessonSummary.length) return `${row.day}: ${lessonSummary.map(lesson => `${lesson.start}-${lesson.end} ${lesson.name}`).join(' • ')}`;
+          if (summaryParts.length) return summaryParts.join(' ');
+          if (row && lessons.length) return `${row.day}: ${lessons.map(lesson => `${lesson.start}-${lesson.end} ${lesson.name}`).join(' • ')}`;
           return '';
         }
 

@@ -1029,6 +1029,47 @@
                 <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
               </select>
             </div>
+            <div class="rounded-lg border border-neutral-800 bg-neutral-950/80 p-3">
+              <div class="text-[10px] font-mono uppercase tracking-[0.18em] text-violet-300 mb-3">SYNC FREQUENCY</div>
+              <div class="space-y-3 text-[11px] text-neutral-200">
+                <div>
+                  <label class="block text-neutral-400 text-[10px] font-mono mb-1">Timetable</label>
+                  <select v-model="settings.librus_sync_timetable" class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 outline-none">
+                    <option value="manual">Manual only</option>
+                    <option value="hourly">Hourly</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-neutral-400 text-[10px] font-mono mb-1">Grades</label>
+                  <select v-model="settings.librus_sync_grades" class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 outline-none">
+                    <option value="manual">Manual only</option>
+                    <option value="hourly">Hourly</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-neutral-400 text-[10px] font-mono mb-1">Notifications</label>
+                  <select v-model="settings.librus_sync_notifications" class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 outline-none">
+                    <option value="manual">Manual only</option>
+                    <option value="hourly">Hourly</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-neutral-400 text-[10px] font-mono mb-1">Announcements</label>
+                  <select v-model="settings.librus_sync_announcements" class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 outline-none">
+                    <option value="manual">Manual only</option>
+                    <option value="hourly">Hourly</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+                </div>
+              </div>
+            </div>
             <button type="button" @click="syncLibrusSchedule" :disabled="syncingLibrus" class="w-full font-mono text-xs bg-violet-600 hover:bg-violet-500 disabled:opacity-60 text-white py-2.5 rounded-lg font-semibold transition">
               {{ syncingLibrus ? 'Syncing…' : 'Sync Librus Timetable' }}
             </button>
@@ -1951,6 +1992,10 @@
           weather_lon: '',
           weather_units: 'celsius',
           language: 'en',
+          librus_sync_timetable: 'manual',
+          librus_sync_grades: 'daily',
+          librus_sync_notifications: 'daily',
+          librus_sync_announcements: 'daily',
           gemini_system_prompt: `You are the smart assistant for a family smart home tablet dashboard. Today is ${new Date().toISOString().slice(0, 10)}.\nAnalyze the user's natural language input and return ONLY raw JSON matching this schema:\n{\n  "notes": ["string of note content"],\n  "tasks": [\n    {\n      "title": "string",\n      "assignee": "string or null",\n      "reward": 0,\n      "due_date": "YYYY-MM-DD or null",\n      "due_time": "HH:MM or null",\n      "recurrence": "none|daily|weekly|weekdays|weekends|interval",\n      "recurrence_interval": 1,\n      "action": "add"\n    }\n  ],\n  "shopping_items": [\n    {\n      "content": "string (e.g. milk, eggs)",\n      "action": "add"\n    }\n  ],\n  "calendar_events": [\n    {\n      "title": "string",\n      "date": "YYYY-MM-DD",\n      "time": "HH:MM or null",\n      "all_day": false\n    }\n  ],\n  "timer": {\n    "action": "start",\n    "minutes": 5\n  },\n  "response_message": "Friendly 1-line confirmation of what was created or done"\n}\n\nRules:\n1. Shopping items: If the user mentions groceries, shopping, buy X, need X, put them in shopping_items.\n2. Calendar events: If user mentions an appointment, meeting, practice, schedule, event with a date or time, put them in calendar_events with accurate ISO date (e.g. tomorrow = calculate relative to today).\n3. Timer: If user says "set timer for 10 minutes", populate timer object (minutes as number).\n4. Tasks: Chores, to-dos, things to do. If reward is mentioned (e.g. "for 15 points"), set reward number. If the user mentions a date or time, fill due_date and due_time. If they say recurring, use recurrence and recurrence_interval.\n5. Notes: Generic info, reminders, thoughts.\n6. Only return non-empty arrays/objects when detected. If a field is not present, use empty array [] or null for timer. If the request is not clearly actionable, return notes with the user text as a reminder.`,
           gemini_text_prompt: 'Extract actionable family dashboard items from the message and return only the structured JSON schema described above.',
           gemini_voice_prompt: 'Please listen carefully to this voice recording, transcribe it, and extract the smart home actions according to the schema.'
