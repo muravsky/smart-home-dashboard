@@ -1139,14 +1139,17 @@
 
             <!-- ================= WIDGET TYPE 8: SCHOOL SCHEDULE ================= -->
             <div v-else-if="w.widget_type === 'schedule'" class="h-full flex flex-col justify-between overflow-hidden">
-              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2 gap-2">
                 <div class="flex items-center gap-2">
                   <span class="font-mono text-xs uppercase tracking-widest text-violet-400 font-semibold">{{ getLocalizedWidgetLabel('schedule', 'SCHOOL SCHEDULE') }}</span>
                 </div>
-                <span v-if="selectedProfile" class="text-[10px] font-mono px-2 py-0.5 rounded-full" :style="{ backgroundColor: selectedProfile.color + '22', color: selectedProfile.color }">
-                  {{ selectedProfile.name }}
-                </span>
-                <span v-else class="text-[10px] font-mono text-neutral-500">Student</span>
+                <div class="flex items-center gap-2">
+                  <button @click.stop="refreshDashboardData" class="text-[9px] font-mono uppercase tracking-widest text-violet-200 hover:text-white border border-violet-800/70 rounded px-1.5 py-0.5">Refresh</button>
+                  <span v-if="selectedProfile" class="text-[10px] font-mono px-2 py-0.5 rounded-full" :style="{ backgroundColor: selectedProfile.color + '22', color: selectedProfile.color }">
+                    {{ selectedProfile.name }}
+                  </span>
+                  <span v-else class="text-[10px] font-mono text-neutral-500">Student</span>
+                </div>
               </div>
 
               <div class="overflow-auto rounded-xl border border-neutral-800 bg-neutral-950/60">
@@ -1182,9 +1185,12 @@
 
             <!-- ================= WIDGET TYPE 9: SCHOOL SUMMARY ================= -->
             <div v-else-if="w.widget_type === 'school_summary'" class="h-full flex flex-col justify-between overflow-hidden">
-              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2 gap-2">
                 <span class="font-mono text-xs uppercase tracking-widest text-violet-400 font-semibold">{{ getLocalizedWidgetLabel('summary', 'DAY SUMMARY') }}</span>
-                <span class="text-[10px] font-mono text-neutral-500">{{ currentDate.short }}</span>
+                <div class="flex items-center gap-2">
+                  <span class="text-[10px] font-mono text-neutral-500">{{ currentDate.short }}</span>
+                  <button @click.stop="refreshDashboardData" class="text-[9px] font-mono uppercase tracking-widest text-violet-200 hover:text-white border border-violet-800/70 rounded px-1.5 py-0.5">Refresh</button>
+                </div>
               </div>
 
               <div class="space-y-2 overflow-y-auto pr-1">
@@ -1216,9 +1222,12 @@
 
             <!-- ================= WIDGET TYPE 10: LIBRUS GRADES ================= -->
             <div v-else-if="w.widget_type === 'school_grades'" class="h-full flex flex-col justify-between overflow-hidden">
-              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2 gap-2">
                 <span class="font-mono text-xs uppercase tracking-widest text-yellow-400 font-semibold">{{ getLocalizedWidgetLabel('grades', 'Librus Grades') }}</span>
-                <span class="text-[10px] font-mono text-neutral-500">{{ getNormalizedGrades().length }} items</span>
+                <div class="flex items-center gap-2">
+                  <button @click.stop="refreshDashboardData" class="text-[9px] font-mono uppercase tracking-widest text-yellow-200 hover:text-white border border-yellow-800/70 rounded px-1.5 py-0.5">Refresh</button>
+                  <span class="text-[10px] font-mono text-neutral-500">{{ getNormalizedGrades().length }} items</span>
+                </div>
               </div>
 
               <div v-if="!getNormalizedGrades() || getNormalizedGrades().length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
@@ -2043,6 +2052,27 @@
           return profiles.value.find(p => p.id === selectedProfileId.value) || null;
         });
 
+        async function refreshDashboardData() {
+          try {
+            const res = await fetch('/api/admin/data');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data.notes) notes.value = data.notes;
+            if (data.tasks) tasks.value = data.tasks;
+            if (data.profiles) profiles.value = data.profiles;
+            if (data.schedules) schedules.value = data.schedules;
+            if (data.lists) lists.value = data.lists;
+            if (data.page_configs) pageConfigs.value = data.page_configs;
+            if (data.settings) settings.value = { ...settings.value, ...data.settings };
+            if (data.librus) librusData.value = { ...librusData.value, ...data.librus };
+            if (data.events && Array.isArray(data.events)) events.value = data.events;
+            if (data.photos && Array.isArray(data.photos)) photos.value = data.photos;
+            if (data.layouts) layouts.value = data.layouts;
+          } catch (err) {
+            console.warn('Refresh failed', err);
+          }
+        }
+
         // ==========================================================================
         // Theme & Font Size Resolution System
         // Resolution: Widget override -> Page override -> Profile default -> Global default
@@ -2525,6 +2555,64 @@
           const lessons = Array.isArray(row && row.lessons) ? row.lessons.filter(Boolean) : [];
           const lessonNames = lessons.map(lesson => lesson.name || lesson.subject || '').filter(Boolean);
           const summaryParts = [];
+          const lang = normalizeLanguage(effectiveLanguage.value);
+          const profileName = selectedProfile.value ? selectedProfile.value.name : 'kid';
+
+          const labelMap = {
+            en: {
+              weather: 'Weather',
+              dressWarm: 'Dress warmly',
+              snowExpected: 'Snow is expected today.',
+              cold: 'It is cold outside, so keep your layers on.',
+              firstLesson: 'Your first lesson is',
+              books: 'Take books for',
+              tasks: 'You have home tasks planned',
+              gradePraise: 'You did great yesterday with',
+              schoolNote: 'School note',
+              hello: 'Hi',
+              intro: 'Here is your plan for today:'
+            },
+            uk: {
+              weather: 'Погода',
+              dressWarm: 'Одягайся тепло',
+              snowExpected: 'Сьогодні очікується сніг.',
+              cold: 'На вулиці холодно, тримайся кількох шарів одягу.',
+              firstLesson: 'Твій перший урок —',
+              books: 'Візьми книги для',
+              tasks: 'У тебе заплановані домашні справи',
+              gradePraise: 'Ти молодець, вчора були оцінки',
+              schoolNote: 'Шкільне повідомлення',
+              hello: 'Привіт',
+              intro: 'Ось твій план на сьогодні:'
+            },
+            ru: {
+              weather: 'Погода',
+              dressWarm: 'Одевайся тепло',
+              snowExpected: 'Сегодня ожидается снег.',
+              cold: 'На улице холодно, не забудь слои одежды.',
+              firstLesson: 'Твой первый урок —',
+              books: 'Возьми книги для',
+              tasks: 'У тебя запланированы домашние дела',
+              gradePraise: 'Ты молодец, вчера были оценки',
+              schoolNote: 'Школьное сообщение',
+              hello: 'Привет',
+              intro: 'Вот твой план на сегодня:'
+            },
+            pl: {
+              weather: 'Pogoda',
+              dressWarm: 'Ubierz się ciepło',
+              snowExpected: 'Dziś spodziewany jest śnieg.',
+              cold: 'Na zewnątrz jest zimno, więc miej ciepłe warstwy.',
+              firstLesson: 'Twoja pierwsza lekcja to',
+              books: 'Zabierz książki do',
+              tasks: 'Masz zaplanowane zadania domowe',
+              gradePraise: 'Dobrze sobie poradziłeś wczoraj z',
+              schoolNote: 'Wiadomość szkolna',
+              hello: 'Cześć',
+              intro: 'Oto twój plan na dziś:'
+            }
+          };
+          const labels = labelMap[lang] || labelMap.en;
 
           if (includeWeather && weather.value) {
             const temp = Number(weather.value.temperature ?? weather.value.temp ?? weather.value.current ?? 0);
@@ -2532,46 +2620,58 @@
             const coldWeather = Number.isFinite(temp) && temp <= 5;
             const snowWeather = /snow|sleet|storm|freeze|freez|cold/i.test(condition) || coldWeather;
             if (snowWeather) {
-              summaryParts.push('Dress warmly — snow is expected today.');
+              summaryParts.push(`${labels.dressWarm} — ${labels.snowExpected}`);
             } else if (Number.isFinite(temp) && temp < 12) {
-              summaryParts.push('Dress warmly — it is cold outside.');
+              summaryParts.push(`${labels.dressWarm} — ${labels.cold}`);
             } else {
-              summaryParts.push(`Weather: ${temp}°${weather.value.unit || 'C'} • ${condition || 'Clear'}`);
+              summaryParts.push(`${labels.weather}: ${temp}°${weather.value.unit || 'C'} • ${condition || 'Clear'}`);
             }
           }
 
           if (lessons.length) {
             const firstLesson = lessons[0];
             const schoolTime = firstLesson.start && firstLesson.end ? `${firstLesson.start}-${firstLesson.end}` : firstLesson.start || '08:00';
-            summaryParts.push(`Your first lesson is ${firstLesson.name || 'Class'} (${schoolTime}).`);
+            summaryParts.push(`${labels.firstLesson} ${firstLesson.name || 'Class'} (${schoolTime}).`);
             if (lessonNames.length > 1) {
-              summaryParts.push(`Take books for ${lessonNames.slice(0, 3).join(', ')}.`);
+              summaryParts.push(`${labels.books} ${lessonNames.slice(0, 3).join(', ')}.`);
             }
           }
 
           const taskSummary = getFilteredTasksForWidget({ widget_type: 'tasks', config: { filter: 'today' }}).slice(0, 2);
           if (taskSummary.length) {
-            summaryParts.push(`You have ${taskSummary.length} home task${taskSummary.length > 1 ? 's' : ''} planned: ${taskSummary.map(item => item.content).join(', ')}.`);
+            summaryParts.push(`${labels.tasks}: ${taskSummary.map(item => item.content).join(', ')}.`);
           }
 
-          const gradeSummary = getNormalizedGrades().slice(0, 2).map(grade => grade.value).filter(Boolean);
+          const gradeSummary = getNormalizedGrades().filter(grade => grade && grade.value).slice(0, 2).map(grade => grade.value);
           if (gradeSummary.length) {
-            summaryParts.push(`You did great yesterday with ${gradeSummary.join(', ')}.`);
+            summaryParts.push(`${labels.gradePraise} ${gradeSummary.join(', ')}.`);
           }
 
-          const notifSummary = Array.isArray(librusData.value.notifications) ? librusData.value.notifications.slice(0, 2).map(item => item.title || item.name || item.message || 'Notice') : [];
+          const notifSummary = Array.isArray(librusData.value.notifications) ? librusData.value.notifications.slice(0, 1).map(item => item.title || item.name || item.message || 'Notice') : [];
           if (notifSummary.length) {
-            summaryParts.push(`School note: ${notifSummary.join(' • ')}.`);
+            summaryParts.push(`${labels.schoolNote}: ${notifSummary.join(' • ')}.`);
           }
 
-          if (summaryParts.length) return summaryParts.join(' ');
-          if (row && lessons.length) return `${row.day}: ${lessons.map(lesson => `${lesson.start}-${lesson.end} ${lesson.name}`).join(' • ')}`;
+          const intro = `${labels.hello} ${profileName}`;
+          if (summaryParts.length) {
+            return `${intro} — ${labels.intro} ${summaryParts.join(' ')}`;
+          }
+          if (row && lessons.length) return `${intro} — ${row.day}: ${lessons.map(lesson => `${lesson.start}-${lesson.end} ${lesson.name}`).join(' • ')}`;
           return '';
         }
 
         const selectedProfileSchedule = computed(() => {
-          if (!selectedProfileId.value) return schedules.value[0] || null;
-          return schedules.value.find(s => Number(s.profile_id) === Number(selectedProfileId.value)) || schedules.value[0] || null;
+          const currentProfile = selectedProfile.value;
+          const matches = schedules.value.filter(s => Number(s.profile_id) === Number(selectedProfileId.value));
+          if (matches.length) return matches[0];
+          if (currentProfile) {
+            const byName = schedules.value.find(s => {
+              const name = String(s.profile_name || s.name || '').toLowerCase();
+              return name.includes(String(currentProfile.name || '').toLowerCase());
+            });
+            if (byName) return byName;
+          }
+          return schedules.value.find(s => s.profile_id === null || s.profile_id === 0) || schedules.value[0] || null;
         });
 
         function getSchoolScheduleRows(widget) {
