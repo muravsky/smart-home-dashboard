@@ -2631,6 +2631,11 @@
           return '';
         }
 
+        const isSchoolDayLabel = (label) => {
+          const day = String(label || '').trim().toLowerCase();
+          return ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].includes(day);
+        };
+
         const isRealSchedule = (schedule) => {
           if (!schedule || !Array.isArray(schedule.schedule) || schedule.schedule.length === 0) return false;
           const name = String(schedule.profile_name || schedule.name || '').toLowerCase();
@@ -2685,16 +2690,18 @@
           const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
           const todayKey = dayNames[today.getDay()];
 
-          return source.map(dayRow => ({
-            ...dayRow,
-            isToday: (dayRow.day || '').toLowerCase() === todayKey.toLowerCase(),
-            lessons: Array.isArray(dayRow.lessons) ? dayRow.lessons.map((lesson, idx) => ({
-              ...lesson,
-              number: lesson.number || idx + 1,
-              name: lesson.name || 'Free',
-              room: lesson.room || '—'
-            })) : []
-          }));
+          return source
+            .filter(dayRow => isSchoolDayLabel(dayRow && dayRow.day))
+            .map(dayRow => ({
+              ...dayRow,
+              isToday: (dayRow.day || '').toLowerCase() === todayKey.toLowerCase(),
+              lessons: Array.isArray(dayRow.lessons) ? dayRow.lessons.map((lesson, idx) => ({
+                ...lesson,
+                number: lesson.number || idx + 1,
+                name: lesson.name || 'Free',
+                room: lesson.room || '—'
+              })) : []
+            }));
         }
 
         function getColSpanClass(w) {
