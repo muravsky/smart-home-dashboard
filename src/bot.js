@@ -20,7 +20,9 @@ const {
   getLists,
   insertList,
   insertListItem,
-  updateList
+  updateList,
+  toggleListItemChecked,
+  insertAuditLog
 } = require('./db');
 
 // Save a Telegram photo to disk and DB
@@ -91,16 +93,15 @@ function getOrCreateDashboardList(type, name, icon = '📋') {
 
 function resolveProfileIdFromName(rawName, senderProfile) {
   if (!rawName) return senderProfile ? senderProfile.id : null;
-  const normalized = String(rawName).trim();
+  const normalized = String(rawName).trim().toLowerCase();
   if (!normalized) return senderProfile ? senderProfile.id : null;
 
   const profiles = getProfiles();
-  const match = profiles.find((profile) => {
-    const name = (profile.name || '').toLowerCase();
-    return name === normalized.toLowerCase() || name.includes(normalized.toLowerCase());
-  });
+  const exactMatch = profiles.find((profile) => (profile.name || '').toLowerCase() === normalized);
+  if (exactMatch) return exactMatch.id;
 
-  return match ? match.id : (senderProfile ? senderProfile.id : null);
+  const partialMatch = profiles.find((profile) => (profile.name || '').toLowerCase().includes(normalized));
+  return partialMatch ? partialMatch.id : (senderProfile ? senderProfile.id : null);
 }
 
 function normalizeDateString(value) {
@@ -113,6 +114,129 @@ function normalizeDateString(value) {
     return date.toISOString().slice(0, 10);
   }
   return null;
+}
+
+// Helper: execute all actions returned by Gemini
+async function applyParsedGeminiActions(parsedData, senderProfile, ioInstance = null) {
+  const { notes, tasks, shopping_items, calendar_events, timer } = parsedData || {};
+  const senderName = senderProfile ? senderProfile.name : null;
+  const senderId = senderProfile ? senderProfile.id : null;
+  const actionsSummary = [];
+
+  if (Array.isArray(notes) && notes.length > 0) {
+    for (const note of notes) {
+      const content = senderName ? `[${senderName}]: ${note}` : note;
+      insertNote(content);
+    }
+    actionsSummary.push(`Added ${notes.length} note(s)`);
+  }
+
+  if (Array.isArray(tasks) && tasks.length > 0) {
+    const tasksList = getOrCreateDashboardList('tasks', 'Family Tasks', '✅');
+    for (const task of tasks) {
+      const assigneeProfileId = resolveProfileIdFromName(task.assignee || senderName, senderProfile);
+      insertListItem({
+        list_id: tasksList.id,
+        content: task.title,
+        assignee_profile_id: assigneeProfileId,
+        reward: Number(task.reward) || 0,
+        due_date: normalizeDateString(task.due_date) || task.due_date || null,
+        due_time: task.due_time || null,
+        recurrence: task.recurrence || 'none',
+        recurrence_interval: Number(task.recurrence_interval) || 1,
+        recurrence_days: task.recurrence_days || null
+      });
+      insertTask({
+        title: task.title,
+        assignee: task.assignee || senderName,
+        reward: Number(task.reward) || 0
+      });
+    }
+    actionsSummary.push(`Created ${tasks.length} task(s)`);
+  }
+
+  if (Array.isArray(shopping_items) && shopping_items.length > 0) {
+    const shopList = getOrCreateDashboardList('shopping', 'Shopping List', '🛒');
+    for (const item of shopping_items) {
+      insertListItem({
+        list_id: shopList.id,
+        content: item.content,
+        assignee_profile_id: senderId,
+        reward: 0
+      });
+    }
+    actionsSummary.push(`Added ${shopping_items.length} shopping item(s)`);
+  }
+
+  if (Array.isArray(calendar_events) && calendar_events.length > 0) {
+    for (const ev of calendar_events) {
+      const startIso = ev.time ? `${ev.date}T${ev.time}:00` : `${ev.date}T09:00:00`;
+      insertCalendarEvent({
+        title: ev.title,
+        start_datetime: startIso,
+        all_day: ev.all_day ? 1 : 0,
+        profile_id: senderId,
+        source: 'telegram'
+      });
+    }
+    actionsSummary.push(`Scheduled ${calendar_events.length} event(s)`);
+  }
+
+  if (timer && timer.minutes) {
+    if (ioInstance) {
+      ioInstance.emit('timer:set', { minutes: Number(timer.minutes), action: timer.action || 'start' });
+    }
+    actionsSummary.push(`Set timer for ${timer.minutes} min`);
+  }
+
+  const updatedData = getDashboardData();
+  if (ioInstance) {
+    ioInstance.emit('dashboard_update', updatedData);
+  }
+  return {
+    updatedData,
+    summary: actionsSummary.join(', ') || 'No actions taken'
+  };
+}
+
+function buildConfirmationMessage(parsedData, senderProfile) {
+  const { notes, tasks, shopping_items, calendar_events, timer, response_message } = parsedData || {};
+  const greeting = senderProfile ? `👋 *Hi ${senderProfile.name}!*` : `✅ *Smart Home Dashboard Updated!*`;
+  let msg = `${greeting}\n`;
+
+  if (response_message) {
+    msg += `_${response_message}_\n\n`;
+  }
+
+  if (tasks && tasks.length > 0) {
+    msg += `📋 *Tasks created:*\n` + tasks.map(t => {
+      const who = t.assignee ? `(@${t.assignee}) ` : '';
+      const rew = t.reward ? ` [+${t.reward}]` : '';
+      return `• ${t.title} ${who}${rew}`;
+    }).join('\n') + '\n';
+  }
+
+  if (shopping_items && shopping_items.length > 0) {
+    msg += `🛒 *Shopping list updated:*\n` + shopping_items.map(s => `• ${s.content}`).join('\n') + '\n';
+  }
+
+  if (calendar_events && calendar_events.length > 0) {
+    msg += `📅 *Calendar events scheduled:*\n` + calendar_events.map(e => `• ${e.title} (${e.date} ${e.time || ''})`).join('\n') + '\n';
+  }
+
+  if (notes && notes.length > 0) {
+    msg += `📝 *Notes saved:*\n` + notes.map(n => `• ${n}`).join('\n') + '\n';
+  }
+
+  if (timer && timer.minutes) {
+    msg += `⏳ *Kitchen Timer:* Set for ${timer.minutes} minutes!\n`;
+  }
+
+  if (!tasks?.length && !shopping_items?.length && !calendar_events?.length && !notes?.length && !timer) {
+    msg += `_(No specific actions detected)_`;
+  }
+
+  return msg.trim();
 }
 
 /**
@@ -144,6 +268,16 @@ function initBot(io) {
 
     if (whitelist.length > 0 && !whitelist.includes(senderId)) {
       console.warn(`[Telegram] Blocked unauthorized message from ID: ${senderId} (@${ctx.from?.username || 'unknown'})`);
+      insertAuditLog({
+        source: 'telegram',
+        sender_id: senderId,
+        sender_name: ctx.from?.username || ctx.from?.first_name || 'unknown',
+        message_type: ctx.message?.text ? 'text' : (ctx.message?.voice ? 'voice' : (ctx.message?.photo ? 'photo' : 'other')),
+        raw_input: ctx.message?.text || ctx.message?.caption || null,
+        action_taken: 'Blocked by TELEGRAM_WHITELIST_IDS',
+        status: 'blocked',
+        error_message: `Sender ${senderId} not in whitelist`
+      });
       return;
     }
 
@@ -168,6 +302,15 @@ function initBot(io) {
       `• /done <id> — Mark a task item complete\n` +
       `• /photos — List screensaver photos\n` +
       `• /help — Show this message`;
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: String(ctx.from?.id),
+      sender_name: ctx.from?.first_name || ctx.from?.username || 'User',
+      message_type: 'command',
+      raw_input: ctx.message?.text || '/help',
+      action_taken: 'Displayed help menu',
+      status: 'success'
+    });
     await ctx.replyWithMarkdown(msg);
   });
 
@@ -187,13 +330,33 @@ function initBot(io) {
       `• Notes today: ${notes.length}\n` +
       `• Events today: ${todayEvents.length}\n\n` +
       `Use /tasks, /shopping, /notes, or just send a normal message to Gemini.`;
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: String(ctx.from?.id),
+      sender_name: ctx.from?.first_name || ctx.from?.username || 'User',
+      message_type: 'command',
+      raw_input: ctx.message?.text || '/status',
+      action_taken: `Reported status: ${taskCount} tasks, ${shoppingCount} shopping, ${notes.length} notes, ${todayEvents.length} events`,
+      status: 'success'
+    });
     await ctx.replyWithMarkdown(reply);
   });
 
   bot.command('tasks', async (ctx) => {
     const taskList = getOrCreateDashboardList('tasks', 'Family Tasks', '✅');
     const items = Array.isArray(taskList.items) ? taskList.items : [];
-    if (items.length === 0) return ctx.reply('📋 No tasks recorded yet.');
+    if (items.length === 0) {
+      insertAuditLog({
+        source: 'telegram_command',
+        sender_id: String(ctx.from?.id),
+        sender_name: ctx.from?.first_name || ctx.from?.username || 'User',
+        message_type: 'command',
+        raw_input: ctx.message?.text || '/tasks',
+        action_taken: 'Listed tasks (empty)',
+        status: 'success'
+      });
+      return ctx.reply('📋 No tasks recorded yet.');
+    }
 
     let reply = `📋 *Tasks (${items.length}):*\n\n`;
     for (const item of items) {
@@ -204,40 +367,104 @@ function initBot(io) {
       reply += `${checked} #${item.id}: ${item.content}${assignee}${due}${reward}\n`;
     }
     reply += `\n_Tip: /done <id> to complete a task._`;
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: String(ctx.from?.id),
+      sender_name: ctx.from?.first_name || ctx.from?.username || 'User',
+      message_type: 'command',
+      raw_input: ctx.message?.text || '/tasks',
+      action_taken: `Listed ${items.length} tasks`,
+      status: 'success'
+    });
     await ctx.replyWithMarkdown(reply);
   });
 
   bot.command('shopping', async (ctx) => {
     const shoppingList = getOrCreateDashboardList('shopping', 'Shopping List', '🛒');
     const items = Array.isArray(shoppingList.items) ? shoppingList.items : [];
-    if (items.length === 0) return ctx.reply('🛒 Shopping list is empty.');
+    if (items.length === 0) {
+      insertAuditLog({
+        source: 'telegram_command',
+        sender_id: String(ctx.from?.id),
+        sender_name: ctx.from?.first_name || ctx.from?.username || 'User',
+        message_type: 'command',
+        raw_input: ctx.message?.text || '/shopping',
+        action_taken: 'Listed shopping (empty)',
+        status: 'success'
+      });
+      return ctx.reply('🛒 Shopping list is empty.');
+    }
 
     let reply = `🛒 *Shopping List (${items.length}):*\n\n`;
     for (const item of items) {
       const checked = item.checked === 1 ? '✅' : '⬜';
       reply += `${checked} ${item.content}\n`;
     }
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: String(ctx.from?.id),
+      sender_name: ctx.from?.first_name || ctx.from?.username || 'User',
+      message_type: 'command',
+      raw_input: ctx.message?.text || '/shopping',
+      action_taken: `Listed ${items.length} shopping items`,
+      status: 'success'
+    });
     await ctx.replyWithMarkdown(reply);
   });
 
   bot.command('notes', async (ctx) => {
     const notes = getNotes(15);
-    if (notes.length === 0) return ctx.reply('📝 No notes recorded yet.');
+    if (notes.length === 0) {
+      insertAuditLog({
+        source: 'telegram_command',
+        sender_id: String(ctx.from?.id),
+        sender_name: ctx.from?.first_name || ctx.from?.username || 'User',
+        message_type: 'command',
+        raw_input: ctx.message?.text || '/notes',
+        action_taken: 'Listed notes (empty)',
+        status: 'success'
+      });
+      return ctx.reply('📝 No notes recorded yet.');
+    }
 
     let reply = `📝 *Recent Notes (${notes.length}):*\n\n`;
     for (const n of notes) reply += `• ${n.content}\n`;
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: String(ctx.from?.id),
+      sender_name: ctx.from?.first_name || ctx.from?.username || 'User',
+      message_type: 'command',
+      raw_input: ctx.message?.text || '/notes',
+      action_taken: `Listed ${notes.length} notes`,
+      status: 'success'
+    });
     await ctx.replyWithMarkdown(reply);
   });
 
   bot.command('addnote', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
     const text = ctx.message.text.replace(/^\/addnote\s*/i, '').trim();
     if (!text) return ctx.reply('Usage: /addnote <text>');
     const note = insertNote(text);
     io.emit('dashboard_update', getDashboardData());
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: senderId,
+      sender_name: senderName,
+      message_type: 'command',
+      raw_input: ctx.message.text,
+      action_taken: `Saved note #${note.id}: "${note.content}"`,
+      status: 'success'
+    });
     await ctx.replyWithMarkdown(`✅ *Note saved:*\n\n_${note.content}_`);
   });
 
   bot.command('addtask', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
     const text = ctx.message.text.replace(/^\/addtask\s*/i, '').trim();
     if (!text) return ctx.reply('Usage: /addtask <title> [reward] [assignee]');
 
@@ -247,7 +474,6 @@ function initBot(io) {
     const titleTokens = tokens.filter((token) => !(/^\+?\d+$/.test(token)) && !token.startsWith('@'));
     const title = titleTokens.join(' ');
 
-    const senderProfile = getProfileByTelegramId(String(ctx.from.id));
     const tasksList = getOrCreateDashboardList('tasks', 'Family Tasks', '✅');
     const item = insertListItem({
       list_id: tasksList.id,
@@ -264,10 +490,22 @@ function initBot(io) {
     });
 
     io.emit('dashboard_update', getDashboardData());
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: senderId,
+      sender_name: senderName,
+      message_type: 'command',
+      raw_input: ctx.message.text,
+      action_taken: `Created task #${item.id} "${title.trim()}" (reward: ${reward})`,
+      status: 'success'
+    });
     await ctx.replyWithMarkdown(`✅ *Task added:*\n\n• #${item.id} ${title.trim()}${reward ? ` [+${reward} pts]` : ''}`);
   });
 
   bot.command('addshopping', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
     const text = ctx.message.text.replace(/^\/addshopping\s*/i, '').trim();
     if (!text) return ctx.reply('Usage: /addshopping <item>');
 
@@ -278,20 +516,53 @@ function initBot(io) {
     });
 
     io.emit('dashboard_update', getDashboardData());
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: senderId,
+      sender_name: senderName,
+      message_type: 'command',
+      raw_input: ctx.message.text,
+      action_taken: `Added shopping item #${item.id} "${text}"`,
+      status: 'success'
+    });
     await ctx.replyWithMarkdown(`✅ *Added to shopping list:*\n\n• ${text}`);
   });
 
   bot.command('timer', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
     const text = ctx.message.text.replace(/^\/timer\s*/i, '').trim();
     const minutes = Number(text) || 0;
     if (!minutes || minutes <= 0) return ctx.reply('Usage: /timer <minutes>');
     io.emit('timer:set', { minutes, action: 'start' });
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: senderId,
+      sender_name: senderName,
+      message_type: 'command',
+      raw_input: ctx.message.text,
+      action_taken: `Started timer for ${minutes} minutes`,
+      status: 'success'
+    });
     await ctx.replyWithMarkdown(`⏳ *Kitchen timer set for ${minutes} minutes!*`);
   });
 
   bot.command('photos', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
     const photos = getPhotos({ screensaverOnly: false });
     if (photos.length === 0) {
+      insertAuditLog({
+        source: 'telegram_command',
+        sender_id: senderId,
+        sender_name: senderName,
+        message_type: 'command',
+        raw_input: ctx.message.text,
+        action_taken: 'Listed photos (empty)',
+        status: 'success'
+      });
       return ctx.reply('🖼️ No photos yet. Send me a photo to add it to the screensaver!');
     }
 
@@ -302,19 +573,40 @@ function initBot(io) {
       reply += `• *#${p.id}* ${inSS}${cap} _(${p.source})_\n`;
     }
     reply += `\nSend a photo to add more!`;
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: senderId,
+      sender_name: senderName,
+      message_type: 'command',
+      raw_input: ctx.message.text,
+      action_taken: `Listed ${photos.length} photos`,
+      status: 'success'
+    });
     await ctx.replyWithMarkdown(reply);
   });
 
   bot.command('school', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
     const login = process.env.LIBRUS_LOGIN;
     const password = process.env.LIBRUS_PASSWORD;
 
     if (!login || !password) {
+      insertAuditLog({
+        source: 'telegram_command',
+        sender_id: senderId,
+        sender_name: senderName,
+        message_type: 'command',
+        raw_input: ctx.message.text,
+        action_taken: 'Requested school info but credentials not configured',
+        status: 'error',
+        error_message: 'Missing Librus credentials'
+      });
       return ctx.reply('📚 School sync is not configured. Set LIBRUS_LOGIN and LIBRUS_PASSWORD in the environment first.');
     }
 
     try {
-      const senderProfile = getProfileByTelegramId(String(ctx.from.id));
       const data = await fetchLibrusData({ login, password });
       const summary = buildMorningSummary(senderProfile || { name: ctx.from.first_name || 'Student' }, data.normalizedTimetable || data.timetable);
       const notifications = (data.notifications || []).slice(0, 3);
@@ -324,15 +616,37 @@ function initBot(io) {
         parts.push(`\n*Notifications:*\n${notifications.map((n) => `• ${n.title || n.name || 'Notice'}`).join('\n')}`);
       }
 
+      insertAuditLog({
+        source: 'telegram_command',
+        sender_id: senderId,
+        sender_name: senderName,
+        message_type: 'command',
+        raw_input: ctx.message.text,
+        action_taken: 'Retrieved Librus school summary and notifications',
+        status: 'success'
+      });
       await ctx.replyWithMarkdown(parts.join('\n'));
     } catch (err) {
       console.error('[Telegram] School sync failed:', err.message);
+      insertAuditLog({
+        source: 'telegram_command',
+        sender_id: senderId,
+        sender_name: senderName,
+        message_type: 'command',
+        raw_input: ctx.message.text,
+        action_taken: 'Failed to retrieve Librus data',
+        status: 'error',
+        error_message: err.message
+      });
       await ctx.reply(`❌ Failed to load school data: ${err.message}`);
     }
   });
 
   // Command: /today — Today's events and tasks overview
   bot.command('today', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
     const todayStr = new Date().toISOString().slice(0, 10);
     const allEvents = getCalendarEvents({ limit: 100 });
     const todayEvents = allEvents.filter(e => e.start_datetime && e.start_datetime.startsWith(todayStr));
@@ -365,11 +679,23 @@ function initBot(io) {
       if (tasks.length > 5) reply += `_...and ${tasks.length - 5} more._\n`;
     }
 
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: senderId,
+      sender_name: senderName,
+      message_type: 'command',
+      raw_input: ctx.message.text,
+      action_taken: `Reported today overview: ${todayEvents.length} events, ${tasks.length} pending tasks`,
+      status: 'success'
+    });
     await ctx.replyWithMarkdown(reply);
   });
 
   // Command: /event <YYYY-MM-DD> <HH:MM> <title>
   bot.command('event', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
     const parts = ctx.message.text.trim().split(/\s+/);
     if (parts.length < 4) {
       return ctx.reply('Usage: /event <YYYY-MM-DD> <HH:MM> <title>\nExample: /event 2026-09-25 18:00 Soccer match');
@@ -388,158 +714,141 @@ function initBot(io) {
         source: 'telegram'
       });
       io.emit('dashboard_update', getDashboardData());
+      insertAuditLog({
+        source: 'telegram_command',
+        sender_id: senderId,
+        sender_name: senderName,
+        message_type: 'command',
+        raw_input: ctx.message.text,
+        action_taken: `Created calendar event #${ev.id} "${title}" on ${startIso}`,
+        status: 'success'
+      });
       await ctx.replyWithMarkdown(`✅ *Calendar Event Added!*\n\n📅 *${title}*\n🕒 ${dateStr} at ${timeStr}`);
     } catch (err) {
+      insertAuditLog({
+        source: 'telegram_command',
+        sender_id: senderId,
+        sender_name: senderName,
+        message_type: 'command',
+        raw_input: ctx.message.text,
+        action_taken: 'Failed to create calendar event',
+        status: 'error',
+        error_message: err.message
+      });
       await ctx.reply(`❌ Failed to add event: ${err.message}`);
     }
   });
 
   // Command: /done <id>
   bot.command('done', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
     const args = ctx.message.text.split(' ').slice(1);
     const taskId = parseInt(args[0], 10);
 
-    if (isNaN(taskId)) return ctx.reply('Usage: /done <task_id>  e.g. /done 3');
-
-    const tasks = getTasks();
-    const task = tasks.find((t) => t.id === taskId);
-    if (!task) {
-      const taskLists = getLists();
-      for (const list of taskLists) {
-        if (list.type === 'tasks' && Array.isArray(list.items)) {
-          const found = list.items.find(item => item.id === taskId);
-          if (found) {
-            const itemId = found.id;
-            const targetList = list;
-            const current = targetList.items.find((it) => it.id === itemId);
-            if (current) {
-              current.checked = 1;
-              io.emit('dashboard_update', getDashboardData());
-              await ctx.reply(`✅ Task #${taskId} "${current.content}" marked complete!`);
-              return;
-            }
-          }
-        }
-      }
-      return ctx.reply(`❌ Task #${taskId} not found.`);
+    if (isNaN(taskId)) {
+      insertAuditLog({
+        source: 'telegram_command',
+        sender_id: senderId,
+        sender_name: senderName,
+        message_type: 'command',
+        raw_input: ctx.message.text,
+        action_taken: 'Invalid syntax for /done',
+        status: 'error',
+        error_message: 'Invalid task ID'
+      });
+      return ctx.reply('Usage: /done <task_id>  e.g. /done 3');
     }
 
-    updateTaskStatus(taskId, 'completed');
-    io.emit('dashboard_update', getDashboardData());
-    await ctx.reply(`✅ Task #${taskId} "${task.title}" marked complete!`);
+    // Check list_items first (primary task store for kiosk and admin)
+    const taskLists = getLists();
+    for (const list of taskLists) {
+      if (Array.isArray(list.items)) {
+        const found = list.items.find(item => item.id === taskId);
+        if (found) {
+          toggleListItemChecked(found.id, true);
+          io.emit('dashboard_update', getDashboardData());
+          insertAuditLog({
+            source: 'telegram_command',
+            sender_id: senderId,
+            sender_name: senderName,
+            message_type: 'command',
+            raw_input: ctx.message.text,
+            action_taken: `Marked list task #${found.id} "${found.content}" completed`,
+            status: 'success'
+          });
+          await ctx.reply(`✅ Task #${taskId} "${found.content}" marked complete!`);
+          return;
+        }
+      }
+    }
+
+    // Fallback: check legacy tasks table
+    const tasks = getTasks();
+    const task = tasks.find((t) => t.id === taskId);
+    if (task) {
+      updateTaskStatus(taskId, 'completed');
+      io.emit('dashboard_update', getDashboardData());
+      insertAuditLog({
+        source: 'telegram_command',
+        sender_id: senderId,
+        sender_name: senderName,
+        message_type: 'command',
+        raw_input: ctx.message.text,
+        action_taken: `Marked legacy task #${task.id} "${task.title}" completed`,
+        status: 'success'
+      });
+      await ctx.reply(`✅ Task #${taskId} "${task.title}" marked complete!`);
+      return;
+    }
+
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: senderId,
+      sender_name: senderName,
+      message_type: 'command',
+      raw_input: ctx.message.text,
+      action_taken: `Task #${taskId} not found`,
+      status: 'error',
+      error_message: `Task #${taskId} not found`
+    });
+    return ctx.reply(`❌ Task #${taskId} not found.`);
   });
 
   // Handle incoming PHOTO messages — save to screensaver
   bot.on('photo', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
     try {
       await ctx.reply('📷 Saving photo to dashboard screensaver...');
       const photo = await saveTelegramPhoto(ctx, io);
       const cap = photo.caption ? `\n_"${photo.caption}"_` : '';
+      insertAuditLog({
+        source: 'telegram_photo',
+        sender_id: senderId,
+        sender_name: senderName,
+        message_type: 'photo',
+        raw_input: photo.caption || photo.filename,
+        action_taken: `Saved photo #${photo.id} (${photo.filename}) to screensaver`,
+        status: 'success'
+      });
       await ctx.replyWithMarkdown(`✅ Photo added to screensaver slideshow! 🖼️${cap}\n\nID: #${photo.id}`);
     } catch (err) {
+      insertAuditLog({
+        source: 'telegram_photo',
+        sender_id: senderId,
+        sender_name: senderName,
+        message_type: 'photo',
+        raw_input: ctx.message?.caption || null,
+        action_taken: 'Failed to save photo',
+        status: 'error',
+        error_message: err.message
+      });
       await ctx.reply(`❌ Failed to save photo: ${err.message}`);
     }
   });
-
-  // Helper: execute all actions returned by Gemini
-  async function applyParsedGeminiActions(parsedData, senderProfile) {
-    const { notes, tasks, shopping_items, calendar_events, timer } = parsedData;
-    const senderName = senderProfile ? senderProfile.name : null;
-    const senderId = senderProfile ? senderProfile.id : null;
-
-    if (Array.isArray(notes)) {
-      for (const note of notes) {
-        const content = senderName ? `[${senderName}]: ${note}` : note;
-        insertNote(content);
-      }
-    }
-
-    if (Array.isArray(tasks)) {
-      for (const task of tasks) {
-        insertTask({
-          title: task.title,
-          assignee: task.assignee || senderName,
-          reward: Number(task.reward) || 0
-        });
-      }
-    }
-
-    if (Array.isArray(shopping_items) && shopping_items.length > 0) {
-      const allLists = getLists();
-      const shopList = allLists.find(l => l.type === 'shopping') || allLists[0];
-      if (shopList) {
-        for (const item of shopping_items) {
-          insertListItem({
-            list_id: shopList.id,
-            content: item.content,
-            assignee_profile_id: senderId,
-            reward: 0
-          });
-        }
-      }
-    }
-
-    if (Array.isArray(calendar_events) && calendar_events.length > 0) {
-      for (const ev of calendar_events) {
-        const startIso = ev.time ? `${ev.date}T${ev.time}:00` : `${ev.date}T09:00:00`;
-        insertCalendarEvent({
-          title: ev.title,
-          start_datetime: startIso,
-          all_day: ev.all_day ? 1 : 0,
-          profile_id: senderId,
-          source: 'telegram'
-        });
-      }
-    }
-
-    if (timer && timer.minutes) {
-      io.emit('timer:set', { minutes: Number(timer.minutes), action: timer.action || 'start' });
-    }
-
-    const updatedData = getDashboardData();
-    io.emit('dashboard_update', updatedData);
-    return updatedData;
-  }
-
-  function buildConfirmationMessage(parsedData, senderProfile) {
-    const { notes, tasks, shopping_items, calendar_events, timer, response_message } = parsedData;
-    const greeting = senderProfile ? `👋 *Hi ${senderProfile.name}!*` : `✅ *Smart Home Dashboard Updated!*`;
-    let msg = `${greeting}\n`;
-
-    if (response_message) {
-      msg += `_${response_message}_\n\n`;
-    }
-
-    if (tasks && tasks.length > 0) {
-      msg += `📋 *Tasks created:*\n` + tasks.map(t => {
-        const who = t.assignee ? `(@${t.assignee}) ` : '';
-        const rew = t.reward ? ` [+${t.reward}]` : '';
-        return `• ${t.title} ${who}${rew}`;
-      }).join('\n') + '\n';
-    }
-
-    if (shopping_items && shopping_items.length > 0) {
-      msg += `🛒 *Shopping list updated:*\n` + shopping_items.map(s => `• ${s.content}`).join('\n') + '\n';
-    }
-
-    if (calendar_events && calendar_events.length > 0) {
-      msg += `📅 *Calendar events scheduled:*\n` + calendar_events.map(e => `• ${e.title} (${e.date} ${e.time || ''})`).join('\n') + '\n';
-    }
-
-    if (notes && notes.length > 0) {
-      msg += `📝 *Notes saved:*\n` + notes.map(n => `• ${n}`).join('\n') + '\n';
-    }
-
-    if (timer && timer.minutes) {
-      msg += `⏳ *Kitchen Timer:* Set for ${timer.minutes} minutes!\n`;
-    }
-
-    if (!tasks?.length && !shopping_items?.length && !calendar_events?.length && !notes?.length && !timer) {
-      msg += `_(No specific actions detected)_`;
-    }
-
-    return msg.trim();
-  }
 
   // Handle incoming voice audio messages (Speech-to-Action via Gemini)
   bot.on('voice', async (ctx) => {
@@ -576,12 +885,33 @@ function initBot(io) {
       });
 
       const parsedData = await parseAudioWithGemini(audioBuffer, 'audio/ogg', senderName);
-      await applyParsedGeminiActions(parsedData, senderProfile);
+      const { summary } = await applyParsedGeminiActions(parsedData, senderProfile, io);
+
+      insertAuditLog({
+        source: 'telegram_voice',
+        sender_id: senderId,
+        sender_name: senderName,
+        message_type: 'voice',
+        raw_input: `Voice message (${fileRef.duration || 0}s)`,
+        parsed_payload: parsedData,
+        action_taken: summary,
+        status: 'success'
+      });
 
       const replyMsg = buildConfirmationMessage(parsedData, senderProfile);
       await ctx.replyWithMarkdown(replyMsg);
     } catch (err) {
       console.error('[Telegram] Failed to process voice message:', err);
+      insertAuditLog({
+        source: 'telegram_voice',
+        sender_id: senderId,
+        sender_name: senderName,
+        message_type: 'voice',
+        raw_input: 'Voice message',
+        action_taken: 'Failed to process voice note',
+        status: 'error',
+        error_message: err.message
+      });
       await ctx.reply(`❌ Failed to process voice: ${err.message}`);
     }
   });
@@ -598,12 +928,33 @@ function initBot(io) {
 
     try {
       const parsedData = await parseTextWithGemini(userText, senderName);
-      await applyParsedGeminiActions(parsedData, senderProfile);
+      const { summary } = await applyParsedGeminiActions(parsedData, senderProfile, io);
+
+      insertAuditLog({
+        source: 'telegram_text',
+        sender_id: senderId,
+        sender_name: senderName,
+        message_type: 'text',
+        raw_input: userText,
+        parsed_payload: parsedData,
+        action_taken: summary,
+        status: 'success'
+      });
 
       const replyMsg = buildConfirmationMessage(parsedData, senderProfile);
       await ctx.replyWithMarkdown(replyMsg);
     } catch (err) {
       console.error('[Telegram] Error processing message:', err);
+      insertAuditLog({
+        source: 'telegram_text',
+        sender_id: senderId,
+        sender_name: senderName,
+        message_type: 'text',
+        raw_input: userText,
+        action_taken: 'Failed to parse/save message with Gemini',
+        status: 'error',
+        error_message: err.message
+      });
       await ctx.reply(`❌ Failed to parse/save message: ${err.message}`);
     }
   });
@@ -618,4 +969,10 @@ function initBot(io) {
   return bot;
 }
 
-module.exports = { initBot };
+module.exports = {
+  initBot,
+  applyParsedGeminiActions,
+  getOrCreateDashboardList,
+  resolveProfileIdFromName,
+  normalizeDateString
+};

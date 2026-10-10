@@ -96,6 +96,13 @@
       >
         ⚙️ Screensaver & Night Mode
       </button>
+      <button 
+        @click="activeTab = 'audit_logs'" 
+        :class="activeTab === 'audit_logs' ? 'border-sky-500 text-sky-400 bg-sky-500/10' : 'border-transparent text-neutral-400 hover:text-white'"
+        class="px-4 py-2 border-b-2 font-mono text-xs font-semibold uppercase tracking-wider transition rounded-t"
+      >
+        📜 Audit Log
+      </button>
     </nav>
 
     <!-- =========================================================================
@@ -1979,6 +1986,166 @@
       </form>
     </div>
 
+    <!-- =========================================================================
+         TAB 8: AUDIT LOG (TELEGRAM & AI BOT)
+         ========================================================================= -->
+    <div v-if="activeTab === 'audit_logs'" class="space-y-6">
+      
+      <!-- AUDIT LOG HEADER & TOOLBAR -->
+      <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="font-mono text-sm font-bold uppercase tracking-wider text-sky-400 flex items-center gap-2">
+            <span>📜</span> TELEGRAM & AI BOT AUDIT LOG
+          </h2>
+          <p class="text-xs text-neutral-400 font-mono mt-1">
+            Real-time record of all incoming commands, voice notes, photos, and AI actions.
+          </p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+          <!-- Source filter -->
+          <div class="flex items-center gap-1.5">
+            <label class="text-[11px] font-mono text-neutral-400">SOURCE:</label>
+            <select 
+              v-model="auditFilterSource" 
+              class="bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs font-mono text-neutral-200 outline-none"
+            >
+              <option value="">All Sources</option>
+              <option value="telegram_command">Telegram Command</option>
+              <option value="telegram_text">Telegram AI Text</option>
+              <option value="telegram_voice">Telegram AI Voice</option>
+              <option value="telegram_photo">Telegram Photo</option>
+              <option value="kiosk_dictation">Kiosk Voice Dictation</option>
+              <option value="admin_simulator">Admin AI Simulator</option>
+              <option value="telegram">Telegram (Blocked/System)</option>
+            </select>
+          </div>
+
+          <!-- Status filter -->
+          <div class="flex items-center gap-1.5">
+            <label class="text-[11px] font-mono text-neutral-400">STATUS:</label>
+            <select 
+              v-model="auditFilterStatus" 
+              class="bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs font-mono text-neutral-200 outline-none"
+            >
+              <option value="">All Statuses</option>
+              <option value="success">Success</option>
+              <option value="error">Error</option>
+              <option value="blocked">Blocked</option>
+            </select>
+          </div>
+
+          <button 
+            type="button"
+            @click="loadAuditLogs" 
+            class="text-xs font-mono bg-neutral-950 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 px-3 py-1.5 rounded transition"
+          >
+            🔄 Refresh
+          </button>
+
+          <button 
+            type="button"
+            @click="clearAllAuditLogs" 
+            class="text-xs font-mono bg-red-950/60 hover:bg-red-900 border border-red-800 text-red-300 px-3 py-1.5 rounded transition"
+          >
+            🗑️ Clear Log
+          </button>
+        </div>
+      </div>
+
+      <!-- AUDIT LOG LIST -->
+      <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg">
+        <div class="flex items-center justify-between mb-4 border-b border-neutral-800 pb-3">
+          <span class="text-xs font-mono text-neutral-400">{{ auditLogs.length }} Entries Found</span>
+          <span v-if="auditLoading" class="text-xs font-mono text-sky-400 animate-pulse">Loading logs...</span>
+        </div>
+
+        <div v-if="auditLogs.length === 0" class="text-neutral-500 text-xs font-mono py-12 text-center border border-dashed border-neutral-800 rounded-lg">
+          No audit log entries recorded yet. Send a message to Telegram, dictate from tablet, or run the AI simulator.
+        </div>
+
+        <div v-else class="space-y-3">
+          <div 
+            v-for="log in auditLogs" 
+            :key="log.id" 
+            class="bg-neutral-950 border border-neutral-800/80 rounded-xl p-4 hover:border-neutral-700 transition space-y-2.5"
+          >
+            <!-- Card Header -->
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-900 pb-2">
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-xs text-neutral-500">#{{ log.id }}</span>
+                <!-- Source badge -->
+                <span 
+                  class="font-mono text-[10px] px-2 py-0.5 rounded border uppercase"
+                  :class="{
+                    'bg-sky-950/60 border-sky-800 text-sky-300': log.source === 'telegram_command',
+                    'bg-purple-950/60 border-purple-800 text-purple-300': log.source === 'telegram_text',
+                    'bg-indigo-950/60 border-indigo-800 text-indigo-300': log.source === 'telegram_voice',
+                    'bg-pink-950/60 border-pink-800 text-pink-300': log.source === 'telegram_photo',
+                    'bg-amber-950/60 border-amber-800 text-amber-300': log.source === 'kiosk_dictation',
+                    'bg-emerald-950/60 border-emerald-800 text-emerald-300': log.source === 'admin_simulator',
+                    'bg-red-950/60 border-red-800 text-red-300': log.status === 'blocked'
+                  }"
+                >
+                  {{ log.source }}
+                </span>
+                <!-- Sender -->
+                <span class="text-xs font-bold text-white">
+                  {{ log.sender_name || 'System' }}
+                </span>
+                <span v-if="log.sender_id" class="text-[10px] font-mono text-neutral-500">
+                  ({{ log.sender_id }})
+                </span>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <!-- Status chip -->
+                <span 
+                  class="text-[10px] font-mono px-2 py-0.5 rounded uppercase font-semibold"
+                  :class="{
+                    'bg-emerald-950/80 text-emerald-300 border border-emerald-800': log.status === 'success',
+                    'bg-red-950/80 text-red-300 border border-red-800': log.status === 'error',
+                    'bg-amber-950/80 text-amber-300 border border-amber-800': log.status === 'blocked'
+                  }"
+                >
+                  {{ log.status }}
+                </span>
+                <!-- Timestamp -->
+                <span class="text-[10px] font-mono text-neutral-500">{{ log.created_at }}</span>
+              </div>
+            </div>
+
+            <!-- Card Body: Raw input & action -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+              <div class="rounded-lg bg-neutral-900/60 border border-neutral-900 p-2.5">
+                <div class="text-[10px] font-mono uppercase tracking-wider text-neutral-500 mb-1">Raw Input / Request</div>
+                <div class="font-mono text-neutral-200 text-xs break-words whitespace-pre-wrap">{{ log.raw_input || '—' }}</div>
+              </div>
+
+              <div class="rounded-lg bg-neutral-900/60 border border-neutral-900 p-2.5">
+                <div class="text-[10px] font-mono uppercase tracking-wider text-neutral-500 mb-1">Action Executed</div>
+                <div class="text-neutral-200 text-xs break-words">{{ log.action_taken || '—' }}</div>
+                <div v-if="log.error_message" class="mt-1 text-red-400 font-mono text-[11px]">
+                  Error: {{ log.error_message }}
+                </div>
+              </div>
+            </div>
+
+            <!-- Parsed Payload (if available) -->
+            <div v-if="log.parsed_payload" class="pt-1">
+              <details class="text-[11px] font-mono group">
+                <summary class="cursor-pointer text-sky-400 hover:text-sky-300 font-mono select-none">
+                  ▶ View AI Parsed Payload (JSON)
+                </summary>
+                <pre class="mt-2 p-2.5 rounded-lg bg-neutral-900 border border-neutral-800 text-emerald-400 font-mono overflow-x-auto text-[11px] max-h-48">{{ formatJsonPayload(log.parsed_payload) }}</pre>
+              </details>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
   </div>
 
   <script>
@@ -1999,6 +2166,11 @@
         const feeds = ref([]);
         const syncingFeeds = ref(false);
         const selectedListId = ref(null);
+
+        const auditLogs = ref([]);
+        const auditFilterSource = ref('');
+        const auditFilterStatus = ref('');
+        const auditLoading = ref(false);
 
         const newFeed = ref({
           name: '',
@@ -2945,6 +3117,59 @@
           }
         }
 
+        function formatJsonPayload(payload) {
+          if (!payload) return '';
+          if (typeof payload === 'object') return JSON.stringify(payload, null, 2);
+          try {
+            return JSON.stringify(JSON.parse(payload), null, 2);
+          } catch(e) {
+            return String(payload);
+          }
+        }
+
+        async function loadAuditLogs() {
+          auditLoading.value = true;
+          try {
+            const params = new URLSearchParams();
+            params.set('limit', '100');
+            if (auditFilterSource.value) params.set('source', auditFilterSource.value);
+            if (auditFilterStatus.value) params.set('status', auditFilterStatus.value);
+            const res = await fetch(`/api/admin/audit-logs?${params.toString()}`);
+            if (res.ok) {
+              auditLogs.value = await res.json();
+            }
+          } catch (e) {
+            console.warn('Failed to load audit logs:', e);
+          } finally {
+            auditLoading.value = false;
+          }
+        }
+
+        async function clearAllAuditLogs() {
+          if (!confirm('Are you sure you want to clear all audit logs?')) return;
+          try {
+            const res = await fetch('/api/admin/audit-logs', { method: 'DELETE' });
+            if (res.ok) {
+              auditLogs.value = [];
+              showAlert('Audit logs cleared successfully');
+            }
+          } catch (e) {
+            showAlert('Failed to clear audit logs: ' + e.message, false);
+          }
+        }
+
+        watch(activeTab, (tab) => {
+          if (tab === 'audit_logs') {
+            loadAuditLogs();
+          }
+        });
+
+        watch([auditFilterSource, auditFilterStatus], () => {
+          if (activeTab.value === 'audit_logs') {
+            loadAuditLogs();
+          }
+        });
+
         onMounted(() => {
           loadData();
           checkLibrusStatus();
@@ -2952,6 +3177,13 @@
 
         return {
           activeTab,
+          auditLogs,
+          auditFilterSource,
+          auditFilterStatus,
+          auditLoading,
+          formatJsonPayload,
+          loadAuditLogs,
+          clearAllAuditLogs,
           schedules,
           scheduleDraft,
           editingSchedule,

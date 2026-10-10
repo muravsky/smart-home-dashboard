@@ -973,7 +973,7 @@
                   <span class="font-mono text-xs uppercase tracking-widest text-emerald-400 font-semibold">
                     {{ selectedProfile ? selectedProfile.name + "'s Chores" : "Family Chores" }}
                   </span>
-                  <span class="text-[10px] font-mono text-neutral-500">({{ displayedTasks.length }})</span>
+                  <span class="text-[10px] font-mono text-neutral-500">({{ getFilteredTasksForWidget(w).length }})</span>
                 </div>
               </div>
               
@@ -1940,16 +1940,24 @@
           const daysInPrev = new Date(year, month, 0).getDate();
 
           const eventDates = new Set(events.value.map(e => e.start_datetime ? e.start_datetime.slice(0, 10) : null).filter(Boolean));
+          const formatIsoDate = (d) => {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const dayNum = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${dayNum}`;
+          };
+          const todayStr = formatIsoDate(today);
 
           const days = [];
           for (let i = firstDay - 1; i >= 0; i--) {
             const d = daysInPrev - i;
-            const dayStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            const dateObj = new Date(year, month - 1, d);
+            const dayStr = formatIsoDate(dateObj);
             days.push({ dayNumber: d, isCurrentMonth: false, isToday: false, hasEvent: eventDates.has(dayStr) });
           }
-          const todayStr = today.toISOString().slice(0, 10);
           for (let d = 1; d <= daysInMonth; d++) {
-            const dayStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            const dateObj = new Date(year, month, d);
+            const dayStr = formatIsoDate(dateObj);
             days.push({
               dayNumber: d,
               isCurrentMonth: true,
@@ -1959,7 +1967,8 @@
           }
           const remaining = 42 - days.length;
           for (let d = 1; d <= remaining; d++) {
-            const dayStr = `${year}-${String(month + 2).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            const dateObj = new Date(year, month + 1, d);
+            const dayStr = formatIsoDate(dateObj);
             days.push({ dayNumber: d, isCurrentMonth: false, isToday: false, hasEvent: eventDates.has(dayStr) });
           }
           return days;
@@ -1980,11 +1989,31 @@
         // Leaderboard Computation
         const leaderboardProfiles = computed(() => {
           return profiles.value.map(p => {
-            const pTasks = tasks.value.filter(t => t.assignee && t.assignee.toLowerCase() === p.name.toLowerCase() && t.status === 'completed');
-            const totalPoints = pTasks.reduce((sum, t) => sum + (Number(t.reward) || 0), 0);
+            // Completed tasks from lists (chores board)
+            const listItemsDone = [];
+            (lists.value || []).forEach(l => {
+              if (Array.isArray(l.items)) {
+                l.items.forEach(it => {
+                  const isAssigned = (it.assignee_profile_id === p.id) ||
+                    (it.assignee_name && it.assignee_name.toLowerCase() === p.name.toLowerCase());
+                  if (isAssigned && it.checked === 1) {
+                    listItemsDone.push(it);
+                  }
+                });
+              }
+            });
+            const listPoints = listItemsDone.reduce((sum, it) => sum + (Number(it.reward) || 0), 0);
+
+            // Legacy completed tasks
+            const legacyTasks = (tasks.value || []).filter(t => t.assignee && t.assignee.toLowerCase() === p.name.toLowerCase() && t.status === 'completed');
+            const legacyPoints = legacyTasks.reduce((sum, t) => sum + (Number(t.reward) || 0), 0);
+
+            const completedTasksCount = listItemsDone.length + legacyTasks.length;
+            const totalPoints = listPoints + legacyPoints;
+
             return {
               ...p,
-              completedTasksCount: pTasks.length,
+              completedTasksCount,
               totalPoints
             };
           }).sort((a, b) => b.totalPoints - a.totalPoints);

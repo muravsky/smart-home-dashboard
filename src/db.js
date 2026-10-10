@@ -196,6 +196,22 @@ db.exec(`
     FOREIGN KEY (feed_id) REFERENCES calendar_feeds(id) ON DELETE CASCADE,
     FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE SET NULL
   );
+
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    sender_id TEXT,
+    sender_name TEXT,
+    message_type TEXT,
+    raw_input TEXT,
+    parsed_payload TEXT,
+    action_taken TEXT,
+    status TEXT DEFAULT 'success',
+    error_message TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
 `);
 
 // Non-destructive column migrations for existing databases
@@ -1154,6 +1170,61 @@ function getDashboardData() {
   };
 }
 
+/* ==========================================================================
+   Audit Log Methods
+   ========================================================================== */
+function insertAuditLog({
+  source,
+  sender_id = null,
+  sender_name = null,
+  message_type = 'text',
+  raw_input = null,
+  parsed_payload = null,
+  action_taken = null,
+  status = 'success',
+  error_message = null
+}) {
+  const stmt = db.prepare(`
+    INSERT INTO audit_logs (source, sender_id, sender_name, message_type, raw_input, parsed_payload, action_taken, status, error_message)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const payloadStr = parsed_payload
+    ? (typeof parsed_payload === 'string' ? parsed_payload : JSON.stringify(parsed_payload))
+    : null;
+  const info = stmt.run(
+    source || 'system',
+    sender_id ? String(sender_id) : null,
+    sender_name ? String(sender_name) : null,
+    message_type || 'text',
+    raw_input ? String(raw_input) : null,
+    payloadStr,
+    action_taken ? String(action_taken) : null,
+    status || 'success',
+    error_message ? String(error_message) : null
+  );
+  return db.prepare('SELECT * FROM audit_logs WHERE id = ?').get(info.lastInsertRowid);
+}
+
+function getAuditLogs({ limit = 100, offset = 0, source = null, status = null } = {}) {
+  let sql = 'SELECT * FROM audit_logs WHERE 1=1';
+  const params = [];
+  if (source) {
+    sql += ' AND source = ?';
+    params.push(source);
+  }
+  if (status) {
+    sql += ' AND status = ?';
+    params.push(status);
+  }
+  sql += ' ORDER BY id DESC LIMIT ? OFFSET ?';
+  params.push(Number(limit) || 100, Number(offset) || 0);
+  return db.prepare(sql).all(...params);
+}
+
+function clearAuditLogs() {
+  return db.prepare('DELETE FROM audit_logs').run();
+}
+
 module.exports = {
   db,
   insertNote,
@@ -1209,5 +1280,9 @@ module.exports = {
   deleteCalendarEvent,
   saveLibrusData,
   getLibrusData,
-  getDashboardData
+  getDashboardData,
+  insertAuditLog,
+  getAuditLogs,
+  clearAuditLogs
 };
+

@@ -53,12 +53,15 @@ const {
   getCalendarEvents,
   insertCalendarEvent,
   deleteCalendarEvent,
-  saveLibrusData
+  saveLibrusData,
+  insertAuditLog,
+  getAuditLogs,
+  clearAuditLogs
 } = require('./db');
 const { parseTextWithGemini, generateSchoolDaySummaryWithGemini } = require('./services/gemini');
 const { getWeather, searchCity, clearWeatherCache } = require('./services/weather');
 const { fetchLibrusData, normalizeTimetableData, buildSchoolDaySummary } = require('./services/librus');
-const { initBot } = require('./bot');
+const { initBot, applyParsedGeminiActions } = require('./bot');
 const { uploadAvatar, uploadPhoto } = require('./middleware/upload');
 const { normalizeCalendarUrl, syncFeed, syncAllFeeds, startCalendarSyncCron } = require('./services/calendar');
 
@@ -219,6 +222,22 @@ app.get('/api/admin/ping', (req, res) => {
 
 app.get('/api/admin/data', (req, res) => {
   res.json(getDashboardData());
+});
+
+app.get('/api/admin/audit-logs', (req, res) => {
+  const { limit, offset, source, status } = req.query;
+  const logs = getAuditLogs({
+    limit: limit ? Number(limit) : 100,
+    offset: offset ? Number(offset) : 0,
+    source: source || null,
+    status: status || null
+  });
+  res.json(logs);
+});
+
+app.delete('/api/admin/audit-logs', (req, res) => {
+  clearAuditLogs();
+  res.json({ ok: true });
 });
 
 app.post('/api/admin/notes', (req, res) => {
@@ -661,34 +680,34 @@ app.get('/api/calendar/events', (req, res) => {
 });
 
 app.post('/api/admin/simulate-message', async (req, res) => {
-  const { text } = req.body;
+  const { text, senderName } = req.body;
   if (!text) return res.status(400).json({ error: 'text is required' });
+  const effectiveSender = senderName || 'Admin Console';
   try {
-    const parsed = await parseTextWithGemini(text);
-    if (parsed.notes) for (const note of parsed.notes) insertNote(note);
-    if (parsed.tasks) for (const task of parsed.tasks) insertTask(task);
-    if (parsed.shopping_items && parsed.shopping_items.length > 0) {
-      const allLists = getLists();
-      const shopList = allLists.find(l => l.type === 'shopping') || allLists[0];
-      if (shopList) {
-        for (const item of parsed.shopping_items) {
-          insertListItem({ list_id: shopList.id, content: item.content, reward: 0 });
-        }
-      }
-    }
-    if (parsed.calendar_events && parsed.calendar_events.length > 0) {
-      for (const ev of parsed.calendar_events) {
-        const startIso = ev.time ? `${ev.date}T${ev.time}:00` : `${ev.date}T09:00:00`;
-        insertCalendarEvent({ title: ev.title, start_datetime: startIso, all_day: ev.all_day ? 1 : 0, source: 'gemini' });
-      }
-    }
-    if (parsed.timer && parsed.timer.minutes) {
-      io.emit('timer:set', { minutes: Number(parsed.timer.minutes), action: parsed.timer.action || 'start' });
-    }
-    const updated = getDashboardData();
-    io.emit('dashboard_update', updated);
-    res.json({ ok: true, parsed, data: updated });
+    const parsed = await parseTextWithGemini(text, effectiveSender);
+    const { updatedData, summary } = await applyParsedGeminiActions(parsed, null, io);
+    insertAuditLog({
+      source: 'admin_simulator',
+      sender_id: 'admin',
+      sender_name: effectiveSender,
+      message_type: 'simulate',
+      raw_input: text,
+      parsed_payload: parsed,
+      action_taken: summary,
+      status: 'success'
+    });
+    res.json({ ok: true, parsed, data: updatedData });
   } catch (err) {
+    insertAuditLog({
+      source: 'admin_simulator',
+      sender_id: 'admin',
+      sender_name: effectiveSender,
+      message_type: 'simulate',
+      raw_input: text,
+      action_taken: 'Simulation failed',
+      status: 'error',
+      error_message: err.message
+    });
     res.status(500).json({ error: err.message });
   }
 });
@@ -729,7 +748,7 @@ app.get('/api/weather', async (req, res) => {
 
 // API endpoint to simulate or inject an incoming text message (useful for webhooks or testing)
 app.post('/api/message', async (req, res) => {
-  const { senderId, text, token } = req.body;
+  const { senderId, text, token, senderName } = req.body;
   const expectedToken = process.env.DASHBOARD_TOKEN || 'your_secret_token';
 
   if (token !== expectedToken && req.query.token !== expectedToken) {
@@ -743,34 +762,35 @@ app.post('/api/message', async (req, res) => {
     .filter(Boolean);
 
   if (senderId && whitelist.length > 0 && !whitelist.includes(String(senderId))) {
+    insertAuditLog({
+      source: 'kiosk_dictation',
+      sender_id: String(senderId),
+      sender_name: senderName || 'Unknown',
+      message_type: 'text',
+      raw_input: text,
+      action_taken: 'Blocked by whitelist',
+      status: 'blocked',
+      error_message: 'Sender ID not in whitelist'
+    });
     return res.status(403).json({ error: 'Sender ID not in whitelist' });
   }
 
   try {
-    const parsed = await parseTextWithGemini(text);
-    if (parsed.notes) for (const note of parsed.notes) insertNote(note);
-    if (parsed.tasks) for (const task of parsed.tasks) insertTask(task);
-    if (parsed.shopping_items && parsed.shopping_items.length > 0) {
-      const allLists = getLists();
-      const shopList = allLists.find(l => l.type === 'shopping') || allLists[0];
-      if (shopList) {
-        for (const item of parsed.shopping_items) {
-          insertListItem({ list_id: shopList.id, content: item.content, reward: 0 });
-        }
-      }
-    }
-    if (parsed.calendar_events && parsed.calendar_events.length > 0) {
-      for (const ev of parsed.calendar_events) {
-        const startIso = ev.time ? `${ev.date}T${ev.time}:00` : `${ev.date}T09:00:00`;
-        insertCalendarEvent({ title: ev.title, start_datetime: startIso, all_day: ev.all_day ? 1 : 0, source: 'gemini' });
-      }
-    }
-    if (parsed.timer && parsed.timer.minutes) {
-      io.emit('timer:set', { minutes: Number(parsed.timer.minutes), action: parsed.timer.action || 'start' });
-    }
+    const senderProfile = senderId ? getProfileByTelegramId(senderId) : null;
+    const effectiveSenderName = senderProfile ? senderProfile.name : (senderName || 'Tablet Kiosk');
+    const parsed = await parseTextWithGemini(text, effectiveSenderName);
+    const { updatedData, summary } = await applyParsedGeminiActions(parsed, senderProfile, io);
 
-    const updatedData = getDashboardData();
-    io.emit('dashboard_update', updatedData);
+    insertAuditLog({
+      source: 'kiosk_dictation',
+      sender_id: senderId ? String(senderId) : 'kiosk',
+      sender_name: effectiveSenderName,
+      message_type: 'text',
+      raw_input: text,
+      parsed_payload: parsed,
+      action_taken: summary,
+      status: 'success'
+    });
 
     res.json({
       success: true,
@@ -778,6 +798,16 @@ app.post('/api/message', async (req, res) => {
       dashboardData: updatedData
     });
   } catch (err) {
+    insertAuditLog({
+      source: 'kiosk_dictation',
+      sender_id: senderId ? String(senderId) : 'kiosk',
+      sender_name: senderName || 'Tablet Kiosk',
+      message_type: 'text',
+      raw_input: text,
+      action_taken: 'Dictation parsing failed',
+      status: 'error',
+      error_message: err.message
+    });
     res.status(500).json({ error: err.message });
   }
 });

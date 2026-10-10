@@ -1,8 +1,11 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { getSettings } = require('../db');
 
+const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+
 const DEFAULT_GEMINI_SYSTEM_PROMPT = `You are the smart assistant for a family smart home tablet dashboard. Today is ${new Date().toISOString().slice(0, 10)}.
 Analyze the user's natural language input and return ONLY raw JSON matching this schema:
+/* Base schema: { "notes": ["string"], "tasks": [{ "assignee": "string", "title": "string", "reward": number }] } */
 {
   "notes": ["string of note content"],
   "tasks": [
@@ -171,7 +174,7 @@ async function generateSchoolDaySummaryWithGemini(context = {}) {
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: 'gemini-3.5-flash-lite',
+      model: DEFAULT_GEMINI_MODEL,
       systemInstruction: summary,
       generationConfig: {
         temperature: 0.7,
@@ -190,7 +193,7 @@ async function generateSchoolDaySummaryWithGemini(context = {}) {
 }
 
 /**
- * Parse incoming text from Telegram or Dictation using Gemini 3.5 Flash.
+ * Parse incoming text from Telegram or Dictation using Gemini.
  */
 async function parseTextWithGemini(userText, senderName = null) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -204,7 +207,7 @@ async function parseTextWithGemini(userText, senderName = null) {
   const prompt = buildSystemPrompt('text', senderName);
 
   const model = genAI.getGenerativeModel({
-    model: 'gemini-3.5-flash-lite',
+    model: DEFAULT_GEMINI_MODEL,
     systemInstruction: prompt,
     generationConfig: {
       responseMimeType: 'application/json',
@@ -223,7 +226,7 @@ async function parseTextWithGemini(userText, senderName = null) {
 }
 
 /**
- * Parse incoming voice audio from Telegram using Gemini 3.5 Flash multimodal understanding.
+ * Parse incoming voice audio from Telegram using Gemini multimodal understanding.
  */
 async function parseAudioWithGemini(audioBuffer, mimeType = 'audio/ogg', senderName = null) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -237,7 +240,7 @@ async function parseAudioWithGemini(audioBuffer, mimeType = 'audio/ogg', senderN
   const prompt = buildSystemPrompt('voice', senderName);
 
   const model = genAI.getGenerativeModel({
-    model: 'gemini-3.5-flash-lite',
+    model: DEFAULT_GEMINI_MODEL,
     systemInstruction: prompt,
     generationConfig: {
       responseMimeType: 'application/json',
@@ -263,9 +266,15 @@ async function parseAudioWithGemini(audioBuffer, mimeType = 'audio/ogg', senderN
   return normalizeParsedGeminiPayload(parsed);
 }
 
+const SYSTEM_PROMPT = DEFAULT_GEMINI_SYSTEM_PROMPT;
+
 module.exports = {
+  DEFAULT_GEMINI_MODEL,
+  DEFAULT_GEMINI_SYSTEM_PROMPT,
+  SYSTEM_PROMPT,
   buildSystemPrompt,
   normalizeParsedGeminiPayload,
+  generateSchoolDaySummaryWithGemini,
   parseTextWithGemini,
   parseAudioWithGemini
 };
