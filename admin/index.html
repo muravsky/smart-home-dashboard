@@ -1161,18 +1161,25 @@
           <div class="mt-4 pt-3 border-t border-neutral-800 space-y-3">
             <div class="flex items-center justify-between">
               <h3 class="font-mono text-[10px] uppercase tracking-wider text-purple-300">AI Model & Prompt Templates</h3>
-              <button type="button" @click="saveSettings" class="font-mono text-[10px] text-purple-200 hover:text-white">Save Settings</button>
+              <button type="button" @click="saveSettings" class="font-mono text-[10px] text-purple-200 hover:text-white bg-purple-950/60 border border-purple-800/60 px-2 py-0.5 rounded">Save All</button>
             </div>
 
             <div>
-              <div class="flex items-center justify-between mb-1">
+              <div class="flex items-center justify-between mb-1.5">
                 <label class="block text-[10px] font-mono text-neutral-400">Gemini Model</label>
-                <button type="button" @click="fetchGeminiModels" :disabled="loadingGeminiModels" class="font-mono text-[10px] text-purple-400 hover:text-purple-300">
-                  {{ loadingGeminiModels ? 'Fetching...' : '↻ Refresh Models' }}
-                </button>
+                <div class="flex items-center gap-2">
+                  <span v-if="modelSavedMessage" class="text-emerald-400 font-mono text-[10px] font-semibold flex items-center gap-1 animate-pulse">✓ {{ modelSavedMessage }}</span>
+                  <button type="button" @click="fetchGeminiModels" :disabled="loadingGeminiModels" class="font-mono text-[10px] text-purple-400 hover:text-purple-300">
+                    {{ loadingGeminiModels ? 'Fetching...' : '↻ Refresh Models' }}
+                  </button>
+                </div>
               </div>
               <div class="flex gap-2">
-                <select v-model="settings.gemini_model" class="flex-1 bg-neutral-950 border border-neutral-800 focus:border-purple-500 rounded-lg p-2 text-[11px] text-neutral-200 font-mono outline-none">
+                <select 
+                  v-model="settings.gemini_model" 
+                  @change="saveModelSelection"
+                  class="flex-1 bg-neutral-950 border border-neutral-800 focus:border-purple-500 rounded-lg p-2 text-[11px] text-neutral-200 font-mono outline-none"
+                >
                   <option v-for="m in availableGeminiModels" :key="m.id" :value="m.id">
                     {{ m.name }} ({{ m.id }})
                   </option>
@@ -1180,12 +1187,36 @@
                     Current: {{ settings.gemini_model }}
                   </option>
                 </select>
-                <button type="button" @click="customGeminiModel = !customGeminiModel" class="font-mono text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 px-2 py-1 rounded">
+                <button 
+                  type="button" 
+                  @click="saveModelSelection" 
+                  :disabled="savingModel"
+                  class="font-mono text-xs bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1 whitespace-nowrap shadow"
+                >
+                  <span>{{ savingModel ? 'Saving...' : 'Save Model' }}</span>
+                </button>
+                <button 
+                  type="button" 
+                  @click="customGeminiModel = !customGeminiModel" 
+                  class="font-mono text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 px-2.5 py-1 rounded"
+                >
                   {{ customGeminiModel ? 'List' : 'Custom' }}
                 </button>
               </div>
-              <div v-if="customGeminiModel" class="mt-1.5">
-                <input v-model="settings.gemini_model" placeholder="Enter custom model identifier (e.g. gemini-2.0-flash)" class="w-full bg-neutral-950 border border-neutral-800 focus:border-purple-500 rounded-lg p-2 text-[11px] text-neutral-200 font-mono outline-none" />
+              <div v-if="customGeminiModel" class="mt-2 flex gap-2">
+                <input 
+                  v-model="settings.gemini_model" 
+                  placeholder="Enter custom model identifier (e.g. gemini-2.0-flash)" 
+                  class="flex-1 bg-neutral-950 border border-neutral-800 focus:border-purple-500 rounded-lg p-2 text-[11px] text-neutral-200 font-mono outline-none" 
+                />
+                <button 
+                  type="button" 
+                  @click="saveModelSelection" 
+                  :disabled="savingModel"
+                  class="font-mono text-xs bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap"
+                >
+                  Apply
+                </button>
               </div>
             </div>
 
@@ -1209,6 +1240,13 @@
               <textarea v-model="settings.gemini_summary_prompt" rows="5" class="w-full bg-neutral-950 border border-neutral-800 focus:border-purple-500 rounded-lg p-2.5 text-[11px] text-neutral-200 font-mono outline-none resize-y"></textarea>
             </div>
 
+            <button 
+              type="button" 
+              @click="saveSettings" 
+              class="w-full font-mono text-xs bg-purple-700/80 hover:bg-purple-600 border border-purple-500/30 text-white py-2 rounded-lg font-semibold transition flex items-center justify-center gap-1.5 shadow"
+            >
+              <span>✓ Save AI Model & Prompt Templates</span>
+            </button>
           </div>
 
           <div v-if="simResult" class="mt-4 pt-3 border-t border-neutral-800">
@@ -2002,21 +2040,35 @@
             <div>
               <div class="flex items-center justify-between mb-1">
                 <label class="block text-xs font-mono text-neutral-400">Gemini AI Model</label>
-                <button type="button" @click="fetchGeminiModels" :disabled="loadingGeminiModels" class="font-mono text-[10px] text-sky-400 hover:text-sky-300">
-                  {{ loadingGeminiModels ? '...' : '↻ Refresh' }}
+                <div class="flex items-center gap-2">
+                  <span v-if="modelSavedMessage" class="text-emerald-400 font-mono text-[10px] font-semibold animate-pulse">✓ {{ modelSavedMessage }}</span>
+                  <button type="button" @click="fetchGeminiModels" :disabled="loadingGeminiModels" class="font-mono text-[10px] text-sky-400 hover:text-sky-300">
+                    {{ loadingGeminiModels ? '...' : '↻ Refresh' }}
+                  </button>
+                </div>
+              </div>
+              <div class="flex gap-2">
+                <select
+                  v-model="settings.gemini_model"
+                  @change="saveModelSelection"
+                  class="text-xs font-mono bg-neutral-800 border border-neutral-700 text-neutral-100 rounded px-3 py-2 flex-1"
+                >
+                  <option v-for="m in availableGeminiModels" :key="m.id" :value="m.id">
+                    {{ m.name }} ({{ m.id }})
+                  </option>
+                  <option v-if="settings.gemini_model && !availableGeminiModels.some(m => m.id === settings.gemini_model)" :value="settings.gemini_model">
+                    Current: {{ settings.gemini_model }}
+                  </option>
+                </select>
+                <button
+                  type="button"
+                  @click="saveModelSelection"
+                  :disabled="savingModel"
+                  class="font-mono text-xs bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white px-3 py-2 rounded font-semibold whitespace-nowrap"
+                >
+                  Save Model
                 </button>
               </div>
-              <select
-                v-model="settings.gemini_model"
-                class="text-xs font-mono bg-neutral-800 border border-neutral-700 text-neutral-100 rounded px-3 py-2 w-full"
-              >
-                <option v-for="m in availableGeminiModels" :key="m.id" :value="m.id">
-                  {{ m.name }} ({{ m.id }})
-                </option>
-                <option v-if="settings.gemini_model && !availableGeminiModels.some(m => m.id === settings.gemini_model)" :value="settings.gemini_model">
-                  Current: {{ settings.gemini_model }}
-                </option>
-              </select>
             </div>
           </div>
         </div>
@@ -2331,6 +2383,33 @@
             loadingGeminiModels.value = false;
           }
         }
+
+        const savingModel = ref(false);
+        const modelSavedMessage = ref('');
+
+        async function saveModelSelection() {
+          savingModel.value = true;
+          try {
+            const res = await fetch('/api/admin/settings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ gemini_model: settings.value.gemini_model })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            if (data.settings && data.settings.gemini_model) {
+              settings.value.gemini_model = data.settings.gemini_model;
+            }
+            modelSavedMessage.value = 'Saved!';
+            showAlert('Gemini model updated to: ' + settings.value.gemini_model);
+            setTimeout(() => { modelSavedMessage.value = ''; }, 3000);
+          } catch (e) {
+            showAlert('Failed to save model: ' + e.message, false);
+          } finally {
+            savingModel.value = false;
+          }
+        }
+
         const librusConfig = ref({
           login: '',
           password: '',
@@ -3249,6 +3328,9 @@
           loadingGeminiModels,
           customGeminiModel,
           fetchGeminiModels,
+          savingModel,
+          modelSavedMessage,
+          saveModelSelection,
           auditLogs,
           auditFilterSource,
           auditFilterStatus,
