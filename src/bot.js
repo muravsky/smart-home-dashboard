@@ -103,7 +103,9 @@ function resolveProfileIdFromName(rawName, senderProfile) {
   if (exactMatch) return exactMatch.id;
 
   const partialMatch = profiles.find((profile) => (profile.name || '').toLowerCase().includes(normalized));
-  return partialMatch ? partialMatch.id : (senderProfile ? senderProfile.id : null);
+  // If no profile matches by name, treat as a family/unassigned item (null) rather than silently
+  // assigning to the sender — an explicit name that can't be resolved should not become personal.
+  return partialMatch ? partialMatch.id : null;
 }
 
 function normalizeDateString(value) {
