@@ -818,6 +818,26 @@
                 {{ getTaskFilterButtonLabel(w) }}
               </button>
 
+              <!-- Cycle Calendar View Mode (Split Grid vs Daily Agenda) -->
+              <button 
+                v-if="w.widget_type === 'calendar'"
+                @click.stop="cycleCalendarViewMode(w)"
+                title="Toggle between Month Grid + List and Day-by-day Agenda view"
+                class="px-2 py-1 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 text-indigo-300 font-semibold"
+              >
+                {{ getCalendarViewMode(w) === 'agenda' ? 'Agenda' : 'Split' }}
+              </button>
+
+              <!-- Cycle Calendar Days Range -->
+              <button 
+                v-if="w.widget_type === 'calendar' || w.widget_type === 'calendar_agenda'"
+                @click.stop="cycleCalendarDays(w)"
+                title="Change upcoming days range (3d, 7d, 14d, 30d)"
+                class="px-2 py-1 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 text-sky-400 font-semibold"
+              >
+                {{ getCalendarDays(w) }}d
+              </button>
+
               <!-- Delete Widget -->
               <button 
                 @click.stop="removeWidget(w)"
@@ -1295,21 +1315,30 @@
               </ul>
             </div>
 
-            <!-- ================= WIDGET TYPE 13: CALENDAR ================= -->
+            <!-- ================= WIDGET TYPE 13: CALENDAR (SPLIT OR AGENDA) ================= -->
             <div v-else-if="w.widget_type === 'calendar'" class="h-full flex flex-col justify-between overflow-hidden">
               <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
                 <div class="flex items-center gap-2">
                   <span class="font-mono text-xs uppercase tracking-widest text-indigo-400 font-semibold">CALENDAR</span>
-                  <span class="text-[10px] text-neutral-500 font-mono">{{ calendarMonthLabel }}</span>
+                  <span class="text-[10px] text-neutral-500 font-mono">{{ getCalendarViewMode(w) === 'agenda' ? (getCalendarDays(w) + ' Days Agenda') : calendarMonthLabel }}</span>
                 </div>
-                <span v-if="selectedProfile" class="text-[10px] font-mono px-2 py-0.5 rounded-full" :style="{ backgroundColor: selectedProfile.color + '22', color: selectedProfile.color }">
-                  {{ selectedProfile.name }}
-                </span>
-                <span v-else class="text-[10px] font-mono text-neutral-500">All Family</span>
+                <div class="flex items-center gap-1.5">
+                  <button 
+                    @click.stop="cycleCalendarViewMode(w)"
+                    class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white transition"
+                    title="Toggle Month View / Agenda View"
+                  >
+                    {{ getCalendarViewMode(w) === 'agenda' ? '📅 Month' : '📋 Agenda' }}
+                  </button>
+                  <span v-if="selectedProfile" class="text-[10px] font-mono px-2 py-0.5 rounded-full" :style="{ backgroundColor: selectedProfile.color + '22', color: selectedProfile.color }">
+                    {{ selectedProfile.name }}
+                  </span>
+                  <span v-else class="text-[10px] font-mono text-neutral-500">All Family</span>
+                </div>
               </div>
 
-              <!-- Calendar Content Grid: Mini Month Grid (Left) + Upcoming Events List (Right) -->
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3 h-full overflow-hidden">
+              <!-- VIEW MODE 1: SPLIT (Mini Month Grid + Upcoming List) -->
+              <div v-if="getCalendarViewMode(w) !== 'agenda'" class="grid grid-cols-1 md:grid-cols-2 gap-3 h-full overflow-hidden">
                 <!-- Mini Month Grid -->
                 <div class="bg-neutral-950/80 border border-neutral-800/60 rounded-xl p-2.5 flex flex-col justify-between">
                   <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-mono text-neutral-500 mb-1">
@@ -1334,15 +1363,16 @@
 
                 <!-- Upcoming Agenda List -->
                 <div class="flex flex-col justify-between overflow-hidden">
-                  <div class="text-[10px] font-mono uppercase tracking-wider text-neutral-500 mb-1">
-                    Upcoming Events
+                  <div class="text-[10px] font-mono uppercase tracking-wider text-neutral-500 mb-1 flex items-center justify-between">
+                    <span>Upcoming Events</span>
+                    <span class="text-neutral-600">{{ filteredEvents.length }}</span>
                   </div>
                   <div v-if="filteredEvents.length === 0" class="text-xs font-mono text-neutral-600 my-auto text-center py-4">
                     No upcoming events
                   </div>
                   <div v-else class="space-y-1.5 overflow-y-auto max-h-[140px] pr-1">
                     <div 
-                      v-for="ev in filteredEvents.slice(0, 4)" 
+                      v-for="ev in filteredEvents.slice(0, 8)" 
                       :key="ev.id" 
                       class="bg-neutral-950/90 border border-neutral-800/80 rounded-lg p-2 flex items-center justify-between gap-2"
                       :style="{ borderLeftColor: ev.color || '#38bdf8', borderLeftWidth: '3px' }"
@@ -1352,6 +1382,118 @@
                         <div class="text-[10px] font-mono text-neutral-500">{{ formatEventTimeDisplay(ev) }}</div>
                       </div>
                       <span v-if="ev.source === 'google'" class="text-[9px] font-mono text-sky-400 shrink-0">iCal</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- VIEW MODE 2: DAY-BY-DAY AGENDA (Next X Days) -->
+              <div v-else class="flex flex-col h-full overflow-hidden">
+                <div class="space-y-2 overflow-y-auto pr-1 flex-1">
+                  <div 
+                    v-for="day in getCalendarGroupedDays(w)" 
+                    :key="day.dateStr"
+                    class="rounded-xl border p-2 transition"
+                    :class="day.isToday ? 'bg-indigo-950/20 border-indigo-900/60' : 'bg-neutral-950/60 border-neutral-850'"
+                  >
+                    <!-- Day Header -->
+                    <div class="flex items-center justify-between mb-1.5">
+                      <div class="flex items-center gap-1.5">
+                        <span 
+                          class="text-xs font-mono font-semibold"
+                          :class="day.isToday ? 'text-indigo-400 font-bold' : 'text-neutral-300'"
+                        >
+                          {{ day.label }}
+                        </span>
+                        <span v-if="day.isToday" class="text-[9px] font-mono bg-indigo-600/30 text-indigo-300 px-1.5 py-0.2 rounded-full uppercase tracking-wider">Today</span>
+                      </div>
+                      <span class="text-[10px] font-mono text-neutral-500">{{ day.events.length }} event{{ day.events.length === 1 ? '' : 's' }}</span>
+                    </div>
+
+                    <!-- Day Events List -->
+                    <div v-if="day.events.length === 0" class="text-[11px] font-mono text-neutral-600 italic py-0.5 pl-1">
+                      No scheduled events
+                    </div>
+                    <div v-else class="space-y-1">
+                      <div 
+                        v-for="ev in day.events" 
+                        :key="ev.id"
+                        class="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-neutral-900/80 border border-neutral-800"
+                        :style="{ borderLeftColor: ev.color || '#38bdf8', borderLeftWidth: '3px' }"
+                      >
+                        <div class="flex items-center gap-2 overflow-hidden">
+                          <span class="text-[10px] font-mono font-bold text-sky-400 shrink-0">
+                            {{ formatEventClockTime(ev) }}
+                          </span>
+                          <span class="text-xs font-medium text-white truncate">{{ ev.title }}</span>
+                        </div>
+                        <span v-if="ev.profile_name" class="text-[9px] font-mono text-neutral-400 shrink-0 px-1.5 py-0.5 rounded bg-neutral-800">
+                          {{ ev.profile_name }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ================= WIDGET TYPE 14: DEDICATED CALENDAR AGENDA (NEXT X DAYS) ================= -->
+            <div v-else-if="w.widget_type === 'calendar_agenda'" class="h-full flex flex-col justify-between overflow-hidden">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+                <div class="flex items-center gap-2">
+                  <span class="font-mono text-xs uppercase tracking-widest text-sky-400 font-semibold">AGENDA</span>
+                  <span class="text-[10px] text-neutral-500 font-mono">Next {{ getCalendarDays(w) }} Days</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <span v-if="selectedProfile" class="text-[10px] font-mono px-2 py-0.5 rounded-full" :style="{ backgroundColor: selectedProfile.color + '22', color: selectedProfile.color }">
+                    {{ selectedProfile.name }}
+                  </span>
+                  <span v-else class="text-[10px] font-mono text-neutral-500">All Family</span>
+                </div>
+              </div>
+
+              <!-- Day-by-Day Agenda List -->
+              <div class="space-y-2 overflow-y-auto pr-1 flex-1">
+                <div 
+                  v-for="day in getCalendarGroupedDays(w)" 
+                  :key="day.dateStr"
+                  class="rounded-xl border p-2 transition"
+                  :class="day.isToday ? 'bg-sky-950/20 border-sky-900/60' : 'bg-neutral-950/60 border-neutral-850'"
+                >
+                  <!-- Day Header -->
+                  <div class="flex items-center justify-between mb-1.5">
+                    <div class="flex items-center gap-1.5">
+                      <span 
+                        class="text-xs font-mono font-semibold"
+                        :class="day.isToday ? 'text-sky-400 font-bold' : 'text-neutral-300'"
+                      >
+                        {{ day.label }}
+                      </span>
+                      <span v-if="day.isToday" class="text-[9px] font-mono bg-sky-600/30 text-sky-300 px-1.5 py-0.2 rounded-full uppercase tracking-wider">Today</span>
+                    </div>
+                    <span class="text-[10px] font-mono text-neutral-500">{{ day.events.length }} event{{ day.events.length === 1 ? '' : 's' }}</span>
+                  </div>
+
+                  <!-- Day Events -->
+                  <div v-if="day.events.length === 0" class="text-[11px] font-mono text-neutral-600 italic py-0.5 pl-1">
+                    No scheduled events
+                  </div>
+                  <div v-else class="space-y-1">
+                    <div 
+                      v-for="ev in day.events" 
+                      :key="ev.id"
+                      class="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-neutral-900/80 border border-neutral-800"
+                      :style="{ borderLeftColor: ev.color || '#38bdf8', borderLeftWidth: '3px' }"
+                    >
+                      <div class="flex items-center gap-2 overflow-hidden">
+                        <span class="text-[10px] font-mono font-bold text-sky-400 shrink-0">
+                          {{ formatEventClockTime(ev) }}
+                        </span>
+                        <span class="text-xs font-medium text-white truncate">{{ ev.title }}</span>
+                      </div>
+                      <span v-if="ev.profile_name" class="text-[9px] font-mono text-neutral-400 shrink-0 px-1.5 py-0.5 rounded bg-neutral-800">
+                        {{ ev.profile_name }}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -1977,13 +2119,100 @@
         function formatEventTimeDisplay(ev) {
           if (!ev.start_datetime) return '';
           try {
-            const d = new Date(ev.start_datetime);
             const locale = localeMap[effectiveLanguage.value] || 'en-US';
             if (ev.all_day) {
-              return d.toLocaleDateString(locale, { weekday: 'short', month: 'short', day: 'numeric' });
+              const datePart = ev.start_datetime.slice(0, 10);
+              const [y, m, d] = datePart.split('-').map(Number);
+              const localDate = new Date(y, m - 1, d);
+              return localDate.toLocaleDateString(locale, { weekday: 'short', month: 'short', day: 'numeric' });
             }
+            const d = new Date(ev.start_datetime);
             return d.toLocaleDateString(locale, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
           } catch (e) { return ev.start_datetime; }
+        }
+
+        function formatEventClockTime(ev) {
+          if (!ev.start_datetime || ev.all_day) return 'All day';
+          try {
+            const d = new Date(ev.start_datetime);
+            const locale = localeMap[effectiveLanguage.value] || 'en-US';
+            return d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+          } catch (e) { return ''; }
+        }
+
+        function getCalendarDays(widget) {
+          const cfg = getWidgetConfig(widget);
+          const days = Number(cfg.days ?? cfg.range_days ?? 7);
+          return [3, 7, 14, 30].includes(days) ? days : 7;
+        }
+
+        function cycleCalendarDays(widget) {
+          triggerHaptic('tap');
+          if (!widget.config) widget.config = {};
+          if (typeof widget.config === 'string') {
+            try { widget.config = JSON.parse(widget.config); } catch (e) { widget.config = {}; }
+          }
+          const options = [3, 7, 14, 30];
+          const cur = getCalendarDays(widget);
+          const nextIdx = (options.indexOf(cur) + 1) % options.length;
+          widget.config.days = options[nextIdx];
+          saveCurrentLayout();
+        }
+
+        function getCalendarViewMode(widget) {
+          const cfg = getWidgetConfig(widget);
+          return cfg.mode || 'split'; // 'split' (grid + list) or 'agenda' (day-by-day)
+        }
+
+        function cycleCalendarViewMode(widget) {
+          triggerHaptic('tap');
+          if (!widget.config) widget.config = {};
+          if (typeof widget.config === 'string') {
+            try { widget.config = JSON.parse(widget.config); } catch (e) { widget.config = {}; }
+          }
+          const modes = ['split', 'agenda'];
+          const cur = getCalendarViewMode(widget);
+          widget.config.mode = cur === 'split' ? 'agenda' : 'split';
+          saveCurrentLayout();
+        }
+
+        function getCalendarGroupedDays(widget) {
+          const daysCount = getCalendarDays(widget);
+          const today = now.value;
+          const locale = localeMap[effectiveLanguage.value] || 'en-US';
+          const groups = [];
+
+          // Pre-filter events relevant to the active profile
+          let pool = (events.value || []).slice();
+          if (selectedProfileId.value) {
+            pool = pool.filter(e => !e.profile_id || e.profile_id === selectedProfileId.value);
+          }
+
+          for (let i = 0; i < daysCount; i++) {
+            const targetDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
+            const y = targetDate.getFullYear();
+            const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+            const d = String(targetDate.getDate()).padStart(2, '0');
+            const dateStr = `${y}-${m}-${d}`;
+
+            let label = targetDate.toLocaleDateString(locale, { weekday: 'short', month: 'short', day: 'numeric' });
+            let isToday = i === 0;
+            let isTomorrow = i === 1;
+            if (isToday) {
+              label = (effectiveLanguage.value === 'ru' ? 'Сегодня' : effectiveLanguage.value === 'uk' ? 'Сьогодні' : effectiveLanguage.value === 'pl' ? 'Dzisiaj' : 'Today') + `, ${targetDate.toLocaleDateString(locale, { month: 'short', day: 'numeric' })}`;
+            } else if (isTomorrow) {
+              label = (effectiveLanguage.value === 'ru' ? 'Завтра' : effectiveLanguage.value === 'uk' ? 'Завтра' : effectiveLanguage.value === 'pl' ? 'Jutro' : 'Tomorrow') + `, ${targetDate.toLocaleDateString(locale, { month: 'short', day: 'numeric' })}`;
+            }
+
+            const dayEvents = pool.filter(e => e.start_datetime && e.start_datetime.slice(0, 10) === dateStr);
+            groups.push({
+              dateStr,
+              label,
+              isToday,
+              events: dayEvents
+            });
+          }
+          return groups;
         }
 
         // Leaderboard Computation
@@ -2079,7 +2308,8 @@
           { type: 'school_grades', name: 'Librus Grades', icon: '🧾', desc: 'Student marks and grade snapshot' },
           { type: 'school_notifications', name: 'Librus Notifications', icon: '🔔', desc: 'Recent notices and updates' },
           { type: 'school_announcements', name: 'Librus Announcements', icon: '📣', desc: 'School news and messages' },
-          { type: 'calendar', name: 'Calendar Agenda', icon: '📅', desc: 'Mini month & Google Cal sync' },
+          { type: 'calendar', name: 'Calendar (Month & Agenda)', icon: '📅', desc: 'Mini month & Google Cal sync with toggleable agenda' },
+          { type: 'calendar_agenda', name: 'Daily Calendar Agenda', icon: '📆', desc: 'Day-by-day event list for next X days' },
           { type: 'leaderboard', name: 'Chores Leaderboard', icon: '🏆', desc: 'Kids rewards & points ranks' },
           { type: 'quick_actions', name: 'Quick Scenes', icon: '⚡', desc: '1-tap shortcuts & night mode' },
           { type: 'memo', name: 'Family Memo', icon: '📌', desc: 'Sticky note announcement' }
@@ -3574,6 +3804,12 @@
           cycleWidgetItemLimit,
           getWidgetFontSize,
           getWidgetFontSizeClass,
+          formatEventClockTime,
+          getCalendarDays,
+          cycleCalendarDays,
+          getCalendarViewMode,
+          cycleCalendarViewMode,
+          getCalendarGroupedDays,
           pageConfigs,
           activeTheme,
           activeFontSize,
