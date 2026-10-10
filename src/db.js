@@ -1010,16 +1010,30 @@ function deleteCalendarFeed(id) {
   return db.prepare('DELETE FROM calendar_feeds WHERE id = ?').run(id);
 }
 
-function getCalendarEvents({ profileId = null, limit = 100 } = {}) {
+function getCalendarEvents({ profileId = null, limit = 100, fromDate = undefined } = {}) {
+  // Default: show events from yesterday onward (keep today's events that may have started)
+  const defaultFrom = new Date();
+  defaultFrom.setDate(defaultFrom.getDate() - 1);
+  const effectiveFromDate = fromDate === null ? null : (fromDate || defaultFrom.toISOString().slice(0, 10));
+
   let query = `
     SELECT e.*, p.name as profile_name, p.color as profile_color 
     FROM calendar_events e 
     LEFT JOIN profiles p ON e.profile_id = p.id
   `;
+  const conditions = [];
   const params = [];
+
+  if (effectiveFromDate) {
+    conditions.push('e.start_datetime >= ?');
+    params.push(effectiveFromDate);
+  }
   if (profileId) {
-    query += ' WHERE e.profile_id IS NULL OR e.profile_id = ?';
+    conditions.push('(e.profile_id IS NULL OR e.profile_id = ?)');
     params.push(profileId);
+  }
+  if (conditions.length > 0) {
+    query += ' WHERE ' + conditions.join(' AND ');
   }
   query += ' ORDER BY e.start_datetime ASC LIMIT ?';
   params.push(limit);
@@ -1076,6 +1090,14 @@ function upsertCalendarEventByUid({ uid, feed_id = null, title, description = nu
 
 function deleteCalendarEvent(id) {
   return db.prepare('DELETE FROM calendar_events WHERE id = ?').run(id);
+}
+
+function deleteOldCalendarEventsByFeed(feedId, beforeDateIso) {
+  return db.prepare('DELETE FROM calendar_events WHERE feed_id = ? AND start_datetime < ?').run(feedId, beforeDateIso);
+}
+
+function deleteOldCalendarEvents(beforeDateIso) {
+  return db.prepare("DELETE FROM calendar_events WHERE (feed_id IS NOT NULL OR source != 'manual') AND start_datetime < ?").run(beforeDateIso);
 }
 
 function getLibrusData() {
@@ -1279,6 +1301,8 @@ module.exports = {
   insertCalendarEvent,
   upsertCalendarEventByUid,
   deleteCalendarEvent,
+  deleteOldCalendarEventsByFeed,
+  deleteOldCalendarEvents,
   saveLibrusData,
   getLibrusData,
   getDashboardData,

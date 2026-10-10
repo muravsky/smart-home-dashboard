@@ -3,6 +3,8 @@ const {
   getCalendarFeeds,
   updateCalendarFeedSyncTime,
   upsertCalendarEventByUid,
+  deleteOldCalendarEventsByFeed,
+  deleteOldCalendarEvents,
   getDashboardData
 } = require('../db');
 
@@ -134,6 +136,10 @@ async function syncFeed(feed) {
       count++;
     }
 
+    // Clean up stale past events for this feed older than 60 days
+    const purgeCutoff = new Date(now.getTime() - 60 * 86400000).toISOString();
+    deleteOldCalendarEventsByFeed(feed.id, purgeCutoff);
+
     updateCalendarFeedSyncTime(feed.id);
     console.log(`[Calendar] Feed #${feed.id} "${feed.name}" sync complete: ${count} events.`);
     return count;
@@ -160,6 +166,10 @@ async function syncAllFeeds(io = null) {
       // Continue to next feed even if one fails
     }
   }
+
+  // Purge any orphaned or old synced events older than 60 days
+  const purgeCutoff = new Date(Date.now() - 60 * 86400000).toISOString();
+  deleteOldCalendarEvents(purgeCutoff);
 
   if (io) {
     io.emit('dashboard_update', getDashboardData());

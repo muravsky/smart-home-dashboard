@@ -119,6 +119,40 @@ async function runPhase6Tests() {
       socket.on('connect_error', reject);
     });
 
+    console.log('\n--- 4. Calendar Date Filtering & Clean Past Events API ---');
+    // Insert an old event (from 2025) and a tomorrow event
+    const pastDate = '2025-01-01T10:00:00';
+    const tomorrowStr = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const futureDate = `${tomorrowStr}T10:00:00`;
+    const oldEventRes = await makeRequest('/api/admin/calendar/events', 'POST', {
+      title: 'Very Old Historical Event',
+      start_datetime: pastDate,
+      all_day: 1
+    });
+    const futureEventRes = await makeRequest('/api/admin/calendar/events', 'POST', {
+      title: 'Near Future Tomorrow Event',
+      start_datetime: futureDate,
+      all_day: 1
+    });
+    const oldEvId = oldEventRes.json.event.id;
+    const futEvId = futureEventRes.json.event.id;
+
+    // Public API (kiosk) defaults to filtering events from yesterday onward
+    const kioskEventsRes = await makeRequest(`/api/calendar/events?token=your_secret_token`, 'GET', null, { authorization: '' });
+    assert(kioskEventsRes.statusCode === 200, 'Kiosk events query succeeds');
+    const hasOldInKiosk = kioskEventsRes.json.some(e => e.id === oldEvId);
+    const hasFutInKiosk = kioskEventsRes.json.some(e => e.id === futEvId);
+    assert(!hasOldInKiosk, 'Kiosk endpoint automatically filters out historical past events');
+    assert(hasFutInKiosk, 'Kiosk endpoint includes future events');
+
+    // Admin clean-past endpoint
+    const cleanRes = await makeRequest('/api/admin/calendar/clean-past', 'POST', { days: 30 });
+    assert(cleanRes.statusCode === 200 && cleanRes.json.ok, 'POST /api/admin/calendar/clean-past succeeds');
+
+    // Cleanup future test event
+    await makeRequest(`/api/admin/calendar/events/${futEvId}`, 'DELETE');
+    await makeRequest(`/api/admin/calendar/events/${oldEvId}`, 'DELETE');
+
   } catch (err) {
     console.error('Phase 6 test error:', err);
     failures++;

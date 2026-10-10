@@ -53,6 +53,7 @@ const {
   getCalendarEvents,
   insertCalendarEvent,
   deleteCalendarEvent,
+  deleteOldCalendarEvents,
   saveLibrusData,
   insertAuditLog,
   getAuditLogs,
@@ -654,8 +655,22 @@ app.post('/api/admin/calendar/sync', async (req, res) => {
   }
 });
 
+app.post('/api/admin/calendar/clean-past', (req, res) => {
+  try {
+    const days = parseInt(req.body?.days, 10) || 1;
+    const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+    const info = deleteOldCalendarEvents(cutoff);
+    io.emit('dashboard_update', getDashboardData());
+    res.json({ ok: true, deleted: info.changes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/admin/calendar/events', (req, res) => {
-  res.json(getCalendarEvents());
+  // Admin can optionally pass ?from=YYYY-MM-DD; defaults to showing all events (no date filter for admin)
+  const fromDate = req.query.from || null;
+  res.json(getCalendarEvents({ fromDate, limit: 500 }));
 });
 
 app.post('/api/admin/calendar/events', (req, res) => {
@@ -685,7 +700,9 @@ app.delete('/api/admin/calendar/events/:id', (req, res) => {
 app.get('/api/calendar/events', (req, res) => {
   const expectedToken = process.env.DASHBOARD_TOKEN || 'your_secret_token';
   if (req.query.token !== expectedToken) return res.status(403).json({ error: 'Forbidden' });
-  const events = getCalendarEvents({ profileId: req.query.profileId });
+  // fromDate defaults to yesterday in getCalendarEvents; can be overridden with ?from=YYYY-MM-DD
+  const fromDate = req.query.from;
+  const events = getCalendarEvents({ profileId: req.query.profileId, fromDate });
   res.json(events);
 });
 
