@@ -19,7 +19,9 @@ const {
   getLists,
   getListById,
   getTasks,
-  getCalendarEvents
+  getCalendarEvents,
+  insertCalendarFeed,
+  deleteCalendarFeed
 } = require('../src/db');
 const {
   getGeminiModel,
@@ -67,10 +69,21 @@ async function runTests() {
     language: 'en'
   });
 
+  const testFeedName = 'School Calendar ' + Date.now();
+  const createdFeed = insertCalendarFeed({
+    name: testFeedName,
+    ical_url: 'https://example.com/calendar.ics',
+    color: '#8b5cf6',
+    profile_id: createdProfile.id
+  });
+
   const promptText = buildSystemPrompt('text', 'TestSender');
   assert(promptText.includes(testFamilyName), 'Prompt must include registered family member');
   assert(promptText.includes('Shopping List') || promptText.includes('Family Tasks'), 'Prompt must list dashboard lists');
-  pass('buildSystemPrompt dynamically injects registered profiles and lists');
+  assert(promptText.includes(testFeedName), 'Prompt must include available calendar feed');
+  pass('buildSystemPrompt dynamically injects registered profiles, lists, and calendar feeds');
+
+  deleteCalendarFeed(createdFeed.id);
 
   // --- 4. Normalization of Family vs Individual & Recurrence ---
   console.log('\n--- 4. Payload Normalization ---');

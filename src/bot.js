@@ -22,7 +22,8 @@ const {
   insertListItem,
   updateList,
   toggleListItemChecked,
-  insertAuditLog
+  insertAuditLog,
+  getCalendarFeeds
 } = require('./db');
 
 // Save a Telegram photo to disk and DB
@@ -222,16 +223,33 @@ async function applyParsedGeminiActions(parsedData, senderProfile, ioInstance = 
     let createdCount = 0;
     for (const ev of calendar_events) {
       const isFamily = !ev.person || ['family', 'all', 'everyone', 'entire family', 'whole family'].includes(String(ev.person).toLowerCase());
-      const eventProfileId = isFamily ? null : resolveProfileIdFromName(ev.person, senderProfile);
+      let eventProfileId = isFamily ? null : resolveProfileIdFromName(ev.person, senderProfile);
+      let feedId = null;
+      let eventColor = '#38bdf8';
+
+      // Check if person matches a calendar feed name
+      if (ev.person) {
+        const feeds = getCalendarFeeds();
+        const matchedFeed = feeds.find(f => (f.name || '').toLowerCase() === String(ev.person).toLowerCase())
+          || feeds.find(f => (f.name || '').toLowerCase().includes(String(ev.person).toLowerCase()));
+        if (matchedFeed) {
+          feedId = matchedFeed.id;
+          if (matchedFeed.color) eventColor = matchedFeed.color;
+          if (matchedFeed.profile_id && !eventProfileId) eventProfileId = matchedFeed.profile_id;
+        }
+      }
+
       const baseDate = normalizeDateString(ev.date) || ev.date || new Date().toISOString().slice(0, 10);
       const startIso = ev.time ? `${baseDate}T${ev.time}:00` : `${baseDate}T09:00:00`;
 
       insertCalendarEvent({
         uid: `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        feed_id: feedId,
         title: ev.title,
         start_datetime: startIso,
         all_day: ev.all_day ? 1 : 0,
         profile_id: eventProfileId,
+        color: eventColor,
         source: 'telegram'
       });
       createdCount++;
@@ -243,10 +261,12 @@ async function applyParsedGeminiActions(parsedData, senderProfile, ioInstance = 
           const recStartIso = ev.time ? `${fDate}T${ev.time}:00` : `${fDate}T09:00:00`;
           insertCalendarEvent({
             uid: `evt-rec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            feed_id: feedId,
             title: ev.title,
             start_datetime: recStartIso,
             all_day: ev.all_day ? 1 : 0,
             profile_id: eventProfileId,
+            color: eventColor,
             source: 'telegram'
           });
           createdCount++;

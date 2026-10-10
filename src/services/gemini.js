@@ -1,5 +1,5 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { getSettings, getProfiles, getLists } = require('../db');
+const { getSettings, getProfiles, getLists, getCalendarFeeds } = require('../db');
 
 const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 
@@ -111,12 +111,16 @@ Analyze the user's natural language input and return ONLY raw JSON matching this
 }
 
 Rules:
-1. Shopping items: If the user mentions groceries, shopping, buy X, need X, put them in shopping_items. If they mention a specific shopping list (e.g. Costco, Hardware store, Groceries), put it in list_name. If they mention who requested it or who should buy it, put it in assignee (or null for the whole family). If recurring (e.g. buy milk every week), set recurrence.
-2. Calendar events: If user mentions an appointment, meeting, practice, schedule, event with a date or time, put them in calendar_events with accurate ISO date (e.g. tomorrow = calculate relative to today). If the event is for a specific family member, set person to their name. If it is for the whole family or everyone, set person to null or "family". If recurring (e.g. every Tuesday, every week), set recurrence and recurrence_interval.
+1. Shopping items: If the user mentions groceries, shopping, buy X, need X, put them in shopping_items. If they mention a specific shopping list (e.g. Costco, Hardware store, Groceries), put it in list_name (match one of the existing lists if possible). If they mention who requested it or who should buy it, put it in assignee (use exact registered member name, or null/"family" for the whole family). If recurring (e.g. buy milk every week), set recurrence.
+2. Calendar events: If user mentions an appointment, meeting, practice, schedule, event with a date or time, put them in calendar_events with accurate ISO date (e.g. tomorrow = calculate relative to today). If the event is for a specific family member or calendar, match their name or calendar name in person (or null/"family" for the whole family). If recurring (e.g. every Tuesday, every week), set recurrence and recurrence_interval.
 3. Timer: If user says "set timer for 10 minutes", populate timer object (minutes as number).
-4. Tasks: Chores, to-dos, things to do. If a specific family member is responsible, set assignee to their name. If the task is for everyone / the whole family or unassigned, set assignee to null. If reward is mentioned (e.g. "for 15 points"), set reward number. If date/time mentioned, fill due_date and due_time. If recurring, set recurrence (e.g. daily, weekly, weekdays, weekends) and recurrence_interval.
-5. Notes: Generic info, reminders, thoughts.
-6. Only return non-empty arrays/objects when detected. If a field is not present, use empty array [] or null for timer. If the request is not clearly actionable, return notes with the user text as a reminder.`;
+4. Tasks: Chores, to-dos, things to do. If a specific family member is responsible, set assignee to their exact registered name. If the task is for everyone / the whole family or unassigned, set assignee to null. If reward is mentioned (e.g. "for 15 points"), set reward number. If date/time mentioned, fill due_date and due_time. If recurring, set recurrence (e.g. daily, weekly, weekdays, weekends) and recurrence_interval.
+5. Context matching & unknown names:
+   - When the user refers to a person, assign to their exact registered family member name. If the requested person is not found among registered members, note in response_message that they are not recognized (the item will still be saved to the family dashboard).
+   - When the user mentions a specific list, match it to an existing list if available, or create a new shopping list name. If no matching list is found, note it in response_message.
+   - When the user mentions a calendar or person for an event, match the registered member or calendar feed if known.
+6. Notes: Generic info, reminders, thoughts.
+7. Only return non-empty arrays/objects when detected. If a field is not present, use empty array [] or null for timer. If the request is not clearly actionable, return notes with the user text as a reminder.`;
 
 const DEFAULT_GEMINI_TEXT_PROMPT = 'Extract actionable family dashboard items from the message and return only the structured JSON schema described above.';
 const DEFAULT_GEMINI_VOICE_PROMPT = 'Please listen carefully to this voice recording, transcribe it, and extract the smart home actions according to the schema.';
@@ -145,7 +149,7 @@ function buildSystemPrompt(mode = 'text', senderName = null) {
     const profiles = typeof getProfiles === 'function' ? getProfiles() : [];
     if (profiles && profiles.length > 0) {
       const names = profiles.map(p => `- ${p.name || 'Member'} (ID: ${p.id})`).join('\n');
-      prompt += `\n\nRegistered family members:\n${names}\n(Use exact name for assignee/person, or null/"family" if for the whole family)`;
+      prompt += `\n\nRegistered family members:\n${names}\n(Match exact name for assignee/person, or use null/"family" if for the whole family. If the user mentions a person not in this list, mention in response_message that they are not recognized)`;
     }
   } catch (e) {}
 
@@ -154,7 +158,16 @@ function buildSystemPrompt(mode = 'text', senderName = null) {
     const lists = typeof getLists === 'function' ? getLists() : [];
     if (lists && lists.length > 0) {
       const listNames = lists.map(l => `- ${l.name} (type: ${l.type})`).join('\n');
-      prompt += `\n\nExisting dashboard lists:\n${listNames}`;
+      prompt += `\n\nExisting dashboard lists:\n${listNames}\n(Select from these existing lists when applicable. If user requests an unknown list, note it in response_message)`;
+    }
+  } catch (e) {}
+
+  // Inject available calendar feeds if available
+  try {
+    const feeds = typeof getCalendarFeeds === 'function' ? getCalendarFeeds() : [];
+    if (feeds && feeds.length > 0) {
+      const feedNames = feeds.map(f => `- ${f.name}${f.profile_name ? ` (assigned to ${f.profile_name})` : ' (Family/General)'}`).join('\n');
+      prompt += `\n\nAvailable calendar feeds:\n${feedNames}\n(Select the most relevant calendar or member for events. If none match, note it in response_message)`;
     }
   } catch (e) {}
 
