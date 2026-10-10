@@ -223,19 +223,32 @@ async function applyParsedGeminiActions(parsedData, senderProfile, ioInstance = 
     let createdCount = 0;
     for (const ev of calendar_events) {
       const isFamily = !ev.person || ['family', 'all', 'everyone', 'entire family', 'whole family'].includes(String(ev.person).toLowerCase());
+      // If ev.person is specified, resolve to profile. If not specified and not explicitly family, use senderProfile if available.
       let eventProfileId = isFamily ? null : resolveProfileIdFromName(ev.person, senderProfile);
+      if (!isFamily && !eventProfileId && senderProfile) {
+        eventProfileId = senderProfile.id;
+      }
       let feedId = null;
       let eventColor = '#38bdf8';
 
+      const feeds = getCalendarFeeds();
       // Check if person matches a calendar feed name
       if (ev.person) {
-        const feeds = getCalendarFeeds();
         const matchedFeed = feeds.find(f => (f.name || '').toLowerCase() === String(ev.person).toLowerCase())
           || feeds.find(f => (f.name || '').toLowerCase().includes(String(ev.person).toLowerCase()));
         if (matchedFeed) {
           feedId = matchedFeed.id;
           if (matchedFeed.color) eventColor = matchedFeed.color;
           if (matchedFeed.profile_id && !eventProfileId) eventProfileId = matchedFeed.profile_id;
+        }
+      }
+
+      // If feed not matched by name, check if the resolved profile has an associated feed
+      if (!feedId && eventProfileId) {
+        const profileFeed = feeds.find(f => f.profile_id === eventProfileId);
+        if (profileFeed) {
+          feedId = profileFeed.id;
+          if (profileFeed.color) eventColor = profileFeed.color;
         }
       }
 

@@ -51,13 +51,48 @@ async function syncFeed(feed) {
     const data = await ical.async.fromURL(feedUrl);
     let count = 0;
 
+    const now = new Date();
+    // Expand recurring events from 30 days ago to 90 days in the future
+    const rangeFrom = new Date(now.getTime() - 30 * 86400000);
+    const rangeTo = new Date(now.getTime() + 90 * 86400000);
+
     for (const key of Object.keys(data)) {
       const item = data[key];
       if (item.type !== 'VEVENT') continue;
 
-      const uid = item.uid || `ical-${feed.id}-${key}`;
+      const baseUid = item.uid || `ical-${feed.id}-${key}`;
       const title = item.summary || 'Untitled Event';
       const description = item.description || null;
+
+      // If the event has an RRULE (recurring event), expand occurrences within window
+      if (item.rrule && typeof ical.expandRecurringEvent === 'function') {
+        try {
+          const instances = ical.expandRecurringEvent(item, { from: rangeFrom, to: rangeTo });
+          for (let idx = 0; idx < instances.length; idx++) {
+            const inst = instances[idx];
+            const instStart = inst.start instanceof Date ? inst.start.toISOString() : new Date(inst.start).toISOString();
+            const instEnd = inst.end ? (inst.end instanceof Date ? inst.end.toISOString() : new Date(inst.end).toISOString()) : null;
+            const isAllDay = inst.datetype === 'date' || (inst.start && typeof inst.start.toISOString === 'function' && inst.start.toISOString().endsWith('T00:00:00.000Z') && inst.end && (inst.end - inst.start) % 86400000 === 0) ? 1 : 0;
+
+            upsertCalendarEventByUid({
+              uid: `${baseUid}_${instStart.slice(0, 10)}_${idx}`,
+              feed_id: feed.id,
+              title,
+              description,
+              start_datetime: instStart,
+              end_datetime: instEnd,
+              all_day: isAllDay,
+              profile_id: feed.profile_id || null,
+              color: feed.color || '#38bdf8',
+              source: 'google'
+            });
+            count++;
+          }
+          continue;
+        } catch (rruleErr) {
+          console.warn(`[Calendar] Failed to expand recurring event "${title}":`, rruleErr.message);
+        }
+      }
 
       let startIso = null;
       let endIso = null;
@@ -66,6 +101,12 @@ async function syncFeed(feed) {
       if (item.start) {
         startIso = item.start instanceof Date ? item.start.toISOString() : new Date(item.start).toISOString();
       } else {
+        continue;
+      }
+
+      // Skip past one-off events older than 60 days to keep calendar relevant
+      const eventStartDate = new Date(startIso);
+      if (eventStartDate < new Date(now.getTime() - 60 * 86400000)) {
         continue;
       }
 
@@ -78,7 +119,7 @@ async function syncFeed(feed) {
       }
 
       upsertCalendarEventByUid({
-        uid,
+        uid: baseUid,
         feed_id: feed.id,
         title,
         description,

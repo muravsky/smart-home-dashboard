@@ -141,7 +141,10 @@ function resolveGeminiPromptSettings() {
 function buildSystemPrompt(mode = 'text', senderName = null) {
   const { system, text, voice } = resolveGeminiPromptSettings();
   const basePrompt = mode === 'voice' ? voice : text;
-  let prompt = `${system}\n\n${basePrompt}`;
+  const todayStr = new Date().toISOString().slice(0, 10);
+  // Ensure today's date is always accurate even if custom system prompt has a stale date
+  const systemWithToday = system.replace(/Today is \d{4}-\d{2}-\d{2}\./, `Today is ${todayStr}.`);
+  let prompt = `${systemWithToday}\n\nToday's date is ${todayStr}.\n${basePrompt}`;
   if (senderName) {
     prompt += `\nThe sender's name is ${senderName}.`;
   }
