@@ -2517,7 +2517,7 @@
           if (!selectedProfileId.value) {
             // no profile filter: keep all items in the selected task list
           } else {
-            items = items.filter(i => i.assignee_profile_id === selectedProfileId.value);
+            items = items.filter(i => !i.assignee_profile_id || i.assignee_profile_id === selectedProfileId.value);
           }
 
           const mode = getTaskFilterMode(widget);

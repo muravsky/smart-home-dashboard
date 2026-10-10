@@ -58,7 +58,7 @@ const {
   getAuditLogs,
   clearAuditLogs
 } = require('./db');
-const { parseTextWithGemini, generateSchoolDaySummaryWithGemini } = require('./services/gemini');
+const { parseTextWithGemini, generateSchoolDaySummaryWithGemini, listAvailableGeminiModels } = require('./services/gemini');
 const { getWeather, searchCity, clearWeatherCache } = require('./services/weather');
 const { fetchLibrusData, normalizeTimetableData, buildSchoolDaySummary } = require('./services/librus');
 const { initBot, applyParsedGeminiActions } = require('./bot');
@@ -525,6 +525,16 @@ app.post('/api/admin/settings', (req, res) => {
   }
   io.emit('dashboard_update', getDashboardData());
   res.json({ ok: true, settings: updated });
+});
+
+// Gemini Models API (admin)
+app.get('/api/admin/gemini/models', async (req, res) => {
+  try {
+    const models = await listAvailableGeminiModels();
+    res.json({ models });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/weather/search', async (req, res) => {

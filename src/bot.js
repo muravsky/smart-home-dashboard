@@ -95,6 +95,8 @@ function resolveProfileIdFromName(rawName, senderProfile) {
   if (!rawName) return senderProfile ? senderProfile.id : null;
   const normalized = String(rawName).trim().toLowerCase();
   if (!normalized) return senderProfile ? senderProfile.id : null;
+  if (normalized === 'me' || normalized === 'myself') return senderProfile ? senderProfile.id : null;
+  if (['family', 'all', 'everyone', 'entire family', 'whole family', 'everybody'].includes(normalized)) return null;
 
   const profiles = getProfiles();
   const exactMatch = profiles.find((profile) => (profile.name || '').toLowerCase() === normalized);
@@ -116,11 +118,43 @@ function normalizeDateString(value) {
   return null;
 }
 
+function generateFutureCalendarDates(startDateStr, recurrence, interval = 1, maxCount = 8) {
+  const dates = [];
+  const base = new Date(startDateStr);
+  if (isNaN(base.getTime())) return dates;
+
+  const cleanRec = String(recurrence || '').toLowerCase();
+  const step = Math.max(1, Number(interval) || 1);
+
+  for (let i = 1; i <= maxCount; i++) {
+    const next = new Date(base);
+    if (cleanRec === 'daily') {
+      next.setDate(next.getDate() + (step * i));
+    } else if (cleanRec === 'weekly') {
+      next.setDate(next.getDate() + (7 * step * i));
+    } else if (cleanRec === 'weekdays') {
+      let added = 0;
+      let checkDate = new Date(base);
+      while (added < (step * i)) {
+        checkDate.setDate(checkDate.getDate() + 1);
+        const day = checkDate.getDay();
+        if (day !== 0 && day !== 6) added++;
+      }
+      next.setTime(checkDate.getTime());
+    } else if (cleanRec === 'monthly') {
+      next.setMonth(next.getMonth() + (step * i));
+    } else {
+      break;
+    }
+    dates.push(next.toISOString().slice(0, 10));
+  }
+  return dates;
+}
+
 // Helper: execute all actions returned by Gemini
 async function applyParsedGeminiActions(parsedData, senderProfile, ioInstance = null) {
   const { notes, tasks, shopping_items, calendar_events, timer } = parsedData || {};
   const senderName = senderProfile ? senderProfile.name : null;
-  const senderId = senderProfile ? senderProfile.id : null;
   const actionsSummary = [];
 
   if (Array.isArray(notes) && notes.length > 0) {
@@ -134,7 +168,9 @@ async function applyParsedGeminiActions(parsedData, senderProfile, ioInstance = 
   if (Array.isArray(tasks) && tasks.length > 0) {
     const tasksList = getOrCreateDashboardList('tasks', 'Family Tasks', '✅');
     for (const task of tasks) {
-      const assigneeProfileId = resolveProfileIdFromName(task.assignee || senderName, senderProfile);
+      const isFamily = !task.assignee || ['family', 'all', 'everyone', 'entire family', 'whole family'].includes(String(task.assignee).toLowerCase());
+      const assigneeProfileId = isFamily ? null : resolveProfileIdFromName(task.assignee, senderProfile);
+
       insertListItem({
         list_id: tasksList.id,
         content: task.title,
@@ -148,7 +184,7 @@ async function applyParsedGeminiActions(parsedData, senderProfile, ioInstance = 
       });
       insertTask({
         title: task.title,
-        assignee: task.assignee || senderName,
+        assignee: isFamily ? 'Family' : (task.assignee || senderName),
         reward: Number(task.reward) || 0
       });
     }
@@ -156,30 +192,66 @@ async function applyParsedGeminiActions(parsedData, senderProfile, ioInstance = 
   }
 
   if (Array.isArray(shopping_items) && shopping_items.length > 0) {
-    const shopList = getOrCreateDashboardList('shopping', 'Shopping List', '🛒');
     for (const item of shopping_items) {
+      const targetListName = item.list_name || 'Shopping List';
+      let shopList = getLists().find(l => l.type === 'shopping' && l.name.toLowerCase() === targetListName.toLowerCase());
+      if (!shopList) {
+        shopList = targetListName === 'Shopping List'
+          ? getOrCreateDashboardList('shopping', 'Shopping List', '🛒')
+          : insertList({ name: targetListName, type: 'shopping', icon: '🛒' });
+      }
+
+      const isFamily = !item.assignee || ['family', 'all', 'everyone', 'entire family', 'whole family'].includes(String(item.assignee).toLowerCase());
+      const assigneeProfileId = isFamily ? null : resolveProfileIdFromName(item.assignee, senderProfile);
+
       insertListItem({
         list_id: shopList.id,
         content: item.content,
-        assignee_profile_id: senderId,
-        reward: 0
+        assignee_profile_id: assigneeProfileId,
+        reward: 0,
+        recurrence: item.recurrence || 'none',
+        recurrence_interval: Number(item.recurrence_interval) || 1
       });
     }
     actionsSummary.push(`Added ${shopping_items.length} shopping item(s)`);
   }
 
   if (Array.isArray(calendar_events) && calendar_events.length > 0) {
+    let createdCount = 0;
     for (const ev of calendar_events) {
-      const startIso = ev.time ? `${ev.date}T${ev.time}:00` : `${ev.date}T09:00:00`;
+      const isFamily = !ev.person || ['family', 'all', 'everyone', 'entire family', 'whole family'].includes(String(ev.person).toLowerCase());
+      const eventProfileId = isFamily ? null : resolveProfileIdFromName(ev.person, senderProfile);
+      const baseDate = normalizeDateString(ev.date) || ev.date || new Date().toISOString().slice(0, 10);
+      const startIso = ev.time ? `${baseDate}T${ev.time}:00` : `${baseDate}T09:00:00`;
+
       insertCalendarEvent({
+        uid: `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         title: ev.title,
         start_datetime: startIso,
         all_day: ev.all_day ? 1 : 0,
-        profile_id: senderId,
+        profile_id: eventProfileId,
         source: 'telegram'
       });
+      createdCount++;
+
+      // If recurring calendar event, schedule upcoming occurrences
+      if (ev.recurrence && ev.recurrence !== 'none') {
+        const futureDates = generateFutureCalendarDates(baseDate, ev.recurrence, ev.recurrence_interval, 8);
+        for (const fDate of futureDates) {
+          const recStartIso = ev.time ? `${fDate}T${ev.time}:00` : `${fDate}T09:00:00`;
+          insertCalendarEvent({
+            uid: `evt-rec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            title: ev.title,
+            start_datetime: recStartIso,
+            all_day: ev.all_day ? 1 : 0,
+            profile_id: eventProfileId,
+            source: 'telegram'
+          });
+          createdCount++;
+        }
+      }
     }
-    actionsSummary.push(`Scheduled ${calendar_events.length} event(s)`);
+    actionsSummary.push(`Scheduled ${createdCount} event(s)`);
   }
 
   if (timer && timer.minutes) {
@@ -210,18 +282,28 @@ function buildConfirmationMessage(parsedData, senderProfile) {
 
   if (tasks && tasks.length > 0) {
     msg += `📋 *Tasks created:*\n` + tasks.map(t => {
-      const who = t.assignee ? `(@${t.assignee}) ` : '';
+      const who = t.assignee ? `(@${t.assignee}) ` : '(Family) ';
       const rew = t.reward ? ` [+${t.reward}]` : '';
-      return `• ${t.title} ${who}${rew}`;
+      const rec = t.recurrence && t.recurrence !== 'none' ? ` [🔁 ${t.recurrence}]` : '';
+      return `• ${t.title} ${who}${rew}${rec}`;
     }).join('\n') + '\n';
   }
 
   if (shopping_items && shopping_items.length > 0) {
-    msg += `🛒 *Shopping list updated:*\n` + shopping_items.map(s => `• ${s.content}`).join('\n') + '\n';
+    msg += `🛒 *Shopping list updated:*\n` + shopping_items.map(s => {
+      const listTag = s.list_name ? `[${s.list_name}] ` : '';
+      const who = s.assignee ? `(@${s.assignee}) ` : '';
+      const rec = s.recurrence && s.recurrence !== 'none' ? ` [🔁 ${s.recurrence}]` : '';
+      return `• ${listTag}${s.content} ${who}${rec}`.trim();
+    }).join('\n') + '\n';
   }
 
   if (calendar_events && calendar_events.length > 0) {
-    msg += `📅 *Calendar events scheduled:*\n` + calendar_events.map(e => `• ${e.title} (${e.date} ${e.time || ''})`).join('\n') + '\n';
+    msg += `📅 *Calendar events scheduled:*\n` + calendar_events.map(e => {
+      const who = e.person ? `(@${e.person}) ` : '(Family) ';
+      const rec = e.recurrence && e.recurrence !== 'none' ? ` [🔁 ${e.recurrence}]` : '';
+      return `• ${e.title} ${who}(${e.date || 'today'} ${e.time || ''})${rec}`;
+    }).join('\n') + '\n';
   }
 
   if (notes && notes.length > 0) {
