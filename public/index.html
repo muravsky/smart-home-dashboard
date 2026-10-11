@@ -170,7 +170,92 @@
     .theme-white .text-amber-400 {
       color: #d97706 !important;
     }
-    .theme-white .border-sky-950\/60 {
+    .theme-white .text-amber-300,
+    .theme-white .text-amber-200 {
+      color: #b45309 !important;
+    }
+    /* School Schedule / Summary / Grades / Notifications colors */
+    .theme-white .text-violet-400 {
+      color: #6d28d9 !important;
+    }
+    .theme-white .text-violet-300 {
+      color: #5b21b6 !important;
+    }
+    .theme-white .text-violet-200 {
+      color: #4c1d95 !important;
+    }
+    .theme-white .bg-violet-950\/20 {
+      background-color: #f5f3ff !important;
+    }
+    .theme-white .border-violet-800\/60 {
+      border-color: #ddd6fe !important;
+    }
+    .theme-white .text-yellow-400 {
+      color: #b45309 !important;
+    }
+    .theme-white .text-yellow-300 {
+      color: #92400e !important;
+    }
+    .theme-white .text-yellow-200 {
+      color: #78350f !important;
+    }
+    .theme-white .bg-yellow-950\/20 {
+      background-color: #fefce8 !important;
+    }
+    .theme-white .border-yellow-800\/60 {
+      border-color: #fde68a !important;
+    }
+    .theme-white .text-cyan-400 {
+      color: #0e7490 !important;
+    }
+    .theme-white .text-cyan-300 {
+      color: #0c6e85 !important;
+    }
+    .theme-white .bg-cyan-950\/20 {
+      background-color: #ecfeff !important;
+    }
+    .theme-white .border-cyan-800\/60 {
+      border-color: #a5f3fc !important;
+    }
+    /* Cancelled / Replacement badges */
+    .theme-white .bg-red-900\/70 {
+      background-color: #fef2f2 !important;
+      color: #991b1b !important;
+    }
+    .theme-white .bg-amber-900\/70 {
+      background-color: #fffbeb !important;
+      color: #92400e !important;
+    }
+    .theme-white .text-red-200 {
+      color: #991b1b !important;
+    }
+    .theme-white .text-amber-200 {
+      color: #92400e !important;
+    }
+    /* Detail cards inside widgets */
+    .theme-white .bg-neutral-900\/60,
+    .theme-white .bg-neutral-950\/60,
+    .theme-white .bg-neutral-950\/40 {
+      background-color: #f1f5f9 !important;
+    }
+    .theme-white .border-neutral-800 {
+      border-color: #e2e8f0 !important;
+    }
+    /* Amber section in school_summary */
+    .theme-white .bg-amber-950\/20 {
+      background-color: #fffbeb !important;
+    }
+    .theme-white .border-amber-800\/60 {
+      border-color: #fde68a !important;
+    }
+    /* Emerald section */
+    .theme-white .bg-emerald-950\/20 {
+      background-color: #ecfdf5 !important;
+    }
+    .theme-white .border-emerald-800\/60 {
+      border-color: #a7f3d0 !important;
+    }
+
       border-color: #bae6fd !important;
     }
     .theme-white .widget-card {
@@ -392,23 +477,6 @@
     .fs-xxlarge .text-3xl { font-size: 3.1rem !important; }
     .fs-xxlarge .responsive-clock-text { font-size: clamp(4.5rem, 14vw, 12rem) !important; }
 
-    .widget-card {
-      --widget-text-scale: var(--widget-text-scale, 1);
-    }
-    .widget-card .text-\[8px\],
-    .widget-card .text-\[9px\],
-    .widget-card .text-\[10px\],
-    .widget-card .text-\[11px\],
-    .widget-card .text-\[12px\],
-    .widget-card .text-xs,
-    .widget-card .text-sm,
-    .widget-card .text-base,
-    .widget-card .text-lg,
-    .widget-card .text-xl,
-    .widget-card .text-2xl,
-    .widget-card .text-3xl {
-      font-size: calc(var(--widget-text-scale, 1) * 1em) !important;
-    }
     .widget-card .text-\[8px\] { font-size: calc(8px * var(--widget-text-scale, 1)) !important; }
     .widget-card .text-\[9px\] { font-size: calc(9px * var(--widget-text-scale, 1)) !important; }
     .widget-card .text-\[10px\] { font-size: calc(10px * var(--widget-text-scale, 1)) !important; }
@@ -729,6 +797,24 @@
                 <span>⠿</span>
                 <span>MOVE</span>
               </div>
+
+              <!-- Reorder Buttons (Move backward / forward) -->
+              <button 
+                type="button"
+                @click.stop="moveWidget(w, -1)"
+                title="Move widget backward"
+                class="px-1.5 py-1 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-semibold"
+              >
+                ◀
+              </button>
+              <button 
+                type="button"
+                @click.stop="moveWidget(w, 1)"
+                title="Move widget forward"
+                class="px-1.5 py-1 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-semibold"
+              >
+                ▶
+              </button>
               
               <!-- Resize Width Button (cycles: 4 -> 6 -> 8 -> 12) -->
               <button 
@@ -1169,9 +1255,36 @@
 
             <!-- ================= WIDGET TYPE 8: SCHOOL SCHEDULE ================= -->
             <div v-else-if="w.widget_type === 'schedule'" class="h-full flex flex-col justify-between overflow-hidden">
-              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2 gap-2">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2 gap-2 flex-wrap">
                 <div class="flex items-center gap-2">
                   <span class="font-mono text-xs uppercase tracking-widest text-violet-400 font-semibold">{{ getLocalizedWidgetLabel('schedule', 'SCHOOL SCHEDULE') }}</span>
+                  <!-- View Mode Toggle: Today / Tomorrow / Week -->
+                  <div class="flex items-center bg-neutral-900/80 rounded-lg p-0.5 border border-neutral-800">
+                    <button 
+                      type="button"
+                      @click.stop="setScheduleViewMode(w, 'today')" 
+                      class="px-2 py-0.5 rounded text-[10px] font-mono transition"
+                      :class="getScheduleViewMode(w) === 'today' ? 'bg-violet-600 text-white font-bold' : 'text-neutral-400 hover:text-white'"
+                    >
+                      Today
+                    </button>
+                    <button 
+                      type="button"
+                      @click.stop="setScheduleViewMode(w, 'tomorrow')" 
+                      class="px-2 py-0.5 rounded text-[10px] font-mono transition"
+                      :class="getScheduleViewMode(w) === 'tomorrow' ? 'bg-violet-600 text-white font-bold' : 'text-neutral-400 hover:text-white'"
+                    >
+                      Tomorrow
+                    </button>
+                    <button 
+                      type="button"
+                      @click.stop="setScheduleViewMode(w, 'week')" 
+                      class="px-2 py-0.5 rounded text-[10px] font-mono transition"
+                      :class="getScheduleViewMode(w) === 'week' ? 'bg-violet-600 text-white font-bold' : 'text-neutral-400 hover:text-white'"
+                    >
+                      Week
+                    </button>
+                  </div>
                 </div>
                 <div class="flex items-center gap-2">
                   <button @click.stop="refreshDashboardData" class="text-[9px] font-mono uppercase tracking-widest text-violet-200 hover:text-white border border-violet-800/70 rounded px-1.5 py-0.5">Refresh</button>
@@ -1182,9 +1295,47 @@
                 </div>
               </div>
 
-              <div v-if="getSchoolScheduleRows(w).length === 0" class="flex items-center justify-center rounded-xl border border-dashed border-neutral-700 bg-neutral-950/40 text-[11px] text-neutral-500 min-h-[120px]">
+              <div v-if="getDisplayedScheduleRows(w).length === 0" class="flex items-center justify-center rounded-xl border border-dashed border-neutral-700 bg-neutral-950/40 text-[11px] text-neutral-500 min-h-[120px]">
                 No timetable synced yet.
               </div>
+
+              <!-- Day View (Today / Tomorrow): Clean Cards Layout -->
+              <div v-else-if="getScheduleViewMode(w) !== 'week'" class="overflow-y-auto space-y-2 flex-1 pr-1">
+                <div v-for="dayRow in getDisplayedScheduleRows(w)" :key="dayRow.day" class="space-y-1.5">
+                  <div class="flex items-center justify-between text-xs font-mono font-bold text-violet-300 border-b border-neutral-800/80 pb-1">
+                    <span>{{ dayRow.day }}</span>
+                    <span v-if="dayRow.isToday" class="text-[9px] px-1.5 py-0.5 rounded bg-violet-600 text-white uppercase tracking-wider">Today</span>
+                  </div>
+                  <div v-if="!dayRow.lessons || dayRow.lessons.length === 0" class="text-neutral-500 text-xs italic py-2">
+                    No classes scheduled.
+                  </div>
+                  <div v-else class="space-y-1.5">
+                    <div 
+                      v-for="(lesson, lIdx) in dayRow.lessons" 
+                      :key="lesson.start + '-' + lIdx"
+                      class="flex items-center justify-between p-2 rounded-lg bg-neutral-900/60 border border-neutral-800 text-xs"
+                      :class="lesson.cancelled ? 'opacity-60 line-through' : ''"
+                    >
+                      <div class="flex items-center gap-2.5">
+                        <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-violet-950/40 text-violet-300 border border-violet-800/40 font-bold whitespace-nowrap">
+                          {{ lesson.start }}–{{ lesson.end }}
+                        </span>
+                        <div>
+                          <div class="font-bold text-white">{{ lesson.name }}</div>
+                          <div v-if="lesson.teacher" class="text-[10px] text-violet-300">{{ lesson.teacher }}</div>
+                        </div>
+                      </div>
+                      <div class="text-right flex items-center gap-1.5">
+                        <span v-if="lesson.cancelled" class="px-1.5 py-0.5 rounded bg-red-900/70 text-red-200 text-[9px] font-mono">CANCELLED</span>
+                        <span v-else-if="lesson.replacement || lesson.replacementTeacher" class="px-1.5 py-0.5 rounded bg-amber-900/70 text-amber-200 text-[9px] font-mono">REPLACEMENT</span>
+                        <span v-if="lesson.room" class="font-mono text-[11px] text-neutral-400 bg-neutral-800 px-1.5 py-0.5 rounded">{{ lesson.room }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Full Week Table View -->
               <div v-else class="overflow-auto rounded-xl border border-neutral-800 bg-neutral-950/60">
                 <table class="w-full border-collapse text-[9px] text-neutral-200">
                   <thead>
@@ -1871,7 +2022,9 @@
           night_mode_end: '07:00',
           language: 'en',
           notification_items_limit: 5,
-          announcement_items_limit: 5
+          announcement_items_limit: 5,
+          default_theme: 'white',
+          default_font_size: 'xlarge'
         });
 
         function getWidgetConfig(w) {
@@ -2385,7 +2538,7 @@
             return pageCfg.theme;
           }
           const prof = selectedProfile.value;
-          return (prof && prof.theme) || 'dark';
+          return (prof && prof.theme) || (settings.value && settings.value.default_theme) || 'white';
         });
 
         const activeFontSize = computed(() => {
@@ -2396,7 +2549,7 @@
             return pageCfg.font_size;
           }
           const prof = selectedProfile.value;
-          return (prof && prof.font_size) || 'normal';
+          return (prof && prof.font_size) || (settings.value && settings.value.default_font_size) || 'xlarge';
         });
 
         const currentPageConfigKey = computed(() => {
@@ -2638,7 +2791,9 @@
         // Active page widgets
         const activePageWidgets = computed(() => {
           if (!layouts.value) return [];
-          return layouts.value.filter(w => (w.page || 0) === activePage.value);
+          return layouts.value
+            .filter(w => (w.page || 0) === activePage.value)
+            .sort((a, b) => (Number(a.position) || 0) - (Number(b.position) || 0));
         });
 
         // Filtered tasks based on active profile
@@ -3032,6 +3187,44 @@
             }));
         }
 
+        const scheduleViewModes = ref({});
+
+        function getScheduleViewMode(widget) {
+          const wId = widget ? String(widget.id) : 'default';
+          if (scheduleViewModes.value[wId]) return scheduleViewModes.value[wId];
+          const cfg = getWidgetConfig(widget);
+          return (cfg && cfg.schedule_view_mode) || 'today';
+        }
+
+        function setScheduleViewMode(widget, mode) {
+          triggerHaptic('tap');
+          const wId = widget ? String(widget.id) : 'default';
+          scheduleViewModes.value = { ...scheduleViewModes.value, [wId]: mode };
+          if (widget) {
+            if (!widget.config || typeof widget.config !== 'object') widget.config = {};
+            widget.config.schedule_view_mode = mode;
+            saveCurrentLayout();
+          }
+        }
+
+        function getDisplayedScheduleRows(widget) {
+          const allRows = getSchoolScheduleRows(widget);
+          if (!allRows.length) return [];
+          const mode = getScheduleViewMode(widget);
+          if (mode === 'week') return allRows;
+
+          const today = new Date();
+          const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+          const targetDayIdx = mode === 'tomorrow' ? (today.getDay() + 1) % 7 : today.getDay();
+          const targetKey = dayNames[targetDayIdx];
+
+          const match = allRows.filter(r => normalizeSchoolDayLabel(r.day) === targetKey);
+          if (match.length) return match;
+
+          // If no lessons for selected day (e.g. weekend), return the nearest upcoming school day or first row
+          return allRows.slice(0, 1);
+        }
+
         function getColSpanClass(w) {
           const width = Number(w) || 6;
           if (width >= 12) return 'col-span-12';
@@ -3357,12 +3550,41 @@
             scroll: false,
             onEnd: () => {
               const domIds = Array.from(widgetGridRef.value.children).map(c => c.getAttribute('data-id'));
-              const pageWidgets = layouts.value.filter(w => (w.page || 0) === activePage.value);
-              pageWidgets.sort((a, b) => domIds.indexOf(String(a.id)) - domIds.indexOf(String(b.id)));
-              pageWidgets.forEach((w, idx) => w.position = idx);
+              layouts.value.sort((a, b) => {
+                if ((a.page || 0) !== activePage.value || (b.page || 0) !== activePage.value) return 0;
+                const ai = domIds.indexOf(String(a.id));
+                const bi = domIds.indexOf(String(b.id));
+                return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+              });
+              layouts.value
+                .filter(w => (w.page || 0) === activePage.value)
+                .forEach((w, idx) => w.position = idx);
               saveCurrentLayout();
             }
           });
+        }
+
+        function moveWidget(w, direction) {
+          triggerHaptic('tap');
+          const pageWidgets = layouts.value
+            .filter(item => (item.page || 0) === activePage.value)
+            .sort((a, b) => (Number(a.position) || 0) - (Number(b.position) || 0));
+          const idx = pageWidgets.indexOf(w);
+          if (idx === -1) return;
+          const targetIdx = idx + direction;
+          if (targetIdx < 0 || targetIdx >= pageWidgets.length) return;
+
+          // Swap positions in pageWidgets
+          const other = pageWidgets[targetIdx];
+          const tempPos = w.position !== undefined ? w.position : idx;
+          w.position = other.position !== undefined ? other.position : targetIdx;
+          other.position = tempPos;
+
+          // Normalize positions across this page
+          pageWidgets.sort((a, b) => (Number(a.position) || 0) - (Number(b.position) || 0));
+          pageWidgets.forEach((item, i) => item.position = i);
+
+          saveCurrentLayout();
         }
 
         function cycleWidgetWidth(w) {
@@ -3747,6 +3969,9 @@
           liveTranscript,
           getSchoolLessonNumbers,
           getSchoolScheduleRows,
+          getScheduleViewMode,
+          setScheduleViewMode,
+          getDisplayedScheduleRows,
           getSchoolScheduleColumns,
           getLessonForSlot,
           getLocalizedWidgetLabel,
@@ -3819,6 +4044,7 @@
           currentPageConfigFontSize,
           cyclePageTheme,
           cyclePageFontSize,
+          moveWidget,
           removeWidget,
           addWidget,
           addNewPage,

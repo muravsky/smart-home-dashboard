@@ -243,6 +243,7 @@
                 <option value="normal">Normal (Default)</option>
                 <option value="large">Large</option>
                 <option value="xlarge">Extra Large</option>
+                <option value="xxlarge">Huge (XXL)</option>
               </select>
             </div>
           </div>
@@ -460,6 +461,8 @@
                 >
                   <option value="dark">🌙 Dark Theme</option>
                   <option value="white">☀️ White Theme</option>
+                  <option value="white-contrast">⚪ White (Black Text) Theme</option>
+                  <option value="high-contrast">⚫ High Contrast Theme</option>
                 </select>
               </div>
               <div>
@@ -472,6 +475,7 @@
                   <option value="normal">Normal (Default)</option>
                   <option value="large">Large</option>
                   <option value="xlarge">Extra Large</option>
+                  <option value="xxlarge">Huge (XXL)</option>
                 </select>
               </div>
             </div>
@@ -1738,6 +1742,45 @@
 
       <form @submit.prevent="saveSettings" class="space-y-6">
         
+        <!-- SECTION 0: GLOBAL DASHBOARD APPEARANCE -->
+        <div class="bg-neutral-950/70 border border-neutral-800/80 rounded-xl p-4 md:p-5 space-y-4">
+          <div class="flex items-center gap-2 border-b border-neutral-800/80 pb-2">
+            <span class="text-base">🎨</span>
+            <h3 class="font-mono text-xs font-bold uppercase tracking-wider text-sky-400">
+              GLOBAL DASHBOARD APPEARANCE (DEFAULTS)
+            </h3>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-neutral-300 text-xs font-mono mb-1 font-semibold">DEFAULT THEME</label>
+              <p class="text-[11px] text-neutral-500 mb-2">Used for all pages and profiles unless explicitly overridden.</p>
+              <select 
+                v-model="settings.default_theme" 
+                class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2.5 text-xs text-neutral-200 outline-none focus:border-sky-400"
+              >
+                <option value="white">☀️ White Theme (Recommended)</option>
+                <option value="white-contrast">⚪ White (Black Text) Theme</option>
+                <option value="dark">🌙 Dark Theme</option>
+                <option value="high-contrast">⚫ High Contrast Theme</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-neutral-300 text-xs font-mono mb-1 font-semibold">DEFAULT FONT SIZE</label>
+              <p class="text-[11px] text-neutral-500 mb-2">Default base typography scaling for kiosks and tablets.</p>
+              <select 
+                v-model="settings.default_font_size" 
+                class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2.5 text-xs text-neutral-200 outline-none focus:border-sky-400"
+              >
+                <option value="small">Small</option>
+                <option value="normal">Normal</option>
+                <option value="large">Large</option>
+                <option value="xlarge">Extra Large (Recommended for Family Display)</option>
+                <option value="xxlarge">Huge (XXL)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         <!-- SECTION 1: DAYTIME SETTINGS -->
         <div class="bg-neutral-950/70 border border-neutral-800/80 rounded-xl p-4 md:p-5 space-y-4">
           <div class="flex items-center gap-2 border-b border-neutral-800/80 pb-2">
@@ -2361,6 +2404,8 @@
           https_redirect_http: 1,
           notification_items_limit: 5,
           announcement_items_limit: 5,
+          default_theme: 'white',
+          default_font_size: 'xlarge',
           librus_sync_timetable: 'manual',
           librus_sync_grades: 'daily',
           librus_sync_notifications: 'daily',

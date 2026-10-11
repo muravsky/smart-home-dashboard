@@ -147,25 +147,33 @@ io.on('connection', (socket) => {
 
   // Save widget layouts from kiosk (with optional profileId)
   socket.on('layout:save', (data) => {
-    if (Array.isArray(data)) {
-      saveWidgetLayouts(data, null);
-    } else if (data && Array.isArray(data.layouts)) {
-      saveWidgetLayouts(data.layouts, data.profileId || null);
+    try {
+      if (Array.isArray(data)) {
+        saveWidgetLayouts(data, null);
+      } else if (data && Array.isArray(data.layouts)) {
+        saveWidgetLayouts(data.layouts, data.profileId || null);
+      }
+      io.emit('dashboard_update', getDashboardData());
+    } catch (err) {
+      console.error('[Socket] Failed to save layout:', err.message);
     }
-    io.emit('dashboard_update', getDashboardData());
   });
 
   // Save page config from kiosk (theme & font_size per page / profile)
   socket.on('page:config:save', (data) => {
     if (data) {
-      const pKey = data.profile_key || (data.profileId ? String(data.profileId) : 'family');
-      savePageConfig({
-        profile_key: pKey,
-        page: Number(data.page) || 0,
-        theme: data.theme || 'inherit',
-        font_size: data.font_size || 'inherit'
-      });
-      io.emit('dashboard_update', getDashboardData());
+      try {
+        const pKey = data.profile_key || (data.profileId ? String(data.profileId) : 'family');
+        savePageConfig({
+          profile_key: pKey,
+          page: Number(data.page) || 0,
+          theme: data.theme || 'inherit',
+          font_size: data.font_size || 'inherit'
+        });
+        io.emit('dashboard_update', getDashboardData());
+      } catch (err) {
+        console.error('[Socket] Failed to save page config:', err.message);
+      }
     }
   });
 

@@ -260,6 +260,12 @@ try {
   console.warn('Migration list_items columns check:', e.message);
 }
 
+try {
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_page_configs_profile_page ON page_configs(profile_key, page)');
+} catch (e) {
+  console.warn('Migration page_configs unique index check:', e.message);
+}
+
 // Seed default settings if empty
 const existingSettingsCount = db.prepare('SELECT COUNT(*) as count FROM settings').get();
 if (existingSettingsCount.count === 0) {
@@ -889,6 +895,8 @@ function getSettings() {
     weather_lon: '',
     weather_units: 'metric',
     language: 'en',
+    default_theme: 'white',
+    default_font_size: 'xlarge',
     https_enabled: 0,
     https_cert_path: '/etc/letsencrypt/live/your-domain/fullchain.pem',
     https_key_path: '/etc/letsencrypt/live/your-domain/privkey.pem',
@@ -1161,14 +1169,17 @@ function getPageConfigs() {
 }
 
 function savePageConfig({ profile_key = 'family', page = 0, theme = 'inherit', font_size = 'inherit' }) {
-  const stmt = db.prepare(`
-    INSERT INTO page_configs (profile_key, page, theme, font_size)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(profile_key, page) DO UPDATE SET
-      theme = excluded.theme,
-      font_size = excluded.font_size
-  `);
-  stmt.run(String(profile_key), Number(page), theme || 'inherit', font_size || 'inherit');
+  const pKey = String(profile_key);
+  const pNum = Number(page) || 0;
+  const tVal = theme || 'inherit';
+  const fVal = font_size || 'inherit';
+
+  const existing = db.prepare('SELECT id FROM page_configs WHERE profile_key = ? AND page = ?').get(pKey, pNum);
+  if (existing) {
+    db.prepare('UPDATE page_configs SET theme = ?, font_size = ? WHERE id = ?').run(tVal, fVal, existing.id);
+  } else {
+    db.prepare('INSERT INTO page_configs (profile_key, page, theme, font_size) VALUES (?, ?, ?, ?)').run(pKey, pNum, tVal, fVal);
+  }
   return getPageConfigs();
 }
 
