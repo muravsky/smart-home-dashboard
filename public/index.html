@@ -1040,41 +1040,40 @@
                 <div v-if="getWeatherStyle(w) === 'full'" class="flex flex-1 flex-col justify-between py-2 gap-3 min-h-0">
                   <div class="flex items-center justify-between gap-3">
                     <div class="text-[7rem] md:text-[9rem] leading-none text-sky-300 drop-shadow-[0_0_25px_rgba(56,189,248,0.3)]" :class="w.h >= 3 ? 'text-[7rem] md:text-[9rem]' : 'text-[5rem] md:text-[7rem]'">{{ localizedWeather.icon }}</div>
-                    <div class="text-right">
-                      <div class="font-mono font-light text-white leading-none" :class="w.h >= 3 ? 'text-7xl md:text-8xl' : 'text-5xl md:text-6xl'">{{ localizedWeather.temperature }}°{{ localizedWeather.unit || 'C' }}</div>
+                    <div class="text-right min-w-0">
+                      <div class="flex flex-wrap items-baseline justify-end gap-x-3 gap-y-1">
+                        <span class="font-mono font-light text-white leading-none" :class="w.h >= 3 ? 'text-7xl md:text-8xl' : 'text-5xl md:text-6xl'">{{ localizedWeather.temperature }}°{{ localizedWeather.unit || 'C' }}</span>
+                        <span class="font-mono text-sm md:text-base text-neutral-300 whitespace-nowrap" :title="t('range')">{{ localizedWeather.tempMin }}° – {{ localizedWeather.tempMax }}°</span>
+                      </div>
                       <div class="text-sm md:text-base text-neutral-300 font-sans mt-1">{{ localizedWeather.condition }}</div>
                     </div>
                   </div>
-                  <div class="grid grid-cols-2 gap-2 text-[11px] md:text-xs font-mono text-neutral-300">
-                    <div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-2">
+                  <div class="grid grid-cols-4 gap-2 text-[11px] md:text-xs font-mono text-neutral-300">
+                    <div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-2 min-w-0">
                       <div class="text-neutral-500 uppercase tracking-widest">{{ t('feelsLike') }}</div>
-                      <div class="text-base md:text-lg font-bold text-white mt-1">{{ localizedWeather.feelsLike }}°</div>
+                      <div class="text-base md:text-lg font-bold text-white mt-1 whitespace-nowrap">{{ localizedWeather.feelsLike }}°</div>
                     </div>
-                    <div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-2">
+                    <div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-2 min-w-0">
                       <div class="text-neutral-500 uppercase tracking-widest">{{ t('precip') }}</div>
-                      <div class="text-base md:text-lg font-bold text-white mt-1">{{ localizedWeather.precipitation }} mm</div>
+                      <div class="text-base md:text-lg font-bold text-white mt-1 whitespace-nowrap">{{ localizedWeather.precipitation }} mm</div>
                     </div>
-                    <div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-2">
+                    <div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-2 min-w-0">
                       <div class="text-neutral-500 uppercase tracking-widest">{{ t('humidity') }}</div>
-                      <div class="text-base md:text-lg font-bold text-white mt-1">{{ localizedWeather.humidity }}%</div>
+                      <div class="text-base md:text-lg font-bold text-white mt-1 whitespace-nowrap">{{ localizedWeather.humidity }}%</div>
                     </div>
-                    <div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-2">
+                    <div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-2 min-w-0">
                       <div class="text-neutral-500 uppercase tracking-widest">{{ t('wind') }}</div>
-                      <div class="text-base md:text-lg font-bold text-white mt-1">{{ localizedWeather.windSpeed }} {{ localizedWeather.units === 'imperial' ? 'mph' : 'km/h' }}</div>
-                    </div>
-                    <div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-2 col-span-2">
-                      <div class="text-neutral-500 uppercase tracking-widest">{{ t('range') }}</div>
-                      <div class="text-base md:text-lg font-bold text-white mt-1">{{ localizedWeather.tempMin }}° / {{ localizedWeather.tempMax }}°</div>
+                      <div class="text-base md:text-lg font-bold text-white mt-1 whitespace-nowrap">{{ localizedWeather.windSpeed }} {{ localizedWeather.units === 'imperial' ? 'mph' : 'km/h' }}</div>
                     </div>
                   </div>
                   <div v-if="getWeatherForecastItems(w).length" class="pt-2 border-t border-neutral-800 mt-auto">
                     <div class="text-[10px] font-mono uppercase tracking-[0.16em] text-neutral-500 mb-2">{{ getWeatherForecastTitle(w) }}</div>
                     <div class="flex w-full gap-2 overflow-x-auto pb-1">
-                      <div v-for="item in getWeatherForecastItems(w)" :key="item.key" class="weather-forecast-tile min-w-[72px] flex-1 rounded-lg border border-neutral-800 bg-neutral-900/70 p-2 text-center shrink-0">
-                        <div class="text-[9px] font-mono text-neutral-400">{{ item.label }}</div>
+                      <div v-for="item in getWeatherForecastItems(w)" :key="item.key" class="weather-forecast-tile min-w-[84px] flex-1 rounded-lg border border-neutral-800 bg-neutral-900/70 p-2 text-center shrink-0">
+                        <div class="text-sm font-mono font-semibold text-neutral-400">{{ item.label }}</div>
                         <div class="text-lg leading-none my-1">{{ item.icon }}</div>
-                        <div class="text-[10px] font-bold text-white">{{ item.temperature }}°</div>
-                        <div class="text-[8px] font-mono text-sky-300">{{ item.precipitation }}mm</div>
+                        <div class="text-sm font-bold text-white whitespace-nowrap">{{ getWeatherForecastMode(w) === 'hourly' ? `${item.temperature}°` : `${item.tempMin}° / ${item.tempMax}°` }}</div>
+                        <div class="text-sm font-mono font-semibold text-sky-300 mt-1">{{ item.precipitation }} mm</div>
                       </div>
                     </div>
                   </div>
@@ -2133,6 +2132,8 @@
             humidity: 'Humidity',
             wind: 'Wind',
             range: 'Range',
+            forecastDays: 'Next {days} days',
+            forecastHours: 'Next 12 hours',
             loading: 'Loading live weather...',
             overdue: 'OVERDUE',
             kitchenTimer: 'KITCHEN TIMER',
@@ -2145,6 +2146,8 @@
             humidity: 'Влажность',
             wind: 'Ветер',
             range: 'Диапазон',
+            forecastDays: 'Следующие {days} дней',
+            forecastHours: 'Ближайшие 12 часов',
             loading: 'Загрузка погоды...',
             overdue: 'ПРОСРОЧЕНО',
             kitchenTimer: 'КУХОННЫЙ ТАЙМЕР',
@@ -2157,6 +2160,8 @@
             humidity: 'Wilgotność',
             wind: 'Wiatr',
             range: 'Zakres',
+            forecastDays: 'Następne {days} dni',
+            forecastHours: 'Najbliższe 12 godzin',
             loading: 'Ładowanie pogody...',
             overdue: 'ZALEGŁE',
             kitchenTimer: 'MINUTNIK KITCHEN',
@@ -2169,6 +2174,8 @@
             humidity: 'Вологість',
             wind: 'Вітер',
             range: 'Діапазон',
+            forecastDays: 'Наступні {days} днів',
+            forecastHours: 'Наступні 12 годин',
             loading: 'Завантаження погоди...',
             overdue: 'ПРОСТРОЧЕНО',
             kitchenTimer: 'КУХОННИЙ ТАЙМЕР',
@@ -2876,7 +2883,17 @@
         }
 
         function getWeatherForecastTitle(w) {
-          return getWeatherForecastMode(w) === 'hourly' ? 'Next 12 hours' : `Next ${getWeatherForecastDays(w)} days`;
+          return getWeatherForecastMode(w) === 'hourly'
+            ? t('forecastHours')
+            : t('forecastDays').replace('{days}', getWeatherForecastDays(w));
+        }
+
+        function getWeatherForecastLabel(entry, mode) {
+          if (mode === 'hourly' || !entry.date) return entry.label || entry.time || '';
+          const [year, month, day] = String(entry.date).slice(0, 10).split('-').map(Number);
+          if (!year || !month || !day) return entry.label || entry.date;
+          const locale = localeMap[effectiveLanguage.value] || 'en-US';
+          return new Date(year, month - 1, day).toLocaleDateString(locale, { weekday: 'short' });
         }
 
         function getWeatherForecastItems(w) {
@@ -2886,19 +2903,21 @@
           if (mode === 'hourly') {
             return (forecast.hourly || []).slice(0, 12).map((entry, idx) => ({
               key: entry.time || `hour-${idx}`,
-              label: entry.label || entry.time,
+              label: getWeatherForecastLabel(entry, mode),
               icon: entry.icon || '☀️',
               temperature: entry.temperature,
               precipitation: entry.precipitation,
               wind: entry.windSpeed
             }));
           }
-          const days = Number(w && w.config && w.config.forecast_days) || 7;
+          const days = getWeatherForecastDays(w);
           return (forecast.daily || []).slice(0, Math.max(1, Math.min(days, 10))).map((entry, idx) => ({
             key: entry.date || `day-${idx}`,
-            label: entry.label || entry.date,
+            label: getWeatherForecastLabel(entry, mode),
             icon: entry.icon || '☀️',
             temperature: entry.temperature,
+            tempMin: entry.tempMin,
+            tempMax: entry.temperature,
             precipitation: entry.precipitation
           }));
         }
