@@ -482,6 +482,14 @@
     .widget-card .text-\[10px\] { font-size: calc(10px * var(--widget-text-scale, 1)) !important; }
     .widget-card .text-\[11px\] { font-size: calc(11px * var(--widget-text-scale, 1)) !important; }
     .widget-card .text-\[12px\] { font-size: calc(12px * var(--widget-text-scale, 1)) !important; }
+    .readability-widget .text-\[8px\] { font-size: max(13px, calc(8px * var(--widget-text-scale, 1))) !important; }
+    .readability-widget .text-\[9px\] { font-size: max(13px, calc(9px * var(--widget-text-scale, 1))) !important; }
+    .readability-widget .text-\[10px\] { font-size: max(13px, calc(10px * var(--widget-text-scale, 1))) !important; }
+    .readability-widget .text-\[11px\] { font-size: max(14px, calc(11px * var(--widget-text-scale, 1))) !important; }
+    .readability-widget .text-\[12px\] { font-size: max(15px, calc(12px * var(--widget-text-scale, 1))) !important; }
+    .readability-widget .text-\[10px\],
+    .readability-widget .text-\[11px\],
+    .readability-widget .text-\[12px\] { line-height: 1.35 !important; }
   </style>
 </head>
 <body class="h-full bg-black text-white font-sans antialiased overflow-hidden select-none">
@@ -783,6 +791,7 @@
               getHeightClass(w.h),
               getWidgetFontSizeClass(w),
               'widget-card',
+              ['weather', 'calendar', 'calendar_agenda', 'school_announcements'].includes(w.widget_type) ? 'readability-widget' : '',
               isEditMode && isAdminUnlocked ? 'ring-2 ring-sky-500/60 bg-neutral-900/90 shadow-2xl' : 'bg-neutral-950 border border-neutral-900 shadow-xl'
             ]"
             class="rounded-2xl p-4 relative flex flex-col justify-between transition-all duration-300 overflow-hidden"
@@ -1449,21 +1458,25 @@
             <div v-else-if="w.widget_type === 'school_announcements'" class="h-full flex flex-col justify-between overflow-hidden">
               <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
                 <span class="font-mono text-xs uppercase tracking-widest text-cyan-400 font-semibold">{{ getLocalizedWidgetLabel('announcements', 'Announcements') }}</span>
-                <span class="text-[10px] font-mono text-neutral-500">{{ getNormalizedAnnouncements().length }}</span>
+                <span class="text-[10px] font-mono text-neutral-500">{{ getAnnouncementsForWidget(w).length ? getAnnouncementIndex(w) + 1 : 0 }} / {{ getAnnouncementsForWidget(w).length }}</span>
               </div>
 
-              <div v-if="!getNormalizedAnnouncements() || getNormalizedAnnouncements().length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
+              <div v-if="getAnnouncementsForWidget(w).length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
                 No announcements synced yet.
               </div>
-              <ul v-else class="space-y-1.5 overflow-y-auto pr-1 flex-1">
-                <li v-for="item in getNormalizedAnnouncements().slice(0, getWidgetItemLimit(w, Number(settings.announcement_items_limit) || 5))" :key="item.key || item.title || item.date || item.time" class="border-b border-neutral-900/60 pb-1 text-[11px] text-neutral-200">
-                  <div class="font-semibold text-white">{{ item.title }}</div>
-                  <div v-if="item.author || item.date || item.time" class="text-[10px] text-neutral-400 mt-0.5">
-                    {{ item.author ? item.author : 'School' }} • {{ item.date || '—' }} {{ item.time ? '• ' + item.time : '' }}
+              <div v-else class="flex flex-col flex-1 min-h-0">
+                <article :key="getAnnouncementAt(w).key" class="flex-1 min-h-0 overflow-y-auto pr-1 py-2">
+                  <h3 class="text-xl font-semibold text-white leading-snug">{{ getAnnouncementAt(w).title }}</h3>
+                  <div v-if="getAnnouncementAt(w).author || getAnnouncementAt(w).date || getAnnouncementAt(w).time" class="text-sm text-neutral-400 mt-2">
+                    {{ getAnnouncementAt(w).author || 'School' }} • {{ getAnnouncementAt(w).date || '—' }} {{ getAnnouncementAt(w).time ? '• ' + getAnnouncementAt(w).time : '' }}
                   </div>
-                  <div v-if="item.message" class="text-[10px] text-neutral-400 mt-0.5">{{ item.message }}</div>
-                </li>
-              </ul>
+                  <p v-if="getAnnouncementAt(w).message" class="text-base text-neutral-200 mt-4 leading-relaxed whitespace-pre-line">{{ getAnnouncementAt(w).message }}</p>
+                </article>
+                <div class="flex items-center justify-between border-t border-neutral-800 pt-2 mt-1">
+                  <button type="button" @click.stop="changeAnnouncement(w, -1)" :disabled="getAnnouncementIndex(w) === 0" class="px-3 py-1.5 rounded border border-neutral-800 text-sm font-mono disabled:opacity-40 disabled:cursor-not-allowed hover:bg-neutral-800" aria-label="Previous announcement">← Previous</button>
+                  <button type="button" @click.stop="changeAnnouncement(w, 1)" :disabled="getAnnouncementIndex(w) >= getAnnouncementsForWidget(w).length - 1" class="px-3 py-1.5 rounded border border-neutral-800 text-sm font-mono disabled:opacity-40 disabled:cursor-not-allowed hover:bg-neutral-800" aria-label="Next announcement">Next →</button>
+                </div>
+              </div>
             </div>
 
             <!-- ================= WIDGET TYPE 13: CALENDAR (SPLIT OR AGENDA) ================= -->
@@ -1495,44 +1508,49 @@
                   <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-mono text-neutral-500 mb-1">
                     <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
                   </div>
-                  <div class="grid grid-cols-7 gap-1 text-center text-xs font-mono">
-                    <span 
+                  <div class="grid grid-cols-7 gap-1 text-center text-sm font-mono">
+                    <button
+                      type="button"
                       v-for="(day, idx) in calendarMonthDays" 
                       :key="idx" 
-                      class="h-6 flex flex-col items-center justify-center rounded relative"
+                      @click.stop="selectCalendarDate(w, day.dateStr)"
+                      :aria-label="day.dateStr"
+                      :aria-pressed="getCalendarSelectedDate(w) === day.dateStr"
+                      class="h-7 min-h-7 flex flex-col items-center justify-center rounded relative cursor-pointer hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-sky-400"
                       :class="{
                         'text-neutral-600': !day.isCurrentMonth,
                         'text-neutral-200': day.isCurrentMonth && !day.isToday,
-                        'bg-indigo-600 text-white font-bold': day.isToday
+                        'bg-indigo-600 text-white font-bold': day.isToday,
+                        'ring-2 ring-sky-400': getCalendarSelectedDate(w) === day.dateStr && !day.isToday
                       }"
                     >
                       <span>{{ day.dayNumber }}</span>
                       <span v-if="day.hasEvent" class="w-1 h-1 rounded-full bg-sky-400 -mt-0.5"></span>
-                    </span>
+                    </button>
                   </div>
                 </div>
 
                 <!-- Upcoming Agenda List -->
                 <div class="flex flex-col justify-between overflow-hidden">
                   <div class="text-[10px] font-mono uppercase tracking-wider text-neutral-500 mb-1 flex items-center justify-between">
-                    <span>Upcoming Events</span>
-                    <span class="text-neutral-600">{{ filteredEvents.length }}</span>
+                    <span>{{ getCalendarSelectedDateLabel(w) }}</span>
+                    <span class="text-neutral-600">{{ getCalendarEventsForSelectedDay(w).length }}</span>
                   </div>
-                  <div v-if="filteredEvents.length === 0" class="text-xs font-mono text-neutral-600 my-auto text-center py-4">
-                    No upcoming events
+                  <div v-if="getCalendarEventsForSelectedDay(w).length === 0" class="text-sm font-mono text-neutral-600 my-auto text-center py-4">
+                    No events on this day
                   </div>
-                  <div v-else class="space-y-1.5 overflow-y-auto max-h-[140px] pr-1">
+                  <div v-else class="space-y-1.5 overflow-y-auto max-h-[180px] pr-1">
                     <div 
-                      v-for="ev in filteredEvents.slice(0, 8)" 
+                      v-for="ev in getCalendarEventsForSelectedDay(w).slice(0, 8)"
                       :key="ev.id" 
                       class="bg-neutral-950/90 border border-neutral-800/80 rounded-lg p-2 flex items-center justify-between gap-2"
                       :style="{ borderLeftColor: ev.color || '#38bdf8', borderLeftWidth: '3px' }"
                     >
                       <div class="overflow-hidden">
-                        <div class="text-xs font-bold text-white truncate">{{ ev.title }}</div>
-                        <div class="text-[10px] font-mono text-neutral-500">{{ formatEventTimeDisplay(ev) }}</div>
+                        <div class="text-sm font-bold text-white truncate">{{ ev.title }}</div>
+                        <div class="text-xs font-mono text-neutral-500">{{ formatEventTimeDisplay(ev) }}</div>
                       </div>
-                      <span v-if="ev.source === 'google'" class="text-[9px] font-mono text-sky-400 shrink-0">iCal</span>
+                      <span v-if="ev.source === 'google'" class="text-xs font-mono text-sky-400 shrink-0">iCal</span>
                     </div>
                   </div>
                 </div>
@@ -1999,6 +2017,8 @@
         const events = ref([]);
         const pageConfigs = ref({});
         const weather = ref(null);
+        const selectedCalendarDates = ref({});
+        const announcementIndexes = ref({});
         const librusData = ref({
           grades: [],
           notifications: [],
@@ -2217,13 +2237,64 @@
           return now.value.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
         });
 
+        function getLocalDateStr(dateVal) {
+          if (!dateVal) return '';
+          const str = String(dateVal);
+          if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+          if (/^\d{4}-\d{2}-\d{2}T/.test(str) && !str.endsWith('Z') && !str.includes('+') && !str.includes('-', 10)) {
+            return str.slice(0, 10);
+          }
+          const d = new Date(str);
+          if (isNaN(d.getTime())) return str.slice(0, 10);
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          return `${y}-${m}-${day}`;
+        }
+
+        function getCalendarSelectedDate(widget) {
+          const widgetKey = widget ? String(widget.id) : 'default';
+          const today = now.value;
+          const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+          return selectedCalendarDates.value[widgetKey] || todayStr;
+        }
+
+        function selectCalendarDate(widget, dateStr) {
+          const widgetKey = widget ? String(widget.id) : 'default';
+          selectedCalendarDates.value = { ...selectedCalendarDates.value, [widgetKey]: dateStr };
+        }
+
+        function getCalendarSelectedDateLabel(widget) {
+          const [year, month, day] = getCalendarSelectedDate(widget).split('-').map(Number);
+          const date = new Date(year, month - 1, day);
+          const locale = localeMap[effectiveLanguage.value] || 'en-US';
+          return date.toLocaleDateString(locale, { weekday: 'short', month: 'short', day: 'numeric' });
+        }
+
+        function getCalendarEventsForSelectedDay(widget) {
+          const selectedDate = getCalendarSelectedDate(widget);
+          let dayEvents = events.value.filter(event => event.start_datetime && getLocalDateStr(event.start_datetime) === selectedDate);
+          if (selectedProfileId.value) {
+            dayEvents = dayEvents.filter(event => !event.profile_id || event.profile_id === selectedProfileId.value);
+          }
+          return dayEvents.slice(0, 50);
+        }
+
         const filteredEvents = computed(() => {
-          const nowIso = now.value.toISOString();
-          let list = events.value.filter(e => e.start_datetime >= nowIso.slice(0, 10));
+          const today = now.value;
+          const y = today.getFullYear();
+          const m = String(today.getMonth() + 1).padStart(2, '0');
+          const d = String(today.getDate()).padStart(2, '0');
+          const todayStr = `${y}-${m}-${d}`;
+
+          let list = events.value.filter(e => {
+            const evDate = getLocalDateStr(e.start_datetime);
+            return evDate && evDate >= todayStr;
+          });
           if (selectedProfileId.value) {
             list = list.filter(e => !e.profile_id || e.profile_id === selectedProfileId.value);
           }
-          return list.slice(0, 20);
+          return list.slice(0, 50);
         });
 
         const calendarMonthDays = computed(() => {
@@ -2234,7 +2305,7 @@
           const daysInMonth = new Date(year, month + 1, 0).getDate();
           const daysInPrev = new Date(year, month, 0).getDate();
 
-          const eventDates = new Set(events.value.map(e => e.start_datetime ? e.start_datetime.slice(0, 10) : null).filter(Boolean));
+          const eventDates = new Set(events.value.map(e => e.start_datetime ? getLocalDateStr(e.start_datetime) : null).filter(Boolean));
           const formatIsoDate = (d) => {
             const y = d.getFullYear();
             const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -2248,13 +2319,14 @@
             const d = daysInPrev - i;
             const dateObj = new Date(year, month - 1, d);
             const dayStr = formatIsoDate(dateObj);
-            days.push({ dayNumber: d, isCurrentMonth: false, isToday: false, hasEvent: eventDates.has(dayStr) });
+            days.push({ dayNumber: d, dateStr: dayStr, isCurrentMonth: false, isToday: false, hasEvent: eventDates.has(dayStr) });
           }
           for (let d = 1; d <= daysInMonth; d++) {
             const dateObj = new Date(year, month, d);
             const dayStr = formatIsoDate(dateObj);
             days.push({
               dayNumber: d,
+              dateStr: dayStr,
               isCurrentMonth: true,
               isToday: dayStr === todayStr,
               hasEvent: eventDates.has(dayStr)
@@ -2264,7 +2336,7 @@
           for (let d = 1; d <= remaining; d++) {
             const dateObj = new Date(year, month + 1, d);
             const dayStr = formatIsoDate(dateObj);
-            days.push({ dayNumber: d, isCurrentMonth: false, isToday: false, hasEvent: eventDates.has(dayStr) });
+            days.push({ dayNumber: d, dateStr: dayStr, isCurrentMonth: false, isToday: false, hasEvent: eventDates.has(dayStr) });
           }
           return days;
         });
@@ -2357,7 +2429,7 @@
               label = (effectiveLanguage.value === 'ru' ? 'Завтра' : effectiveLanguage.value === 'uk' ? 'Завтра' : effectiveLanguage.value === 'pl' ? 'Jutro' : 'Tomorrow') + `, ${targetDate.toLocaleDateString(locale, { month: 'short', day: 'numeric' })}`;
             }
 
-            const dayEvents = pool.filter(e => e.start_datetime && e.start_datetime.slice(0, 10) === dateStr);
+            const dayEvents = pool.filter(e => e.start_datetime && getLocalDateStr(e.start_datetime) === dateStr);
             groups.push({
               dateStr,
               label,
@@ -2821,7 +2893,7 @@
 
         function getTaskFilterButtonLabel(widget) {
           const mode = getTaskFilterMode(widget);
-          return mode === 'today' ? 'Today' : mode === 'today_or_undated' ? 'Today+Undated' : mode === 'undated' ? 'Undated' : 'All';
+          return mode === 'active' ? 'Active' : mode === 'today' ? 'Today' : mode === 'today_or_undated' ? 'Today+Undated' : mode === 'undated' ? 'Undated' : 'All';
         }
 
         function cycleTaskFilter(widget) {
@@ -2830,7 +2902,7 @@
           if (typeof widget.config === 'string') {
             try { widget.config = JSON.parse(widget.config); } catch (e) { widget.config = {}; }
           }
-          const modes = ['all', 'today', 'today_or_undated', 'undated'];
+          const modes = ['all', 'active', 'today', 'today_or_undated', 'undated'];
           const cur = getTaskFilterMode(widget);
           const nextIdx = (modes.indexOf(cur) + 1) % modes.length;
           widget.config.task_filter = modes[nextIdx];
@@ -2895,6 +2967,29 @@
           return normalizeLibrusAnnouncements(librusData.value.announcements);
         }
 
+        function getAnnouncementsForWidget(widget) {
+          const fallbackLimit = Number(settings.value.announcement_items_limit) || 5;
+          return getNormalizedAnnouncements().slice(0, getWidgetItemLimit(widget, fallbackLimit));
+        }
+
+        function getAnnouncementIndex(widget) {
+          const widgetKey = widget ? String(widget.id) : 'default';
+          const lastIndex = Math.max(0, getAnnouncementsForWidget(widget).length - 1);
+          return Math.min(announcementIndexes.value[widgetKey] || 0, lastIndex);
+        }
+
+        function getAnnouncementAt(widget) {
+          const announcements = getAnnouncementsForWidget(widget);
+          return announcements[getAnnouncementIndex(widget)] || { key: 'empty', title: '' };
+        }
+
+        function changeAnnouncement(widget, offset) {
+          triggerHaptic('tap');
+          const widgetKey = widget ? String(widget.id) : 'default';
+          const nextIndex = Math.max(0, Math.min(getAnnouncementIndex(widget) + offset, getAnnouncementsForWidget(widget).length - 1));
+          announcementIndexes.value = { ...announcementIndexes.value, [widgetKey]: nextIndex };
+        }
+
         function getFilteredTasksForWidget(widget) {
           const today = new Date();
           const todayStr = today.toISOString().slice(0, 10);
@@ -2906,6 +3001,9 @@
           }
 
           const mode = getTaskFilterMode(widget);
+          if (mode === 'active') {
+            return items.filter(i => i.checked !== 1);
+          }
           if (mode === 'today') {
             return items.filter(i => i.due_date && i.due_date === todayStr);
           }
@@ -2984,9 +3082,9 @@
 
           const includeWeather = options.includeWeather !== false;
           const rows = getSchoolScheduleRows(widget);
-          const today = new Date();
+          const today = now.value;
           const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][today.getDay()];
-          const row = rows.find((dayRow) => normalizeSchoolDayLabel(dayRow.day) === normalizeSchoolDayLabel(weekday)) || rows[0];
+          const row = rows.find((dayRow) => normalizeSchoolDayLabel(dayRow.day) === normalizeSchoolDayLabel(weekday));
           const lessons = Array.isArray(row && row.lessons) ? row.lessons.filter(Boolean) : [];
           const lessonNames = lessons.map(lesson => lesson.name || lesson.subject || '').filter(Boolean);
           const summaryParts = [];
@@ -3165,7 +3263,7 @@
           } else if (selectedProfileSchedule.value && Array.isArray(selectedProfileSchedule.value.schedule) && selectedProfileSchedule.value.schedule.length) {
             source = selectedProfileSchedule.value.schedule;
           }
-          const today = new Date();
+          const today = now.value;
           const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
           const todayKey = dayNames[today.getDay()];
 
@@ -3213,7 +3311,7 @@
           const mode = getScheduleViewMode(widget);
           if (mode === 'week') return allRows;
 
-          const today = new Date();
+          const today = now.value;
           const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
           const targetDayIdx = mode === 'tomorrow' ? (today.getDay() + 1) % 7 : today.getDay();
           const targetKey = dayNames[targetDayIdx];
@@ -3221,8 +3319,13 @@
           const match = allRows.filter(r => normalizeSchoolDayLabel(r.day) === targetKey);
           if (match.length) return match;
 
-          // If no lessons for selected day (e.g. weekend), return the nearest upcoming school day or first row
-          return allRows.slice(0, 1);
+          const targetDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + (mode === 'tomorrow' ? 1 : 0));
+          const locale = localeMap[effectiveLanguage.value] || 'en-US';
+          return [{
+            day: targetDate.toLocaleDateString(locale, { weekday: 'long' }),
+            isToday: mode !== 'tomorrow',
+            lessons: []
+          }];
         }
 
         function getColSpanClass(w) {
@@ -3924,6 +4027,10 @@
           calendarMonthLabel,
           filteredEvents,
           calendarMonthDays,
+          getCalendarSelectedDate,
+          selectCalendarDate,
+          getCalendarSelectedDateLabel,
+          getCalendarEventsForSelectedDay,
           formatEventTimeDisplay,
           weather,
           localizedWeather,
@@ -3977,6 +4084,10 @@
           getLocalizedWidgetLabel,
           getNormalizedGrades,
           getNormalizedAnnouncements,
+          getAnnouncementsForWidget,
+          getAnnouncementIndex,
+          getAnnouncementAt,
+          changeAnnouncement,
           getColSpanClass,
           getHeightClass,
           handleTouchStart,

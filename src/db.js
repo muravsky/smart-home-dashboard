@@ -647,6 +647,13 @@ function deleteList(id) {
 function calculateNextDueDate(currentDueDateStr, recurrence, interval = 1, daysOfWeek = null) {
   let base = currentDueDateStr ? new Date(currentDueDateStr + 'T00:00:00') : new Date();
   if (isNaN(base.getTime())) base = new Date();
+
+  // If the previous due date is in the past (overdue), roll forward starting from today
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  if (base < todayStart) {
+    base = todayStart;
+  }
   
   const next = new Date(base);
   
@@ -1050,6 +1057,16 @@ function getCalendarEvents({ profileId = null, limit = 100, fromDate = undefined
 }
 
 function insertCalendarEvent({ uid = null, feed_id = null, title, description = null, start_datetime, end_datetime = null, all_day = 0, profile_id = null, color = '#38bdf8', source = 'manual' }) {
+  const trimmedTitle = title.trim();
+  // Prevent duplicate events on the same start datetime for the same profile
+  const existing = db.prepare(`
+    SELECT * FROM calendar_events 
+    WHERE title = ? AND start_datetime = ? AND (profile_id = ? OR (profile_id IS NULL AND ? IS NULL))
+  `).get(trimmedTitle, start_datetime, profile_id || null, profile_id || null);
+  if (existing) {
+    return existing;
+  }
+
   const stmt = db.prepare(`
     INSERT INTO calendar_events (uid, feed_id, title, description, start_datetime, end_datetime, all_day, profile_id, color, source)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1057,7 +1074,7 @@ function insertCalendarEvent({ uid = null, feed_id = null, title, description = 
   const info = stmt.run(
     uid,
     feed_id,
-    title.trim(),
+    trimmedTitle,
     description,
     start_datetime,
     end_datetime,
@@ -1197,7 +1214,7 @@ function getDashboardData() {
     profile_layouts: getAllProfileLayouts(),
     page_configs: getPageConfigs(),
     photos: getPhotos({ screensaverOnly: true }),
-    events: getCalendarEvents({ limit: 50 }),
+    events: getCalendarEvents({ limit: 250 }),
     feeds: getCalendarFeeds(),
     settings: getSettings(),
     librus: getLibrusData()

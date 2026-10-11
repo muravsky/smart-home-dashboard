@@ -181,6 +181,9 @@ async function runTests() {
   const toggled = toggleListItemChecked(foundTaskItem.id, true);
   // Because it was 'daily' recurrence, toggleListItemChecked advances next_recurrence and resets checked to 0
   assert(toggled, 'toggleListItemChecked returned updated item');
+  assert.strictEqual(toggled.checked, 0, 'Recurring item resets checked to 0');
+  const todayStr = new Date().toISOString().slice(0, 10);
+  assert(toggled.due_date >= todayStr, `Recurring due_date (${toggled.due_date}) advanced to today or future (>= ${todayStr})`);
   pass('toggleListItemChecked properly processed recurring item');
 
   // Now create a non-recurring task item and toggle it
