@@ -406,10 +406,10 @@
     html.theme-white .bg-neutral-800 { background-color: #e2e8f0 !important; color: #0f172a !important; }
     html.theme-white .border-neutral-900, html.theme-white .border-neutral-800, html.theme-white .border-neutral-700 { border-color: #e2e8f0 !important; }
     html.theme-white .text-white { color: #0f172a !important; }
-    html.theme-white .text-neutral-100, html.theme-white .text-neutral-200 { color: #1e293b !important; }
-    html.theme-white .text-neutral-300, html.theme-white .text-neutral-400 { color: #475569 !important; }
-    html.theme-white .text-neutral-500 { color: #64748b !important; }
-    html.theme-white .text-neutral-600 { color: #94a3b8 !important; }
+    html.theme-white .text-neutral-100, html.theme-white .text-neutral-200,
+    html.theme-white .text-neutral-300, html.theme-white .text-neutral-400,
+    html.theme-white .text-neutral-500, html.theme-white .text-neutral-600,
+    html.theme-white .text-neutral-700, html.theme-white .text-neutral-800 { color: #000000 !important; }
     html.theme-white .text-sky-400 { color: #0284c7 !important; }
     html.theme-white .text-emerald-400 { color: #059669 !important; }
     html.theme-white .text-amber-400 { color: #d97706 !important; }
@@ -462,6 +462,37 @@
       background-color: #dbeafe !important;
       border-color: #60a5fa !important;
     }
+    html.theme-white .profile-selected {
+      background-color: #dbeafe !important;
+      border: 2px solid #2563eb !important;
+      color: #000000 !important;
+      box-shadow: 0 0 0 2px #93c5fd !important;
+    }
+    html.theme-white .profile-selected .text-white { color: #000000 !important; }
+    html.theme-white .profile-option { background-color: #ffffff !important; color: #000000 !important; border-color: #94a3b8 !important; }
+    html.theme-white .profile-option .text-white { color: #000000 !important; }
+    html.theme-white .task-list-row { color: #000000 !important; }
+    html.theme-white .task-list-row.is-checked { background-color: #dcfce7 !important; border: 1px solid #16a34a !important; }
+    html.theme-white .task-list-row.is-checked .task-list-content,
+    html.theme-white .task-list-row.is-checked .task-list-meta { color: #000000 !important; }
+    html.theme-white .task-list-widget .task-list-content { color: #000000 !important; }
+    html.theme-white .task-list-widget .task-list-meta { font-size: 1.2em !important; color: #000000 !important; }
+    html.theme-white .task-list-row .border-neutral-600 { border-color: #334155 !important; }
+    html.theme-white .task-list-row .bg-emerald-500 { background-color: #15803d !important; border-color: #15803d !important; color: #ffffff !important; }
+    html.theme-white button.bg-neutral-900,
+    html.theme-white button.bg-neutral-800 { background-color: #dbeafe !important; color: #000000 !important; border-color: #2563eb !important; }
+    html.theme-white button.bg-neutral-900:hover,
+    html.theme-white button.bg-neutral-800:hover { background-color: #bfdbfe !important; }
+    html.theme-white .widget-card { color: #000000 !important; }
+    html.theme-white .widget-card .text-white { color: #000000 !important; }
+    html.theme-white .widget-card .text-neutral-100,
+    html.theme-white .widget-card .text-neutral-200,
+    html.theme-white .widget-card .text-neutral-300,
+    html.theme-white .widget-card .text-neutral-400,
+    html.theme-white .widget-card .text-neutral-500,
+    html.theme-white .widget-card .text-neutral-600 { color: #000000 !important; }
+    html.theme-white .weather-forecast-tile .text-sky-300 { color: #075985 !important; }
+    html.theme-white .calendar-event-card .text-sky-400 { color: #075985 !important; }
     html.theme-white .widget-card { background-color: #ffffff !important; border: 1px solid #e2e8f0 !important; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05) !important; }
     html.theme-white input[type="text"] { background-color: #f8fafc !important; border-color: #cbd5e1 !important; color: #0f172a !important; }
     html.theme-white .fixed.inset-0 { background-color: #000000 !important; color: #ffffff !important; }
@@ -539,6 +570,8 @@
     .readability-widget .text-\[10px\],
     .readability-widget .text-\[11px\],
     .readability-widget .text-\[12px\] { line-height: 1.35 !important; }
+    .task-list-widget .task-list-content { font-size: 1.5em !important; line-height: 1.25 !important; }
+    .task-list-widget .task-list-meta { font-size: 1.2em !important; }
   </style>
 </head>
 <body class="h-full bg-black text-white font-sans antialiased overflow-hidden select-none">
@@ -667,28 +700,8 @@
     >
       
       <!-- TOP NAVIGATION & STATUS BAR -->
-      <header class="border-b border-neutral-900 pb-2 mb-2 shrink-0">
-        <div class="flex items-center justify-between mb-2">
-          <!-- Connection badge & page indicators -->
-          <div class="flex items-center gap-2.5">
-            <span 
-              class="w-2.5 h-2.5 rounded-full transition-colors duration-500"
-              :class="isConnected ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-red-500'"
-            ></span>
-            <span class="font-mono text-xs uppercase tracking-widest text-neutral-400">
-              {{ isConnected ? 'ONLINE' : 'OFFLINE' }}
-            </span>
-            <span class="text-neutral-800">|</span>
-            <span class="font-mono text-xs text-neutral-500">
-              PAGE {{ activePage + 1 }} / {{ totalPages }}
-            </span>
-            <span v-if="activeTheme === 'white'" class="text-xs text-sky-600 font-mono ml-1.5 font-bold">☀️ White</span>
-            <span v-if="activeTheme === 'white-contrast'" class="text-xs text-black font-mono ml-1.5 font-bold">⚪ White (Black Text)</span>
-            <span v-if="activeTheme === 'high-contrast'" class="text-xs text-yellow-300 font-mono ml-1.5 font-bold">⚫ High Contrast</span>
-            <span v-if="activeFontSize !== 'normal'" class="text-[11px] text-neutral-400 font-mono ml-1">[{{ activeFontSize }}]</span>
-            <span v-if="isNightModeActive" class="text-xs text-amber-500 font-mono ml-2">🌙 Night</span>
-          </div>
-
+      <header class="border-b border-neutral-900 pb-1.5 mb-1.5 shrink-0">
+        <div class="flex items-center justify-end mb-1.5">
           <!-- Controls: Voice Dictation, Edit Mode, Sleep Trigger -->
           <div class="flex items-center gap-2">
             <!-- Voice Dictation Button -->
@@ -722,11 +735,18 @@
         </div>
 
         <!-- PROFILE SWITCHER BAR (FAMILY & KIDS - CENTERED & LARGE AVATARS) -->
-        <div class="flex items-center justify-center gap-3 md:gap-5 overflow-x-auto scrollbar-none py-1">
+        <div class="grid grid-cols-[minmax(0,0.8fr)_minmax(0,2.4fr)_minmax(0,0.8fr)] items-center gap-2 py-1">
+          <div v-if="Number(settings.header_clock_enabled ?? 1)" class="flex items-center gap-2 min-w-0">
+            <span class="w-3 h-3 rounded-full shrink-0 transition-colors duration-500" :class="isConnected ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]' : 'bg-red-600 shadow-[0_0_10px_rgba(220,38,38,0.65)]'"></span>
+            <span class="font-mono font-bold tabular-nums text-black whitespace-nowrap" :class="settings.header_display_size === 'xlarge' ? 'text-4xl md:text-6xl' : 'text-3xl md:text-5xl'">{{ currentTime.hours }}:{{ currentTime.minutes }}</span>
+          </div>
+          <div v-else></div>
+
+          <div class="flex items-center justify-center gap-2 md:gap-3 overflow-x-auto scrollbar-none py-1 min-w-0">
           <!-- All Family Profile -->
           <button 
             @click="selectProfile(null)"
-            :class="selectedProfileId === null ? 'ring-2 ring-white scale-105 bg-neutral-800 text-white shadow-xl' : 'bg-neutral-950/80 border border-neutral-800/80 text-neutral-400 hover:border-neutral-700'"
+            :class="selectedProfileId === null ? 'profile-selected' : 'profile-option'"
             class="px-3.5 py-1.5 rounded-2xl flex items-center gap-2.5 shrink-0 transition-all duration-200"
           >
             <div class="w-10 h-10 md:w-11 md:h-11 rounded-full bg-neutral-900 border border-neutral-700 flex items-center justify-center text-xl shrink-0">
@@ -747,7 +767,7 @@
               borderColor: selectedProfileId === p.id ? p.color : '#262626',
               boxShadow: selectedProfileId === p.id ? `0 0 16px ${p.color}44` : 'none'
             }"
-            :class="selectedProfileId === p.id ? 'ring-2 ring-offset-2 ring-offset-black ring-white scale-105 bg-neutral-900 text-white' : 'bg-neutral-950/80 border text-neutral-400 hover:border-neutral-700'"
+            :class="selectedProfileId === p.id ? 'profile-selected' : 'profile-option'"
             class="px-3.5 py-1.5 rounded-2xl flex items-center gap-2.5 shrink-0 transition-all duration-200"
           >
             <div 
@@ -762,6 +782,18 @@
               <div class="text-[10px] font-mono" :style="{ color: p.color }">Profile</div>
             </div>
           </button>
+        </div>
+          <div v-if="Number(settings.header_weather_enabled ?? 1)" class="flex items-center justify-end gap-2 min-w-0 text-right">
+            <template v-if="weather">
+              <span class="text-3xl md:text-5xl leading-none shrink-0">{{ weather.icon }}</span>
+              <div class="min-w-0">
+                <div class="font-mono font-bold tabular-nums text-black whitespace-nowrap" :class="settings.header_display_size === 'xlarge' ? 'text-2xl md:text-4xl' : 'text-xl md:text-3xl'">{{ weather.temperature }}°{{ weather.unit || 'C' }}</div>
+                <div class="hidden md:block text-xs font-mono text-black truncate">{{ weather.city || weather.condition }}</div>
+              </div>
+            </template>
+            <span v-else class="text-sm font-mono text-black">--°</span>
+          </div>
+          <div v-else></div>
         </div>
 
         <!-- EDIT MODE TOOLBAR (Visible ONLY when edit mode is unlocked) -->
@@ -826,7 +858,7 @@
       <main class="flex-1 overflow-y-auto pr-1">
         <div 
           ref="widgetGridRef"
-          class="grid grid-cols-12 gap-3 min-h-full items-start"
+          class="grid grid-cols-12 gap-1.5 min-h-full items-start"
           :class="{ 'p-2 border-2 border-dashed border-sky-500/40 rounded-2xl bg-sky-950/10': isEditMode && isAdminUnlocked }"
         >
           
@@ -843,7 +875,7 @@
               ['weather', 'calendar', 'calendar_agenda', 'school_announcements'].includes(w.widget_type) ? 'readability-widget' : '',
               isEditMode && isAdminUnlocked ? 'ring-2 ring-sky-500/60 bg-neutral-900/90 shadow-2xl' : 'bg-neutral-950 border border-neutral-900 shadow-xl'
             ]"
-            class="rounded-2xl p-4 relative flex flex-col justify-between transition-all duration-300 overflow-hidden"
+            class="rounded-xl p-2.5 relative flex flex-col justify-between transition-all duration-300 overflow-hidden"
           >
             <!-- EDIT MODE CONTROLS OVERLAY (Only visible when unlocked) -->
             <div v-if="isEditMode && isAdminUnlocked" class="absolute top-2 right-2 flex items-center gap-1.5 z-30 bg-neutral-900 border border-neutral-700 rounded-lg p-1 shadow-lg">
@@ -890,15 +922,6 @@
                 class="px-2 py-1 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 text-emerald-400 font-semibold"
               >
                 {{ w.h || 2 }}h
-              </button>
-
-              <!-- Widget-Level Font Size Button (cycles: Auto -> Small -> Normal -> Large -> XLarge) -->
-              <button 
-                @click.stop="cycleWidgetFontSize(w)"
-                title="Cycle widget font size (Auto, Small, Normal, Large, XLarge)"
-                class="px-2 py-1 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 text-sky-400 font-semibold"
-              >
-                Aa{{ (w.config && w.config.font_size) ? ':' + w.config.font_size[0].toUpperCase() : '' }}
               </button>
 
               <!-- Toggle Weather on Clock Widget -->
@@ -1138,18 +1161,21 @@
                   </span>
                   <span class="text-[10px] font-mono text-neutral-500">({{ getFilteredTasksForWidget(w).length }})</span>
                 </div>
+                <button type="button" @click.stop="toggleWidgetTimeSort(w)" class="text-xs font-mono px-2 py-1 rounded border border-neutral-800 bg-neutral-900 text-neutral-300" :aria-pressed="isWidgetTimeSortEnabled(w)">
+                  {{ isWidgetTimeSortEnabled(w) ? 'Time ↑' : 'Sort by time' }}
+                </button>
               </div>
               
               <div v-if="getFilteredTasksForWidget(w).length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
                 {{ t('noTasks') }}
               </div>
-              <ul v-else class="space-y-1.5 overflow-y-auto pr-1 flex-1">
+              <ul v-else class="space-y-1 overflow-y-auto pr-1 flex-1 task-list-widget">
                 <li 
-                  v-for="item in getFilteredTasksForWidget(w)" 
+                  v-for="item in getSortedItemsForWidget(getFilteredTasksForWidget(w), w)"
                   :key="item.id"
                   @click="toggleTaskItem(item)"
-                  class="text-neutral-300 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-1.5 px-2 rounded-lg hover:bg-neutral-900/60"
-                  :class="{ 'border border-red-800/60 bg-red-950/30': item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10) }"
+                  class="task-list-row text-neutral-300 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-2 px-2 rounded-lg hover:bg-neutral-900/60"
+                  :class="{ 'is-checked': item.checked === 1, 'border border-red-800/60 bg-red-950/30': item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10) }"
                 >
                   <div class="flex items-center gap-2.5 flex-1 min-w-0">
                     <span 
@@ -1158,13 +1184,14 @@
                     >
                       <span v-if="item.checked === 1">✓</span>
                     </span>
-                    <span :class="{ 'line-through text-neutral-600': item.checked === 1 }">{{ item.content }}</span>
+                    <span class="task-list-content" :class="{ 'line-through text-neutral-600': item.checked === 1 }">{{ item.content }}</span>
                     <span v-if="item.assignee_name && !selectedProfileId" class="text-[9px] font-mono px-1 rounded bg-neutral-900 text-neutral-400 border border-neutral-800">
                       @{{ item.assignee_name }}
                     </span>
                     <span v-if="item.recurrence && item.recurrence !== 'none'" class="text-[9px] font-mono px-1 rounded bg-sky-950/40 text-sky-400 border border-sky-900/40 shrink-0">↻</span>
                   </div>
                   <div class="flex items-center gap-1 shrink-0">
+                    <span v-if="item.due_time && item.checked !== 1" class="task-list-meta font-mono text-neutral-500">{{ item.due_time }}</span>
                     <span v-if="item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10)" class="text-[9px] font-mono text-red-400 font-bold">{{ t('overdue') }}</span>
                     <span v-else-if="item.due_date && item.checked !== 1" class="text-[9px] font-mono text-neutral-500">{{ item.due_date }}</span>
                     <span v-if="item.reward" class="font-mono text-xs text-amber-400 font-bold">+{{ item.reward }} pts</span>
@@ -1188,18 +1215,21 @@
                 >
                   + Add
                 </button>
+                <button type="button" @click.stop="toggleWidgetTimeSort(w)" class="text-xs font-mono px-2 py-1 rounded border border-neutral-800 bg-neutral-900 text-neutral-300" :aria-pressed="isWidgetTimeSortEnabled(w)">
+                  {{ isWidgetTimeSortEnabled(w) ? 'Time ↑' : 'Sort by time' }}
+                </button>
               </div>
 
               <div v-if="!targetList(w) || !targetList(w).items || targetList(w).items.length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
                 List is empty.
               </div>
-              <ul v-else class="space-y-1.5 overflow-y-auto pr-1 flex-1">
+              <ul v-else class="space-y-1 overflow-y-auto pr-1 flex-1 task-list-widget">
                 <li 
-                  v-for="item in targetList(w).items" 
+                  v-for="item in getSortedItemsForWidget(targetList(w).items, w)"
                   :key="item.id"
                   @click="toggleListItem(item)"
-                  class="text-neutral-300 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-1.5 px-2 rounded-lg hover:bg-neutral-900/60"
-                  :class="{ 'border border-red-800/60 bg-red-950/30': item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10) }"
+                  class="task-list-row text-neutral-300 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-2 px-2 rounded-lg hover:bg-neutral-900/60"
+                  :class="{ 'is-checked': item.checked === 1, 'border border-red-800/60 bg-red-950/30': item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10) }"
                 >
                   <div class="flex items-center gap-2.5 flex-1 min-w-0">
                     <span 
@@ -1208,10 +1238,11 @@
                     >
                       <span v-if="item.checked === 1">✓</span>
                     </span>
-                    <span :class="{ 'line-through text-neutral-600': item.checked === 1 }">{{ item.content }}</span>
+                    <span class="task-list-content" :class="{ 'line-through text-neutral-600': item.checked === 1 }">{{ item.content }}</span>
                     <span v-if="item.recurrence && item.recurrence !== 'none'" class="text-[9px] font-mono px-1 rounded bg-sky-950/40 text-sky-400 border border-sky-900/40 shrink-0">↻</span>
                   </div>
                   <div class="flex items-center gap-1 shrink-0">
+                    <span v-if="item.due_time && item.checked !== 1" class="task-list-meta font-mono text-neutral-500">{{ item.due_time }}</span>
                     <span v-if="item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10)" class="text-[9px] font-mono text-red-400 font-bold">{{ t('overdue') }}</span>
                     <span v-else-if="item.due_date && item.checked !== 1" class="text-[9px] font-mono text-neutral-500">{{ item.due_date }}</span>
                   </div>
@@ -2000,12 +2031,20 @@
             autofocus
             required
           />
-          <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+          <div class="grid grid-cols-3 gap-2 text-xs font-mono">
             <div>
               <label class="block text-[10px] text-neutral-400 mb-1">Due Date</label>
               <input 
                 v-model="quickAddDueDate" 
                 type="date" 
+                class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-1.5 text-xs text-neutral-200 outline-none"
+              />
+            </div>
+            <div>
+              <label class="block text-[10px] text-neutral-400 mb-1">Due Time</label>
+              <input
+                v-model="quickAddDueTime"
+                type="time"
                 class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-1.5 text-xs text-neutral-200 outline-none"
               />
             </div>
@@ -2090,6 +2129,9 @@
           night_mode_start: '22:00',
           night_mode_end: '07:00',
           language: 'en',
+          header_clock_enabled: 1,
+          header_weather_enabled: 1,
+          header_display_size: 'large',
           notification_items_limit: 5,
           announcement_items_limit: 5,
           default_theme: 'white',
@@ -2226,16 +2268,54 @@
 
         // Screensaver Photo State
         const currentPhotoIndex = ref(0);
+        const shuffledPhotoIds = ref([]);
         let photoInterval = null;
 
         const screensaverPhotos = computed(() => {
           return photos.value.filter(p => p.show_in_screensaver === 1);
         });
+        let screensaverPhotoSetKey = '';
+
+        function shuffleScreensaverPhotos(photoList, previousId = null) {
+          const ids = photoList.map(photo => photo.id);
+          for (let index = ids.length - 1; index > 0; index--) {
+            const swapIndex = Math.floor(Math.random() * (index + 1));
+            [ids[index], ids[swapIndex]] = [ids[swapIndex], ids[index]];
+          }
+          if (ids.length > 1 && ids[0] === previousId) {
+            [ids[0], ids[1]] = [ids[1], ids[0]];
+          }
+          shuffledPhotoIds.value = ids;
+        }
+
+        watch(screensaverPhotos, photoList => {
+          const nextKey = photoList.map(photo => String(photo.id)).sort().join('|');
+          if (nextKey === screensaverPhotoSetKey) return;
+          screensaverPhotoSetKey = nextKey;
+          shuffleScreensaverPhotos(photoList);
+          currentPhotoIndex.value = 0;
+        }, { immediate: true });
+
+        const shuffledScreensaverPhotos = computed(() => {
+          const photosById = new Map(screensaverPhotos.value.map(photo => [photo.id, photo]));
+          return shuffledPhotoIds.value.map(id => photosById.get(id)).filter(Boolean);
+        });
 
         const currentScreensaverPhoto = computed(() => {
-          if (screensaverPhotos.value.length === 0) return null;
-          return screensaverPhotos.value[currentPhotoIndex.value % screensaverPhotos.value.length];
+          if (shuffledScreensaverPhotos.value.length === 0) return null;
+          return shuffledScreensaverPhotos.value[currentPhotoIndex.value % shuffledScreensaverPhotos.value.length];
         });
+
+        function advanceScreensaverPhoto() {
+          if (shuffledScreensaverPhotos.value.length < 2) return;
+          if (currentPhotoIndex.value + 1 >= shuffledScreensaverPhotos.value.length) {
+            const previousId = currentScreensaverPhoto.value && currentScreensaverPhoto.value.id;
+            shuffleScreensaverPhotos(screensaverPhotos.value, previousId);
+            currentPhotoIndex.value = 0;
+            return;
+          }
+          currentPhotoIndex.value++;
+        }
 
         // Night Mode computation
         const manualNightMode = ref(false);
@@ -2543,6 +2623,7 @@
         const showQuickAddModal = ref(false);
         const quickAddContent = ref('');
         const quickAddDueDate = ref('');
+        const quickAddDueTime = ref('');
         const quickAddRecurrence = ref('none');
         const quickAddTargetList = ref(null);
 
@@ -2740,14 +2821,7 @@
           }
         }
 
-        function getWidgetFontSize(w) {
-          let cfg = w && w.config;
-          if (typeof cfg === 'string') {
-            try { cfg = JSON.parse(cfg); } catch(e) { cfg = null; }
-          }
-          if (cfg && cfg.font_size && cfg.font_size !== 'inherit') {
-            return cfg.font_size;
-          }
+        function getWidgetFontSize() {
           return activeFontSize.value;
         }
 
@@ -2758,24 +2832,6 @@
           if (fs === 'xlarge') return 'fs-xlarge';
           if (fs === 'xxlarge') return 'fs-xxlarge';
           return 'fs-normal';
-        }
-
-        function cycleWidgetFontSize(w) {
-          triggerHaptic('tap');
-          if (!w.config) w.config = {};
-          if (typeof w.config === 'string') {
-            try { w.config = JSON.parse(w.config); } catch(e) { w.config = {}; }
-          }
-          const cur = w.config.font_size || 'inherit';
-          const order = ['inherit', 'small', 'normal', 'large', 'xlarge', 'xxlarge'];
-          const nextIdx = (order.indexOf(cur) + 1) % order.length;
-          const nextVal = order[nextIdx];
-          if (nextVal === 'inherit') {
-            delete w.config.font_size;
-          } else {
-            w.config.font_size = nextVal;
-          }
-          saveCurrentLayout();
         }
 
         function isClockWeatherVisible(w) {
@@ -2963,6 +3019,29 @@
         function getTaskFilterButtonLabel(widget) {
           const mode = getTaskFilterMode(widget);
           return mode === 'active' ? 'Active' : mode === 'today' ? 'Today' : mode === 'today_or_undated' ? 'Today+Undated' : mode === 'undated' ? 'Undated' : 'All';
+        }
+
+        function isWidgetTimeSortEnabled(widget) {
+          return getWidgetConfig(widget).sort_by_time === true;
+        }
+
+        function toggleWidgetTimeSort(widget) {
+          triggerHaptic('tap');
+          if (!widget.config || typeof widget.config !== 'object') widget.config = getWidgetConfig(widget);
+          widget.config.sort_by_time = !isWidgetTimeSortEnabled(widget);
+          saveCurrentLayout();
+        }
+
+        function getSortedItemsForWidget(items, widget) {
+          if (!Array.isArray(items)) return [];
+          if (!isWidgetTimeSortEnabled(widget)) return items;
+          return [...items].sort((left, right) => {
+            const leftHasTime = /^\d{1,2}:\d{2}$/.test(String(left.due_time || ''));
+            const rightHasTime = /^\d{1,2}:\d{2}$/.test(String(right.due_time || ''));
+            if (leftHasTime !== rightHasTime) return leftHasTime ? -1 : 1;
+            if (leftHasTime) return timeToMinutes(left.due_time) - timeToMinutes(right.due_time);
+            return (Number(left.position) || 0) - (Number(right.position) || 0);
+          });
         }
 
         function cycleTaskFilter(widget) {
@@ -3552,6 +3631,7 @@
           triggerHaptic('tap');
           quickAddTargetList.value = list;
           quickAddDueDate.value = '';
+          quickAddDueTime.value = '';
           quickAddRecurrence.value = 'none';
           showQuickAddModal.value = true;
         }
@@ -3566,11 +3646,13 @@
               assigneeProfileId: selectedProfileId.value,
               reward: 0,
               dueDate: quickAddDueDate.value || null,
+              dueTime: quickAddDueTime.value || null,
               recurrence: quickAddRecurrence.value || 'none'
             });
           }
           quickAddContent.value = '';
           quickAddDueDate.value = '';
+          quickAddDueTime.value = '';
           quickAddRecurrence.value = 'none';
           showQuickAddModal.value = false;
         }
@@ -4032,9 +4114,7 @@
 
           // Screensaver slideshow rotation timer (respecting active day/night interval)
           photoInterval = setInterval(() => {
-            if (screensaverPhotos.value.length > 1) {
-              currentPhotoIndex.value++;
-            }
+            advanceScreensaverPhoto();
           }, (activePhotoInterval.value || 8) * 1000);
 
           // GLOBAL CAPTURING LISTENER: Guarantee that ANY touch, tap, click wakes up the dashboard immediately!
@@ -4059,9 +4139,7 @@
           if (photoInterval) clearInterval(photoInterval);
           const ms = (newInterval || 8) * 1000;
           photoInterval = setInterval(() => {
-            if (screensaverPhotos.value.length > 1) {
-              currentPhotoIndex.value++;
-            }
+            advanceScreensaverPhoto();
           }, ms);
           resetSleepTimer();
         });
@@ -4130,6 +4208,7 @@
           showQuickAddModal,
           quickAddContent,
           quickAddDueDate,
+          quickAddDueTime,
           quickAddRecurrence,
           widgetGridRef,
           timerSeconds,
@@ -4186,7 +4265,6 @@
           verifyAdminPassword,
           cycleWidgetWidth,
           cycleWidgetHeight,
-          cycleWidgetFontSize,
           isClockWeatherVisible,
           toggleClockWeather,
           getClockStyle,
