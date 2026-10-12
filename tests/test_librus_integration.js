@@ -10,7 +10,7 @@ for (const suffix of ['.db', '.db-wal', '.db-shm']) {
 process.env.DB_PATH = testDbPath;
 
 const db = require('../src/db');
-const { normalizeTimetableData, buildMorningSummary, buildSchoolDaySummary } = require('../src/services/librus');
+const { normalizeTimetableData, flattenLibrusGrades, buildMorningSummary, buildSchoolDaySummary } = require('../src/services/librus');
 const { getWeather } = require('../src/services/weather');
 
 const sampleTimetable = {
@@ -31,6 +31,12 @@ assert(Array.isArray(normalized), 'expected normalized timetable array');
 assert.strictEqual(normalized[0].day, 'Monday', 'Monday should be first day');
 assert.strictEqual(normalized[0].lessons.length, 2, 'two lessons should be parsed for Monday');
 assert.strictEqual(normalized[0].lessons[0].name, 'Math', 'Math lesson should be preserved');
+
+const flattenedGrades = flattenLibrusGrades([{
+  name: 'Mathematics',
+  semester: [{ grades: [{ id: 431, value: '5', info: 'Quiz' }] }]
+}]);
+assert.deepStrictEqual(flattenedGrades, [{ id: 431, subject: 'Mathematics', semester: 1, value: '5', info: 'Quiz', date: null }], 'nested Librus semester grades should flatten into usable grade rows');
 
 const hourBasedTimetable = {
   hours: ['08:00-08:45', '09:00-09:45', '10:00-10:45'],
@@ -112,6 +118,18 @@ const substitutedLesson = {
 assert.strictEqual(substitutedLesson.lessons[0].cancelled, true, 'cancelled lessons should be marked');
 assert.strictEqual(substitutedLesson.lessons[1].replacement, true, 'replacement teachers should be marked');
 
+const packageChangedTimetable = normalizeTimetableData({
+  table: { Monday: [{ subject: 'Physics', time: '08:00-08:45', flag: 'zastępstwo, zmiana sali', original: { subject: 'Chemistry' } }, { subject: 'Math', time: '09:00-09:45', cancelled: true, flag: 'odwołane' }] }
+});
+const storedSchedule = db.insertSchedule({ name: 'Changed timetable', schedule: packageChangedTimetable });
+assert.strictEqual(storedSchedule.schedule[0].lessons[0].replacement, true, 'Librus replacement markers should survive schedule persistence');
+assert.strictEqual(storedSchedule.schedule[0].lessons[0].original.subject, 'Chemistry', 'original lesson details should survive schedule persistence');
+assert.strictEqual(storedSchedule.schedule[0].lessons[1].cancelled, true, 'Librus cancellations should survive schedule persistence');
+
+const storedLibrusData = db.saveLibrusData({ messages: [{ id: 9, title: 'Parent message' }], notification_counts: { inbox: 2 } });
+assert.strictEqual(storedLibrusData.messages[0].title, 'Parent message', 'Librus inbox messages should persist separately');
+assert.strictEqual(storedLibrusData.notification_counts.inbox, 2, 'Librus notification counters should persist');
+
 const profile = db.insertProfile({
   name: 'Test Kid',
   color: '#00ff00',
@@ -126,6 +144,15 @@ assert.strictEqual(profile.librus_password, 'kid-pass', 'profile should store Li
 const updatedProfile = db.updateProfile(profile.id, { librus_login: 'new-login', librus_password: 'new-pass' });
 assert.strictEqual(updatedProfile.librus_login, 'new-login', 'profile update should change Librus login');
 assert.strictEqual(updatedProfile.librus_password, 'new-pass', 'profile update should change Librus password');
+db.saveLibrusData({ grades: [{ subject: 'Science', value: 'A', date: '2026-10-11' }] }, profile.id);
+assert.strictEqual(db.getLibrusData(profile.id).grades[0].subject, 'Science', 'profile-specific Librus grades should be retrievable');
+assert(db.getDashboardData().librus_by_profile[String(profile.id)], 'dashboard payload should include profile-specific Librus data');
+db.updateSettings({ weekly_backup_chat_id: 'private-chat-id' });
+const publicDashboard = db.getDashboardData();
+assert.strictEqual(publicDashboard.settings.weekly_backup_chat_id, undefined, 'public kiosk payload should not include backup destination');
+assert.strictEqual(publicDashboard.profiles.find(item => item.id === profile.id).librus_password, undefined, 'public kiosk profiles must not expose Librus credentials');
+const adminDashboard = db.getDashboardData({ includePrivateSettings: true });
+assert.strictEqual(adminDashboard.settings.weekly_backup_chat_id, 'private-chat-id', 'admin dashboard payload should retain private backup destination');
 
 (async () => {
   const previous = db.getSettings();

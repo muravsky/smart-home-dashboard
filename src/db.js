@@ -158,6 +158,15 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS librus_profile_data (
+    profile_id INTEGER NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (profile_id, key),
+    FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS photos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     filename TEXT NOT NULL,
@@ -209,6 +218,20 @@ db.exec(`
     status TEXT DEFAULT 'success',
     error_message TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS scheduled_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    send_time TEXT NOT NULL DEFAULT '07:00',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_sent_on TEXT,
+    last_cursor TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(profile_id, type),
+    FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
   );
 
   CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
@@ -450,7 +473,13 @@ function normalizeScheduleArray(schedule) {
       start: lesson && lesson.start ? String(lesson.start) : '08:30',
       end: lesson && lesson.end ? String(lesson.end) : '09:15',
       name: lesson && lesson.name ? String(lesson.name) : 'Class',
-      room: lesson && lesson.room ? String(lesson.room) : '—'
+      room: lesson && lesson.room ? String(lesson.room) : '—',
+      teacher: lesson && lesson.teacher ? String(lesson.teacher) : null,
+      replacementTeacher: lesson && lesson.replacementTeacher ? String(lesson.replacementTeacher) : null,
+      replacement: Boolean(lesson && lesson.replacement),
+      cancelled: Boolean(lesson && lesson.cancelled),
+      flag: lesson && lesson.flag ? String(lesson.flag) : null,
+      original: lesson && lesson.original ? lesson.original : null
     })) : [];
     return {
       day: dayEntry && dayEntry.day ? String(dayEntry.day) : 'Mon',
@@ -914,10 +943,26 @@ function getSettings() {
     https_redirect_http: 1,
     notification_items_limit: 5,
     announcement_items_limit: 5,
+    weekly_backup_enabled: 0,
+    weekly_backup_chat_id: '',
+    weekly_backup_weekday: 0,
+    weekly_backup_time: '08:00',
+    backup_retention_count: 4,
+    audit_retention_days: 90,
+    notes_retention_days: 365,
+    completed_items_retention_days: 0,
+    maintenance_pruned_on: '',
+    maintenance_vacuumed_month: '',
+    last_weekly_backup_on: '',
+    photo_derivatives_migrated: 0,
+    photo_derivative_migration_on: '',
     librus_sync_timetable: 'manual',
     librus_sync_grades: 'daily',
     librus_sync_notifications: 'daily',
     librus_sync_announcements: 'daily',
+    librus_sync_messages: 'daily',
+    librus_sync_time: '06:00',
+    librus_sync_weekday: 1,
     gemini_model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
     gemini_system_prompt: `You are the smart assistant for a family smart home tablet dashboard. Today is ${new Date().toISOString().slice(0, 10)}.\nAnalyze the user's natural language input and return ONLY raw JSON matching this schema:\n{\n  "notes": ["string of note content"],\n  "tasks": [\n    {\n      "title": "string",\n      "assignee": "string or null",\n      "reward": 0,\n      "due_date": "YYYY-MM-DD or null",\n      "due_time": "HH:MM or null",\n      "recurrence": "none|daily|weekly|weekdays|weekends|interval",\n      "recurrence_interval": 1,\n      "action": "add"\n    }\n  ],\n  "shopping_items": [\n    {\n      "content": "string (e.g. milk, eggs)",\n      "action": "add"\n    }\n  ],\n  "calendar_events": [\n    {\n      "title": "string",\n      "date": "YYYY-MM-DD",\n      "time": "HH:MM or null",\n      "all_day": false\n    }\n  ],\n  "timer": {\n    "action": "start",\n    "minutes": 5\n  },\n  "response_message": "Friendly 1-line confirmation of what was created or done"\n}\n\nRules:\n1. Shopping items: If the user mentions groceries, shopping, buy X, need X, put them in shopping_items.\n2. Calendar events: If user mentions an appointment, meeting, practice, schedule, event with a date or time, put them in calendar_events with accurate ISO date (e.g. tomorrow = calculate relative to today).\n3. Timer: If user says "set timer for 10 minutes", populate timer object (minutes as number).\n4. Tasks: Chores, to-dos, things to do. If reward is mentioned (e.g. "for 15 points"), set reward number. If the user mentions a date or time, fill due_date and due_time. If they say recurring, use recurrence and recurrence_interval.\n5. Notes: Generic info, reminders, thoughts.\n6. Only return non-empty arrays/objects when detected. If a field is not present, use empty array [] or null for timer. If the request is not clearly actionable, return notes with the user text as a reminder.`,
     gemini_text_prompt: 'Extract actionable family dashboard items from the message and return only the structured JSON schema described above.',
@@ -938,7 +983,14 @@ function getSettings() {
     'https_port',
     'https_redirect_http',
     'notification_items_limit',
-    'announcement_items_limit'
+    'announcement_items_limit',
+    'weekly_backup_enabled',
+    'weekly_backup_weekday',
+    'backup_retention_count',
+    'audit_retention_days',
+    'notes_retention_days',
+    'completed_items_retention_days',
+    'photo_derivatives_migrated'
   ];
   for (const r of rows) {
     if (numericKeys.includes(r.key)) {
@@ -973,6 +1025,11 @@ function getPhotos({ screensaverOnly = false } = {}) {
 
 function getPhotoById(id) {
   return db.prepare('SELECT * FROM photos WHERE id = ?').get(id);
+}
+
+function updatePhotoFilename(id, filename) {
+  db.prepare('UPDATE photos SET filename = ? WHERE id = ?').run(String(filename), Number(id));
+  return getPhotoById(id);
 }
 
 function insertPhoto({ filename, original_name = null, source = 'upload', caption = null, show_in_screensaver = 1, telegram_file_id = null }) {
@@ -1130,8 +1187,10 @@ function deleteOldCalendarEvents(beforeDateIso) {
   return db.prepare("DELETE FROM calendar_events WHERE (feed_id IS NOT NULL OR source != 'manual') AND start_datetime < ?").run(beforeDateIso);
 }
 
-function getLibrusData() {
-  const rows = db.prepare('SELECT key, value, updated_at FROM librus_data').all();
+function getLibrusData(profileId = null) {
+  const rows = profileId
+    ? db.prepare('SELECT key, value, updated_at FROM librus_profile_data WHERE profile_id = ?').all(Number(profileId))
+    : db.prepare('SELECT key, value, updated_at FROM librus_data').all();
   const payload = {};
   for (const row of rows) {
     try {
@@ -1143,7 +1202,10 @@ function getLibrusData() {
   return {
     grades: Array.isArray(payload.grades) ? payload.grades : [],
     notifications: Array.isArray(payload.notifications) ? payload.notifications : [],
+    notification_counts: payload.notification_counts && typeof payload.notification_counts === 'object' ? payload.notification_counts : {},
+    messages: Array.isArray(payload.messages) ? payload.messages : [],
     announcements: Array.isArray(payload.announcements) ? payload.announcements : [],
+    sync_errors: Array.isArray(payload.sync_errors) ? payload.sync_errors : [],
     summary: typeof payload.summary === 'string' ? payload.summary : '',
     timetable: Array.isArray(payload.timetable) ? payload.timetable : [],
     account: payload.account || null,
@@ -1151,11 +1213,14 @@ function getLibrusData() {
   };
 }
 
-function saveLibrusData(payload = {}) {
+function saveLibrusData(payload = {}, profileId = null) {
   const clean = {
     grades: Array.isArray(payload.grades) ? payload.grades : [],
     notifications: Array.isArray(payload.notifications) ? payload.notifications : [],
+    notification_counts: payload.notification_counts && typeof payload.notification_counts === 'object' ? payload.notification_counts : {},
+    messages: Array.isArray(payload.messages) ? payload.messages : [],
     announcements: Array.isArray(payload.announcements) ? payload.announcements : [],
+    sync_errors: Array.isArray(payload.sync_errors) ? payload.sync_errors : [],
     summary: typeof payload.summary === 'string' ? payload.summary : '',
     timetable: Array.isArray(payload.timetable) ? payload.timetable : [],
     account: payload.account || null,
@@ -1163,14 +1228,27 @@ function saveLibrusData(payload = {}) {
   };
 
   for (const [key, value] of Object.entries(clean)) {
-    db.prepare(`
-      INSERT INTO librus_data (key, value, updated_at)
-      VALUES (?, ?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-    `).run(key, JSON.stringify(value), clean.updated_at);
+    if (profileId) {
+      db.prepare(`
+        INSERT INTO librus_profile_data (profile_id, key, value, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(profile_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `).run(Number(profileId), key, JSON.stringify(value), clean.updated_at);
+    } else {
+      db.prepare(`
+        INSERT INTO librus_data (key, value, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `).run(key, JSON.stringify(value), clean.updated_at);
+    }
   }
 
-  return getLibrusData();
+  return getLibrusData(profileId);
+}
+
+function getAllLibrusProfileData() {
+  const ids = db.prepare('SELECT DISTINCT profile_id FROM librus_profile_data ORDER BY profile_id').all();
+  return Object.fromEntries(ids.map(({ profile_id }) => [String(profile_id), getLibrusData(profile_id)]));
 }
 
 /* ==========================================================================
@@ -1208,11 +1286,21 @@ function savePageConfig({ profile_key = 'family', page = 0, theme = 'inherit', f
 /* ==========================================================================
    Unified Dashboard State
    ========================================================================== */
-function getDashboardData() {
+function getDashboardData({ includePrivateSettings = false } = {}) {
+  const settings = getSettings();
+  if (!includePrivateSettings) delete settings.weekly_backup_chat_id;
+  const profiles = getProfiles();
+  if (!includePrivateSettings) {
+    profiles.forEach(profile => {
+      delete profile.telegram_id;
+      delete profile.librus_login;
+      delete profile.librus_password;
+    });
+  }
   return {
     notes: getNotes(),
     tasks: getTasks(),
-    profiles: getProfiles(),
+    profiles,
     schedules: getSchedules(),
     lists: getLists(),
     layouts: getWidgetLayouts(null),
@@ -1221,8 +1309,9 @@ function getDashboardData() {
     photos: getPhotos({ screensaverOnly: true }),
     events: getCalendarEvents({ limit: 250 }),
     feeds: getCalendarFeeds(),
-    settings: getSettings(),
-    librus: getLibrusData()
+    settings,
+    librus: getLibrusData(),
+    librus_by_profile: getAllLibrusProfileData()
   };
 }
 
@@ -1281,6 +1370,43 @@ function clearAuditLogs() {
   return db.prepare('DELETE FROM audit_logs').run();
 }
 
+function getScheduledSubscriptions() {
+  return db.prepare(`
+    SELECT s.*, p.name AS profile_name, p.telegram_id, p.language
+    FROM scheduled_subscriptions s
+    JOIN profiles p ON p.id = s.profile_id
+    ORDER BY p.name, s.type
+  `).all();
+}
+
+function upsertScheduledSubscription({ profile_id, type, send_time = '07:00', enabled = true, initial_cursor = null }) {
+  db.prepare(`
+    INSERT INTO scheduled_subscriptions (profile_id, type, send_time, enabled, last_cursor)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(profile_id, type) DO UPDATE SET
+      send_time = excluded.send_time,
+      enabled = excluded.enabled,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(Number(profile_id), String(type), /^\d{2}:\d{2}$/.test(send_time) ? send_time : '07:00', enabled ? 1 : 0, initial_cursor === null ? null : String(initial_cursor));
+  return getScheduledSubscriptions().find(item => item.profile_id === Number(profile_id) && item.type === type);
+}
+
+function markScheduledSubscriptionSent(id, date, cursor = null) {
+  return db.prepare('UPDATE scheduled_subscriptions SET last_sent_on = ?, last_cursor = COALESCE(?, last_cursor), updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(date, cursor, id);
+}
+
+function pruneData({ auditDays = 90, notesDays = 365, completedTaskDays = 180 } = {}) {
+  const audit = db.prepare("DELETE FROM audit_logs WHERE created_at < datetime('now', ?)").run(`-${Math.max(1, Number(auditDays) || 90)} days`);
+  const notes = db.prepare("DELETE FROM notes WHERE timestamp < datetime('now', ?)").run(`-${Math.max(1, Number(notesDays) || 365)} days`);
+  const keepCompletedHistory = Number(completedTaskDays) > 0;
+  const items = keepCompletedHistory ? db.prepare(`
+    DELETE FROM list_items
+    WHERE checked = 1 AND COALESCE(recurrence, 'none') = 'none'
+      AND COALESCE(last_completed_at, created_at) < datetime('now', ?)
+  `).run(`-${Number(completedTaskDays)} days`) : { changes: 0 };
+  return { auditLogs: audit.changes, notes: notes.changes, completedListItems: items.changes };
+}
+
 module.exports = {
   db,
   insertNote,
@@ -1322,6 +1448,7 @@ module.exports = {
   updateSettings,
   getPhotos,
   getPhotoById,
+  updatePhotoFilename,
   insertPhoto,
   updatePhoto,
   deletePhoto,
@@ -1338,9 +1465,14 @@ module.exports = {
   deleteOldCalendarEvents,
   saveLibrusData,
   getLibrusData,
+  getAllLibrusProfileData,
   getDashboardData,
   insertAuditLog,
   getAuditLogs,
-  clearAuditLogs
+  clearAuditLogs,
+  getScheduledSubscriptions,
+  upsertScheduledSubscription,
+  markScheduledSubscriptionSent,
+  pruneData
 };
 

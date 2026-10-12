@@ -114,7 +114,7 @@ function normalizeSingleLesson(lesson, idx = 0, hours = []) {
   const room = source.room || source.classroom || source.className || source.clazz || '—';
   const teacher = source.teacher || source.teacherName || source.instructor || null;
   const replacementTeacher = source.replacementTeacher || source.replacement_teacher || source.substituteTeacher || source.substitute_teacher || null;
-  const replacement = Boolean(source.replacement || source.is_replacement || source.substitute || replacementTeacher || source.flag === 'replacement' || source.flag === 'zastępstwo');
+  const replacement = Boolean(source.replacement || source.is_replacement || source.substitute || replacementTeacher || source.original || /replacement|zastęp|zastep/i.test(String(source.flag || '')));
 
   return {
     number: Number(source.number || source.no || idx + 1) || idx + 1,
@@ -126,7 +126,7 @@ function normalizeSingleLesson(lesson, idx = 0, hours = []) {
     teacher: teacher ? String(teacher).trim() : null,
     replacementTeacher: replacementTeacher ? String(replacementTeacher).trim() : null,
     replacement,
-    cancelled: Boolean(source.cancelled || source.canceled || source.flag === 'odwołane' || source.flag === 'cancelled' || source.flag === 'canceled'),
+    cancelled: Boolean(source.cancelled || source.canceled || /odwoł|cancel/i.test(String(source.flag || ''))),
     flag: source.flag || null,
     original: source.original || null
   };
@@ -182,7 +182,7 @@ function buildMorningSummary(person, timetableData) {
   const today = new Date();
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const todayLabel = dayNames[today.getDay()];
-  const todayEntry = normalized.find((entry) => String(entry.day).toLowerCase() === todayLabel.toLowerCase()) || normalized[0];
+  const todayEntry = normalized.find((entry) => String(entry.day).toLowerCase() === todayLabel.toLowerCase());
   const lessons = Array.isArray(todayEntry && todayEntry.lessons) ? todayEntry.lessons : [];
 
   if (!lessons.length) {
@@ -308,7 +308,7 @@ function normalizeLanguage(language = 'en') {
 function normalizeAnnouncement(item = {}) {
   if (!item || typeof item !== 'object') return null;
   const title = item.title || item.name || item.subject || item.message || item.content || 'Announcement';
-  const author = item.author || item.publisher || item.created_by || item.createdBy || null;
+  const author = item.author || item.user || item.publisher || item.created_by || item.createdBy || null;
   const date = item.date || item.created_at || item.createdAt || item.dateAdded || null;
   const time = item.time || item.time_created || item.created_time || item.createdTime || null;
   return {
@@ -333,7 +333,7 @@ function buildSchoolDaySummary({ weather = null, tasks = [], schedule = [], grad
   const today = new Date();
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const todayLabel = dayNames[today.getDay()];
-  const todayEntry = normalizedSchedule.find((entry) => String(entry.day).toLowerCase() === todayLabel.toLowerCase()) || normalizedSchedule[0];
+  const todayEntry = normalizedSchedule.find((entry) => String(entry.day).toLowerCase() === todayLabel.toLowerCase());
   const lessons = Array.isArray(todayEntry && todayEntry.lessons) ? todayEntry.lessons.filter(Boolean) : [];
   const lessonNames = lessons.map((lesson) => lesson.name || lesson.subject || '').filter(Boolean);
 
@@ -409,7 +409,60 @@ function summarizeLibrusNotifications(notifications, limit = 5) {
     .filter(Boolean);
 }
 
-async function fetchLibrusData({ login, password }) {
+function flattenLibrusGrades(rawGrades) {
+  if (!Array.isArray(rawGrades)) return [];
+  const flattened = [];
+  for (const subjectRow of rawGrades) {
+    if (!subjectRow || typeof subjectRow !== 'object') continue;
+    (Array.isArray(subjectRow.semester) ? subjectRow.semester : []).forEach((semester, semesterIndex) => {
+      (Array.isArray(semester && semester.grades) ? semester.grades : []).forEach((grade) => {
+        if (!grade || typeof grade !== 'object') return;
+        flattened.push({
+          id: grade.id || null,
+          subject: subjectRow.name || subjectRow.subject || 'School subject',
+          semester: semesterIndex + 1,
+          value: grade.value || grade.grade || '-',
+          info: grade.info || '',
+          date: grade.date || null
+        });
+      });
+    });
+    if (!Array.isArray(subjectRow.semester) && (subjectRow.value || subjectRow.grade)) {
+      flattened.push({
+        id: subjectRow.id || null,
+        subject: subjectRow.subject || subjectRow.name || 'School subject',
+        value: subjectRow.value || subjectRow.grade,
+        date: subjectRow.date || null,
+        info: subjectRow.info || subjectRow.comment || ''
+      });
+    }
+  }
+  return flattened;
+}
+
+async function hydrateGradeDetails(client, grades, errors) {
+  const latest = grades.slice(-30);
+  return Promise.all(latest.map(async (grade) => {
+    if (!grade.id || grade.date) return grade;
+    try {
+      const detail = await client.info.getGrade(grade.id);
+      return {
+        ...grade,
+        value: detail.grade || grade.value,
+        date: detail.date || grade.date,
+        category: detail.category || null,
+        teacher: detail.teacher || null,
+        comment: detail.comment || grade.info || null,
+        lesson: detail.lesson || null
+      };
+    } catch (error) {
+      errors.push({ resource: 'grade_detail', id: grade.id, message: error.message });
+      return grade;
+    }
+  }));
+}
+
+async function fetchLibrusData({ login, password, resources = null }) {
   if (!LibrusApi) {
     throw new Error('librus-api package is not installed in this environment.');
   }
@@ -420,21 +473,47 @@ async function fetchLibrusData({ login, password }) {
 
   const client = new LibrusApi();
   await client.authorize(String(login), String(password));
-
-  const [timetable, notifications, accountInfo, announcements, grades] = await Promise.all([
-    client.calendar.getTimetable().catch(() => []),
-    client.info.getNotifications().catch(() => []),
-    client.info.getAccountInfo().catch(() => null),
-    client.inbox.listAnnouncements().catch(() => []),
-    client.info.getGrades().catch(() => [])
+  const fetchAll = !Array.isArray(resources);
+  const shouldFetch = resource => fetchAll || resources.includes(resource);
+  const errors = [];
+  const fetchResource = async (name, request, fallback) => {
+    try { return await request(); } catch (error) {
+      errors.push({ resource: name, message: error.message });
+      return fallback;
+    }
+  };
+  const [timetable, notificationCounts, accountInfo, announcements, rawGrades, inboxHeaders] = await Promise.all([
+    shouldFetch('timetable') ? fetchResource('timetable', () => client.calendar.getTimetable(), []) : [],
+    shouldFetch('notifications') ? fetchResource('notification_counts', () => client.info.getNotifications(), {}) : {},
+    fetchAll ? fetchResource('account', () => client.info.getAccountInfo(), null) : null,
+    shouldFetch('announcements') ? fetchResource('announcements', () => client.inbox.listAnnouncements(), []) : [],
+    shouldFetch('grades') ? fetchResource('grades', () => client.info.getGrades(), []) : [],
+    shouldFetch('messages') ? fetchResource('inbox', () => client.inbox.listInbox(5), []) : []
   ]);
+
+  const grades = shouldFetch('grades') ? await hydrateGradeDetails(client, flattenLibrusGrades(rawGrades), errors) : [];
+  const messages = shouldFetch('messages') ? await Promise.all((Array.isArray(inboxHeaders) ? inboxHeaders : []).slice(0, 20).map(async (header) => {
+    if (!header || !header.id) return header;
+    try {
+      return { ...header, ...(await client.inbox.getMessage(5, header.id)) };
+    } catch (error) {
+      errors.push({ resource: 'message_detail', id: header.id, message: error.message });
+      return header;
+    }
+  })) : [];
+  const notifications = Object.entries(notificationCounts || {})
+    .filter(([, count]) => Number(count) > 0)
+    .map(([category, count]) => ({ id: category, category, count: Number(count), title: `${category}: ${count}` }));
 
   return {
     timetable,
     notifications,
+    notificationCounts,
+    messages,
     accountInfo,
     announcements,
     grades,
+    errors,
     normalizedTimetable: normalizeTimetableData(timetable)
   };
 }
@@ -450,6 +529,7 @@ module.exports = {
   buildMorningSummary,
   buildSchoolDaySummary,
   summarizeLibrusNotifications,
+  flattenLibrusGrades,
   fetchLibrusData,
   toSchedulePayload
 };

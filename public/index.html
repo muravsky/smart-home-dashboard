@@ -596,14 +596,14 @@
         @click.stop="wakeUp"
       >
         <!-- Background Photo Slideshow (Ken Burns effect) -->
-        <div v-if="shouldShowScreensaverPhotos && currentScreensaverPhoto && activeScreensaverMode !== 'black'" class="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-          <transition name="fade-photo" mode="out-in">
-            <img 
-              :key="currentScreensaverPhoto.id"
-              :src="'/uploads/photos/' + currentScreensaverPhoto.filename" 
-              class="w-full h-full object-cover ken-burns"
-            />
-          </transition>
+        <div v-if="shouldShowScreensaverPhotos && displayedScreensaverPhoto && activeScreensaverMode !== 'black'" class="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+          <img
+            :key="displayedScreensaverPhoto.id"
+            :src="'/uploads/photos/' + displayedScreensaverPhoto.filename"
+            class="w-full h-full object-cover ken-burns"
+            decoding="async"
+            fetchpriority="high"
+          />
           <!-- Subtle dark vignette overlay ONLY when clock/text overlay is active -->
           <div v-if="!isPurePhotoSlideshow" class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/65"></div>
         </div>
@@ -613,8 +613,8 @@
 
         <!-- Top Header in Screensaver (Hidden in Pure Picture Slideshow) -->
         <div v-if="!isPurePhotoSlideshow && activeScreensaverMode !== 'black'" class="relative z-10 flex items-center justify-between text-xs font-mono text-white/80 pointer-events-none">
-          <div v-if="shouldShowScreensaverPhotos && currentScreensaverPhoto && currentScreensaverPhoto.caption" class="bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 shadow">
-            📷 {{ currentScreensaverPhoto.caption }}
+          <div v-if="shouldShowScreensaverPhotos && displayedScreensaverPhoto && displayedScreensaverPhoto.caption" class="bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 shadow">
+            📷 {{ displayedScreensaverPhoto.caption }}
           </div>
           <div v-else-if="isNightModeActive" class="text-amber-500 font-mono flex items-center gap-1.5 bg-black/70 px-3 py-1 rounded-full border border-amber-900/50">
             <span>🌙</span>
@@ -644,10 +644,10 @@
         </div>
 
         <!-- Minimal Subtle Photo Caption for Pure Picture Slideshow -->
-        <div v-if="isPurePhotoSlideshow && currentScreensaverPhoto && currentScreensaverPhoto.caption" class="relative z-10 pointer-events-none self-start">
+        <div v-if="isPurePhotoSlideshow && displayedScreensaverPhoto && displayedScreensaverPhoto.caption" class="relative z-10 pointer-events-none self-start">
           <div class="bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-full text-xs font-mono text-white/90 shadow border border-white/10 flex items-center gap-1.5">
             <span>📷</span>
-            <span>{{ currentScreensaverPhoto.caption }}</span>
+            <span>{{ displayedScreensaverPhoto.caption }}</span>
           </div>
         </div>
       </div>
@@ -872,7 +872,7 @@
               getHeightClass(w.h),
               getWidgetFontSizeClass(w),
               'widget-card',
-              ['weather', 'calendar', 'calendar_agenda', 'school_announcements'].includes(w.widget_type) ? 'readability-widget' : '',
+              ['weather', 'calendar', 'calendar_agenda', 'school_announcements', 'school_messages'].includes(w.widget_type) ? 'readability-widget' : '',
               isEditMode && isAdminUnlocked ? 'ring-2 ring-sky-500/60 bg-neutral-900/90 shadow-2xl' : 'bg-neutral-950 border border-neutral-900 shadow-xl'
             ]"
             class="rounded-xl p-2.5 relative flex flex-col justify-between transition-all duration-300 overflow-hidden"
@@ -1330,10 +1330,10 @@
                 <span class="font-mono text-xs uppercase tracking-widest text-pink-400 font-semibold">PHOTO FRAME</span>
                 <span class="text-[10px] text-neutral-500 font-mono">{{ screensaverPhotos.length }} PHOTOS</span>
               </div>
-              <div v-if="currentScreensaverPhoto" class="relative rounded-xl overflow-hidden aspect-video my-auto bg-black flex items-center justify-center">
-                <img :src="'/uploads/photos/' + currentScreensaverPhoto.filename" class="w-full h-full object-cover" />
-                <div v-if="currentScreensaverPhoto.caption" class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 to-transparent p-2 text-[11px] font-mono text-white text-center">
-                  {{ currentScreensaverPhoto.caption }}
+              <div v-if="displayedScreensaverPhoto" class="relative rounded-xl overflow-hidden aspect-video my-auto bg-black flex items-center justify-center">
+                <img :src="'/uploads/photos/' + displayedScreensaverPhoto.filename" class="w-full h-full object-cover" decoding="async" />
+                <div v-if="displayedScreensaverPhoto.caption" class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 to-transparent p-2 text-[11px] font-mono text-white text-center">
+                  {{ displayedScreensaverPhoto.caption }}
                 </div>
               </div>
               <div v-else class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
@@ -1510,7 +1510,7 @@
                     <span class="font-semibold text-white">{{ grade.subject }}</span>
                     <span class="text-yellow-300 font-mono font-bold">{{ grade.value }}</span>
                   </div>
-                  <div v-if="grade.comment || grade.date" class="text-[10px] text-neutral-400 mt-0.5">{{ grade.comment || grade.date }}</div>
+                  <div v-if="grade.comment || grade.info || grade.date" class="text-[10px] text-neutral-400 mt-0.5">{{ grade.date || '' }}{{ grade.date && (grade.comment || grade.info) ? ' • ' : '' }}{{ grade.comment || grade.info || '' }}</div>
                 </li>
               </ul>
             </div>
@@ -1529,6 +1529,24 @@
                 <li v-for="note in librusData.notifications.slice(0, getWidgetItemLimit(w, Number(settings.notification_items_limit) || 5))" :key="note.id || note.title || note.message || note.name" class="border-b border-neutral-900/60 pb-1 text-[11px] text-neutral-200">
                   <div class="font-semibold text-white">{{ note.title || note.name || 'Notification' }}</div>
                   <div v-if="note.message || note.content || note.body" class="text-[10px] text-neutral-400 mt-0.5">{{ note.message || note.content || note.body }}</div>
+                </li>
+              </ul>
+            </div>
+
+            <div v-else-if="w.widget_type === 'school_messages'" class="h-full flex flex-col justify-between overflow-hidden">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+                <span class="font-mono text-xs uppercase tracking-widest text-sky-400 font-semibold">Librus Messages</span>
+                <span class="text-[10px] font-mono text-neutral-500">{{ librusData.messages.length }}</span>
+              </div>
+              <div v-if="!librusData.messages || !librusData.messages.length" class="text-sm font-mono text-neutral-600 py-6 text-center my-auto">No inbox messages synced.</div>
+              <ul v-else class="space-y-2 overflow-y-auto pr-1 flex-1">
+                <li v-for="message in librusData.messages.slice(0, getWidgetItemLimit(w, 8))" :key="message.id" class="border-b border-neutral-900/60 pb-2">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="font-semibold text-white text-base leading-snug">{{ message.title || 'Message' }}</div>
+                    <span v-if="message.read === false" class="shrink-0 rounded bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-900">NEW</span>
+                  </div>
+                  <div class="text-sm text-neutral-500 mt-1">{{ message.user || 'Librus' }}<span v-if="message.date"> • {{ message.date }}</span></div>
+                  <div v-if="message.content" class="text-sm text-neutral-200 mt-2 leading-relaxed whitespace-pre-line">{{ message.content }}</div>
                 </li>
               </ul>
             </div>
@@ -2110,11 +2128,24 @@
         const librusData = ref({
           grades: [],
           notifications: [],
+          notification_counts: {},
+          messages: [],
           announcements: [],
+          sync_errors: [],
           summary: '',
           timetable: [],
           account: null
         });
+        const librusProfileData = ref({});
+
+        function applyLibrusProfileData(data = {}) {
+          if (data.librus_by_profile) librusProfileData.value = data.librus_by_profile;
+          const profileKey = selectedProfileId.value === null ? null : String(selectedProfileId.value);
+          const selectedData = profileKey && librusProfileData.value[profileKey];
+          const nextData = selectedData || data.librus;
+          if (nextData) librusData.value = { ...librusData.value, ...nextData };
+        }
+
         const settings = ref({
           sleep_timeout: 300,
           sleep_timeout_day: 300,
@@ -2269,6 +2300,7 @@
         // Screensaver Photo State
         const currentPhotoIndex = ref(0);
         const shuffledPhotoIds = ref([]);
+        const failedPhotoIds = new Set();
         let photoInterval = null;
 
         const screensaverPhotos = computed(() => {
@@ -2277,7 +2309,7 @@
         let screensaverPhotoSetKey = '';
 
         function shuffleScreensaverPhotos(photoList, previousId = null) {
-          const ids = photoList.map(photo => photo.id);
+          const ids = photoList.map(photo => photo.id).filter(id => !failedPhotoIds.has(id));
           for (let index = ids.length - 1; index > 0; index--) {
             const swapIndex = Math.floor(Math.random() * (index + 1));
             [ids[index], ids[swapIndex]] = [ids[swapIndex], ids[index]];
@@ -2292,6 +2324,7 @@
           const nextKey = photoList.map(photo => String(photo.id)).sort().join('|');
           if (nextKey === screensaverPhotoSetKey) return;
           screensaverPhotoSetKey = nextKey;
+          failedPhotoIds.clear();
           shuffleScreensaverPhotos(photoList);
           currentPhotoIndex.value = 0;
         }, { immediate: true });
@@ -2305,6 +2338,37 @@
           if (shuffledScreensaverPhotos.value.length === 0) return null;
           return shuffledScreensaverPhotos.value[currentPhotoIndex.value % shuffledScreensaverPhotos.value.length];
         });
+        const displayedPhotoId = ref(null);
+        const displayedScreensaverPhoto = computed(() => screensaverPhotos.value.find(photo => photo.id === displayedPhotoId.value) || null);
+        let imagePreloadVersion = 0;
+
+        watch(currentScreensaverPhoto, async (photo) => {
+          if (!photo) {
+            displayedPhotoId.value = null;
+            return;
+          }
+          const version = ++imagePreloadVersion;
+          if (failedPhotoIds.has(photo.id)) {
+            advanceScreensaverPhoto();
+            return;
+          }
+          const image = new Image();
+          image.src = '/uploads/photos/' + photo.filename;
+          try {
+            if (typeof image.decode === 'function') {
+              await image.decode();
+            } else if (!image.complete) {
+              await new Promise((resolve, reject) => {
+                image.onload = resolve;
+                image.onerror = reject;
+              });
+            }
+            if (version === imagePreloadVersion) displayedPhotoId.value = photo.id;
+          } catch (error) {
+            failedPhotoIds.add(photo.id);
+            if (version === imagePreloadVersion) advanceScreensaverPhoto();
+          }
+        }, { immediate: true });
 
         function advanceScreensaverPhoto() {
           if (shuffledScreensaverPhotos.value.length < 2) return;
@@ -2612,6 +2676,10 @@
 
         // Active State
         const selectedProfileId = ref(null);
+        watch(selectedProfileId, (profileId) => {
+          const profileData = profileId === null ? null : librusProfileData.value[String(profileId)];
+          librusData.value = { ...librusData.value, ...(profileData || { grades: [], notifications: [], messages: [], announcements: [], timetable: [], account: null, summary: '' }) };
+        });
         const activePage = ref(0);
         const isEditMode = ref(false);
         const isAdminUnlocked = ref(false);
@@ -2670,6 +2738,7 @@
           { type: 'school_summary', name: 'School Day Summary', icon: '📋', desc: 'Weather, tasks, classes & alerts' },
           { type: 'school_grades', name: 'Librus Grades', icon: '🧾', desc: 'Student marks and grade snapshot' },
           { type: 'school_notifications', name: 'Librus Notifications', icon: '🔔', desc: 'Recent notices and updates' },
+          { type: 'school_messages', name: 'Librus Inbox', icon: '✉️', desc: 'Messages received from school and parents' },
           { type: 'school_announcements', name: 'Librus Announcements', icon: '📣', desc: 'School news and messages' },
           { type: 'calendar', name: 'Calendar (Month & Agenda)', icon: '📅', desc: 'Mini month & Google Cal sync with toggleable agenda' },
           { type: 'calendar_agenda', name: 'Daily Calendar Agenda', icon: '📆', desc: 'Day-by-day event list for next X days' },
@@ -2727,7 +2796,7 @@
             if (data.lists) lists.value = data.lists;
             if (data.page_configs) pageConfigs.value = data.page_configs;
             if (data.settings) settings.value = { ...settings.value, ...data.settings };
-            if (data.librus) librusData.value = { ...librusData.value, ...data.librus };
+            applyLibrusProfileData(data);
             if (data.events && Array.isArray(data.events)) events.value = data.events;
             if (data.photos && Array.isArray(data.photos)) photos.value = data.photos;
             if (data.layouts) layouts.value = data.layouts;
@@ -3081,7 +3150,9 @@
                 subject: String(subject).trim() || `Grade ${idx + 1}`,
                 value: String(value).trim() || '-',
                 date: date ? String(date).trim() : null,
-                comment: comment ? String(comment).trim() : null
+                comment: comment ? String(comment).trim() : null,
+                info: grade.info ? String(grade.info).trim() : null,
+                semester: grade.semester || null
               };
             })
             .filter(item => item && item.subject)
@@ -4087,7 +4158,7 @@
             if (data.events && Array.isArray(data.events)) events.value = data.events;
             if (data.settings) settings.value = { ...settings.value, ...data.settings };
             if (data.page_configs) pageConfigs.value = data.page_configs;
-            if (data.librus) librusData.value = { ...librusData.value, ...data.librus };
+            applyLibrusProfileData(data);
 
             // Apply profile layout if matching
             const pKey = selectedProfileId.value !== null ? String(selectedProfileId.value) : 'family';

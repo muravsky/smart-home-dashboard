@@ -1079,6 +1079,27 @@
                     <option value="weekly">Weekly</option>
                   </select>
                 </div>
+                <div>
+                  <label class="block text-neutral-400 text-[10px] font-mono mb-1">Inbox Messages</label>
+                  <select v-model="settings.librus_sync_messages" class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 outline-none">
+                    <option value="manual">Manual only</option>
+                    <option value="hourly">Hourly</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <div>
+                    <label class="block text-neutral-400 text-[10px] font-mono mb-1">SYNC TIME</label>
+                    <input v-model="settings.librus_sync_time" type="time" class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200">
+                  </div>
+                  <div>
+                    <label class="block text-neutral-400 text-[10px] font-mono mb-1">WEEKLY DAY</label>
+                    <select v-model.number="settings.librus_sync_weekday" class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200">
+                      <option :value="0">Sunday</option><option :value="1">Monday</option><option :value="2">Tuesday</option><option :value="3">Wednesday</option><option :value="4">Thursday</option><option :value="5">Friday</option><option :value="6">Saturday</option>
+                    </select>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="flex gap-2">
@@ -1087,6 +1108,23 @@
               </button>
               <button type="button" @click="syncLibrusSchedule" :disabled="syncingLibrus" class="flex-1 font-mono text-xs bg-violet-600 hover:bg-violet-500 disabled:opacity-60 text-white py-2.5 rounded-lg font-semibold transition">
                 {{ syncingLibrus ? 'Syncing…' : 'Sync Librus Timetable' }}
+              </button>
+            </div>
+            <div class="rounded-lg border border-neutral-800 bg-neutral-950/80 p-3 space-y-3">
+              <div>
+                <div class="text-[10px] font-mono uppercase tracking-[0.18em] text-sky-300">Scheduled Telegram Subscriptions</div>
+                <div class="text-xs text-neutral-400 mt-1">Uses the selected profile's Telegram ID. Each delivery and failure is recorded in audit logs.</div>
+              </div>
+              <div v-if="!librusConfig.profile_id" class="text-xs text-amber-300">Select a student profile above to configure subscriptions.</div>
+              <div v-for="option in subscriptionOptions" :key="option.type" class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+                <label class="flex items-center gap-2 text-xs text-neutral-200">
+                  <input v-model="subscriptionDraft[option.type].enabled" type="checkbox" class="w-4 h-4 accent-sky-500">
+                  {{ option.label }}
+                </label>
+                <input v-model="subscriptionDraft[option.type].send_time" type="time" class="bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-xs text-neutral-100">
+              </div>
+              <button type="button" @click="saveScheduledSubscriptions" :disabled="savingSubscriptions || !librusConfig.profile_id" class="w-full font-mono text-xs bg-sky-700 hover:bg-sky-600 disabled:opacity-50 text-white py-2 rounded-lg">
+                {{ savingSubscriptions ? 'Saving…' : 'Save Subscriptions' }}
               </button>
             </div>
           </div>
@@ -1805,6 +1843,48 @@
           </div>
         </div>
 
+        <div class="bg-neutral-950/70 border border-neutral-800/80 rounded-xl p-4 md:p-5 space-y-4">
+          <div class="flex items-center gap-2 border-b border-neutral-800/80 pb-2">
+            <span class="text-base">💾</span>
+            <h3 class="font-mono text-xs font-bold uppercase tracking-wider text-emerald-400">DATABASE BACKUPS & RETENTION</h3>
+          </div>
+          <label class="flex items-center gap-2 text-sm text-neutral-200 font-semibold">
+            <input v-model.number="settings.weekly_backup_enabled" type="checkbox" :true-value="1" :false-value="0" class="w-5 h-5 accent-emerald-500">
+            Send a weekly database backup through Telegram
+          </label>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label class="block text-neutral-300 text-xs font-mono mb-1">TELEGRAM CHAT ID</label>
+              <input v-model="settings.weekly_backup_chat_id" type="text" placeholder="Your Telegram user or group ID" class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2.5 text-sm text-neutral-100">
+            </div>
+            <div>
+              <label class="block text-neutral-300 text-xs font-mono mb-1">BACKUP DAY</label>
+              <select v-model.number="settings.weekly_backup_weekday" class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2.5 text-sm text-neutral-100">
+                <option :value="0">Sunday</option><option :value="1">Monday</option><option :value="2">Tuesday</option><option :value="3">Wednesday</option><option :value="4">Thursday</option><option :value="5">Friday</option><option :value="6">Saturday</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-neutral-300 text-xs font-mono mb-1">BACKUP TIME</label>
+              <input v-model="settings.weekly_backup_time" type="time" class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2.5 text-sm text-neutral-100">
+            </div>
+          </div>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <label class="text-xs text-neutral-300">Keep backups
+              <input v-model.number="settings.backup_retention_count" type="number" min="1" max="52" class="mt-1 w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2 text-sm text-neutral-100">
+            </label>
+            <label class="text-xs text-neutral-300">Audit log days
+              <input v-model.number="settings.audit_retention_days" type="number" min="7" max="3650" class="mt-1 w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2 text-sm text-neutral-100">
+            </label>
+            <label class="text-xs text-neutral-300">Notes days
+              <input v-model.number="settings.notes_retention_days" type="number" min="30" max="3650" class="mt-1 w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2 text-sm text-neutral-100">
+            </label>
+            <label class="text-xs text-neutral-300">Completed items days (0 keeps history)
+              <input v-model.number="settings.completed_items_retention_days" type="number" min="0" max="3650" class="mt-1 w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2 text-sm text-neutral-100">
+            </label>
+          </div>
+          <p class="text-xs text-neutral-400">Backups contain SQLite data only; uploaded photos are stored separately. Old audit logs, notes, completed one-off list items, and backup files are pruned by the configured retention periods.</p>
+        </div>
+
         <!-- SECTION 1: DAYTIME SETTINGS -->
         <div class="bg-neutral-950/70 border border-neutral-800/80 rounded-xl p-4 md:p-5 space-y-4">
           <div class="flex items-center gap-2 border-b border-neutral-800/80 pb-2">
@@ -2190,6 +2270,9 @@
               <option value="telegram_photo">Telegram Photo</option>
               <option value="kiosk_dictation">Kiosk Voice Dictation</option>
               <option value="admin_simulator">Admin AI Simulator</option>
+              <option value="scheduled_job">Scheduled Jobs</option>
+              <option value="librus_sync">Librus Sync</option>
+              <option value="photo_processing">Photo Processing</option>
               <option value="telegram">Telegram (Blocked/System)</option>
             </select>
           </div>
@@ -2204,6 +2287,7 @@
               <option value="">All Statuses</option>
               <option value="success">Success</option>
               <option value="error">Error</option>
+              <option value="partial">Partial</option>
               <option value="blocked">Blocked</option>
             </select>
           </div>
@@ -2428,6 +2512,14 @@
           https_redirect_http: 1,
           notification_items_limit: 5,
           announcement_items_limit: 5,
+          weekly_backup_enabled: 0,
+          weekly_backup_chat_id: '',
+          weekly_backup_weekday: 0,
+          weekly_backup_time: '08:00',
+          backup_retention_count: 4,
+          audit_retention_days: 90,
+          notes_retention_days: 365,
+          completed_items_retention_days: 0,
           default_theme: 'white',
           default_font_size: 'xlarge',
           header_clock_enabled: 1,
@@ -2437,6 +2529,9 @@
           librus_sync_grades: 'daily',
           librus_sync_notifications: 'daily',
           librus_sync_announcements: 'daily',
+          librus_sync_messages: 'daily',
+          librus_sync_time: '06:00',
+          librus_sync_weekday: 1,
           gemini_model: 'gemini-2.0-flash',
           gemini_system_prompt: `You are the smart assistant for a family smart home tablet dashboard. Today is ${new Date().toISOString().slice(0, 10)}.\nAnalyze the user's natural language input and return ONLY raw JSON matching this schema:\n{\n  "notes": ["string of note content"],\n  "tasks": [\n    {\n      "title": "string",\n      "assignee": "string or null",\n      "reward": 0,\n      "due_date": "YYYY-MM-DD or null",\n      "due_time": "HH:MM or null",\n      "recurrence": "none|daily|weekly|weekdays|weekends|interval",\n      "recurrence_interval": 1,\n      "action": "add"\n    }\n  ],\n  "shopping_items": [\n    {\n      "content": "string (e.g. milk, eggs)",\n      "action": "add"\n    }\n  ],\n  "calendar_events": [\n    {\n      "title": "string",\n      "date": "YYYY-MM-DD",\n      "time": "HH:MM or null",\n      "all_day": false\n    }\n  ],\n  "timer": {\n    "action": "start",\n    "minutes": 5\n  },\n  "response_message": "Friendly 1-line confirmation of what was created or done"\n}\n\nRules:\n1. Shopping items: If the user mentions groceries, shopping, buy X, need X, put them in shopping_items.\n2. Calendar events: If user mentions an appointment, meeting, practice, schedule, event with a date or time, put them in calendar_events with accurate ISO date (e.g. tomorrow = calculate relative to today).\n3. Timer: If user says "set timer for 10 minutes", populate timer object (minutes as number).\n4. Tasks: Chores, to-dos, things to do. If reward is mentioned (e.g. "for 15 points"), set reward number. If the user mentions a date or time, fill due_date and due_time. If they say recurring, use recurrence and recurrence_interval.\n5. Notes: Generic info, reminders, thoughts.\n6. Only return non-empty arrays/objects when detected. If a field is not present, use empty array [] or null for timer. If the request is not clearly actionable, return notes with the user text as a reminder.`,
           gemini_text_prompt: 'Extract actionable family dashboard items from the message and return only the structured JSON schema described above.',
@@ -2499,8 +2594,61 @@
         });
         const librusStatus = ref({ configured: false, status: 'unknown' });
         const syncingLibrus = ref(false);
+        const scheduledSubscriptions = ref([]);
+        const savingSubscriptions = ref(false);
+        const subscriptionOptions = [
+          { type: 'morning_summary', label: 'Morning school and task summary' },
+          { type: 'librus_messages', label: 'New Librus inbox messages' },
+          { type: 'librus_grades', label: 'Grades added today' }
+        ];
+        const subscriptionDraft = ref({
+          morning_summary: { enabled: false, send_time: '07:00' },
+          librus_messages: { enabled: false, send_time: '16:00' },
+          librus_grades: { enabled: false, send_time: '16:00' }
+        });
+
+        async function loadScheduledSubscriptions() {
+          try {
+            const response = await fetch('/api/admin/scheduled-subscriptions');
+            if (!response.ok) return;
+            scheduledSubscriptions.value = await response.json();
+            const profileId = Number(librusConfig.value.profile_id);
+            const records = scheduledSubscriptions.value.filter(item => Number(item.profile_id) === profileId);
+            const next = {
+              morning_summary: { enabled: false, send_time: '07:00' },
+              librus_messages: { enabled: false, send_time: '16:00' },
+              librus_grades: { enabled: false, send_time: '16:00' }
+            };
+            records.forEach(item => { next[item.type] = { enabled: Boolean(item.enabled), send_time: item.send_time || '07:00' }; });
+            subscriptionDraft.value = next;
+          } catch (error) {
+            console.warn('Failed to load scheduled subscriptions:', error);
+          }
+        }
+
+        async function saveScheduledSubscriptions() {
+          const profileId = Number(librusConfig.value.profile_id);
+          if (!profileId) return showAlert('Select a student profile first.', false);
+          savingSubscriptions.value = true;
+          try {
+            const response = await fetch('/api/admin/scheduled-subscriptions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ profile_id: profileId, subscriptions: subscriptionOptions.map(item => ({ type: item.type, ...subscriptionDraft.value[item.type] })) })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+            scheduledSubscriptions.value = data.subscriptions || [];
+            showAlert('Scheduled messages saved. Ensure this profile has a Telegram ID.');
+          } catch (error) {
+            showAlert('Failed to save subscriptions: ' + error.message, false);
+          } finally {
+            savingSubscriptions.value = false;
+          }
+        }
 
         watch(() => librusConfig.value.profile_id, (profileId) => {
+          loadScheduledSubscriptions();
           if (!profileId) return;
           const profile = profiles.value.find(p => Number(p.id) === Number(profileId));
           if (!profile) return;
@@ -2552,7 +2700,7 @@
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
-            showAlert('Librus timetable synced successfully!');
+            showAlert(data.errors && data.errors.length ? `Librus sync completed with ${data.errors.length} resource warning(s). Check audit logs.` : 'Librus data synced successfully!');
             librusConfig.value.password = '';
             await checkLibrusStatus();
             await loadData();
@@ -3417,6 +3565,7 @@
         onMounted(() => {
           loadData();
           checkLibrusStatus();
+          loadScheduledSubscriptions();
           fetchGeminiModels();
         });
 
@@ -3453,6 +3602,12 @@
           syncingLibrus,
           checkLibrusStatus,
           syncLibrusSchedule,
+          scheduledSubscriptions,
+          savingSubscriptions,
+          subscriptionOptions,
+          subscriptionDraft,
+          loadScheduledSubscriptions,
+          saveScheduledSubscriptions,
           weatherSearchQuery,
           weatherSearchResults,
           weatherSearchLoading,

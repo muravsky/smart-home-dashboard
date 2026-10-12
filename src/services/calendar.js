@@ -5,7 +5,8 @@ const {
   upsertCalendarEventByUid,
   deleteOldCalendarEventsByFeed,
   deleteOldCalendarEvents,
-  getDashboardData
+  getDashboardData,
+  insertAuditLog
 } = require('../db');
 
 /**
@@ -158,18 +159,28 @@ async function syncAllFeeds(io = null) {
   if (feeds.length === 0) return { syncedFeeds: 0, totalEvents: 0 };
 
   let totalEvents = 0;
+  let failedFeeds = 0;
   for (const feed of feeds) {
     try {
       const c = await syncFeed(feed);
       totalEvents += c;
     } catch (e) {
-      // Continue to next feed even if one fails
+      failedFeeds++;
     }
   }
 
   // Purge any orphaned or old synced events older than 60 days
   const purgeCutoff = new Date(Date.now() - 60 * 86400000).toISOString();
-  deleteOldCalendarEvents(purgeCutoff);
+  const purged = deleteOldCalendarEvents(purgeCutoff);
+
+  insertAuditLog({
+    source: 'scheduled_job',
+    sender_name: 'Calendar Sync',
+    message_type: 'calendar_sync',
+    action_taken: `Calendar feed sync: ${feeds.length - failedFeeds}/${feeds.length} feeds succeeded, ${totalEvents} events updated, ${purged.changes || 0} expired events removed`,
+    status: failedFeeds ? 'partial' : 'success',
+    error_message: failedFeeds ? `${failedFeeds} feed(s) failed; see server logs for details.` : null
+  });
 
   if (io) {
     io.emit('dashboard_update', getDashboardData());

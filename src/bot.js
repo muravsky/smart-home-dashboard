@@ -2,6 +2,8 @@ const { Telegraf } = require('telegraf');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
+const crypto = require('crypto');
+const { createScreensaverDerivative } = require('./middleware/upload');
 const { parseTextWithGemini, parseAudioWithGemini } = require('./services/gemini');
 const { fetchLibrusData, normalizeTimetableData, buildMorningSummary } = require('./services/librus');
 const {
@@ -52,7 +54,7 @@ async function saveTelegramPhoto(ctx, io) {
 
     const filePath = fileInfo.result.file_path;
     const ext = path.extname(filePath) || '.jpg';
-    const filename = `photo-${Date.now()}-tg${ext}`;
+    const filename = `photo-${Date.now()}-${crypto.randomBytes(4).toString('hex')}-tg${ext}`;
     const destPath = path.join(photosDir, filename);
 
     const downloadUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`;
@@ -66,8 +68,11 @@ async function saveTelegramPhoto(ctx, io) {
       });
     });
 
+    const derivative = await createScreensaverDerivative(destPath, filename);
+    await fs.promises.unlink(destPath).catch(() => {});
+
     const photo = insertPhoto({
-      filename,
+      filename: derivative.filename,
       original_name: filename,
       source: 'telegram',
       caption,

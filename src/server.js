@@ -6,6 +6,7 @@ const { Server } = require('socket.io');
 const basicAuth = require('express-basic-auth');
 
 const {
+  db,
   insertNote,
   insertTask,
   deleteNote,
@@ -44,6 +45,7 @@ const {
   getSettings,
   updateSettings,
   getPhotos,
+  updatePhotoFilename,
   insertPhoto,
   updatePhoto,
   deletePhoto,
@@ -55,15 +57,21 @@ const {
   deleteCalendarEvent,
   deleteOldCalendarEvents,
   saveLibrusData,
+  getLibrusData,
   insertAuditLog,
   getAuditLogs,
-  clearAuditLogs
+  clearAuditLogs,
+  getScheduledSubscriptions,
+  upsertScheduledSubscription,
+  markScheduledSubscriptionSent,
+  pruneData
 } = require('./db');
 const { parseTextWithGemini, generateSchoolDaySummaryWithGemini, listAvailableGeminiModels } = require('./services/gemini');
 const { getWeather, searchCity, clearWeatherCache } = require('./services/weather');
 const { fetchLibrusData, normalizeTimetableData, buildSchoolDaySummary } = require('./services/librus');
 const { initBot, applyParsedGeminiActions } = require('./bot');
-const { uploadAvatar, uploadPhoto } = require('./middleware/upload');
+const { createMaintenanceService, SUBSCRIPTION_TYPES } = require('./services/maintenance');
+const { uploadAvatar, uploadPhoto, photosDir, createScreensaverDerivative } = require('./middleware/upload');
 const { normalizeCalendarUrl, syncFeed, syncAllFeeds, startCalendarSyncCron } = require('./services/calendar');
 
 const app = express();
@@ -230,7 +238,7 @@ app.get('/api/admin/ping', (req, res) => {
 });
 
 app.get('/api/admin/data', (req, res) => {
-  res.json(getDashboardData());
+  res.json(getDashboardData({ includePrivateSettings: true }));
 });
 
 app.get('/api/admin/audit-logs', (req, res) => {
@@ -316,8 +324,10 @@ app.get('/api/admin/schedules', (req, res) => {
 });
 
 app.get('/api/admin/librus/status', (req, res) => {
-  const configured = Boolean(process.env.LIBRUS_LOGIN && process.env.LIBRUS_PASSWORD);
-  res.json({ configured, status: configured ? 'ready' : 'missing_credentials' });
+  const profileCount = getProfiles().filter(profile => profile.librus_login && profile.librus_password).length;
+  const globalConfigured = Boolean(process.env.LIBRUS_LOGIN && process.env.LIBRUS_PASSWORD);
+  const configured = globalConfigured || profileCount > 0;
+  res.json({ configured, profileCount, globalConfigured, status: configured ? 'ready' : 'missing_credentials' });
 });
 
 app.post('/api/admin/librus/sync', async (req, res) => {
@@ -366,18 +376,30 @@ app.post('/api/admin/librus/sync', async (req, res) => {
     const saved = saveLibrusData({
       grades: Array.isArray(data.grades) ? data.grades : [],
       notifications: Array.isArray(data.notifications) ? data.notifications : [],
-      announcements: Array.isArray(data.announcements) ? data.announcements : [],
+      notification_counts: data.notificationCounts || {},
+      messages: Array.isArray(data.messages) ? data.messages : [],
+      announcements: Array.isArray(data.announcements) ? data.announcements.map(item => ({ ...item, author: item.author || item.user })) : [],
+      sync_errors: Array.isArray(data.errors) ? data.errors : [],
       summary: buildSchoolDaySummary({
         weather: null,
         tasks: [],
         schedule: timetable,
         grades: Array.isArray(data.grades) ? data.grades : [],
         notifications: Array.isArray(data.notifications) ? data.notifications : [],
-        announcements: Array.isArray(data.announcements) ? data.announcements : [],
+        announcements: Array.isArray(data.announcements) ? data.announcements.map(item => ({ ...item, author: item.author || item.user })) : [],
         language: profileLanguage
       }),
       timetable,
       account: data.accountInfo || null
+    }, profile_id || null);
+
+    insertAuditLog({
+      source: 'librus_sync',
+      sender_name: profile_name || (profile && profile.name) || 'Librus',
+      message_type: 'manual_sync',
+      action_taken: `Librus sync: ${timetable.length} weekdays, ${saved.grades.length} grades, ${saved.messages.length} messages, ${saved.announcements.length} announcements`,
+      status: data.errors && data.errors.length ? 'partial' : 'success',
+      error_message: data.errors && data.errors.length ? JSON.stringify(data.errors) : null
     });
 
     io.emit('dashboard_update', getDashboardData());
@@ -387,13 +409,24 @@ app.post('/api/admin/librus/sync', async (req, res) => {
       schedule: created,
       timetable,
       notifications: saved.notifications || [],
+      notificationCounts: saved.notification_counts || {},
+      messages: saved.messages || [],
       announcements: saved.announcements || [],
       grades: saved.grades || [],
+      errors: saved.sync_errors || [],
       account: saved.account || null,
       summary: saved.summary || ''
     });
   } catch (error) {
     console.error('[Librus] Sync failed:', error.message);
+    insertAuditLog({
+      source: 'librus_sync',
+      sender_name: 'Librus',
+      message_type: 'manual_sync',
+      action_taken: 'Librus sync failed',
+      status: 'error',
+      error_message: error.message
+    });
     res.status(500).json({ error: error.message || 'Librus sync failed' });
   }
 });
@@ -536,6 +569,27 @@ app.post('/api/admin/settings', (req, res) => {
   res.json({ ok: true, settings: updated });
 });
 
+app.get('/api/admin/scheduled-subscriptions', (req, res) => {
+  res.json(getScheduledSubscriptions());
+});
+
+app.post('/api/admin/scheduled-subscriptions', (req, res) => {
+  const { profile_id, subscriptions } = req.body || {};
+  if (!getProfileById(profile_id)) return res.status(404).json({ error: 'Profile not found' });
+  if (!Array.isArray(subscriptions)) return res.status(400).json({ error: 'subscriptions must be an array' });
+  const currentSubscriptions = getScheduledSubscriptions();
+  const profileLibrus = getLibrusData(profile_id);
+  const latestMessageId = (profileLibrus.messages || []).reduce((latest, message) => Math.max(latest, Number(message.id) || 0), 0) || null;
+  for (const item of subscriptions) {
+    if (!SUBSCRIPTION_TYPES.has(item.type)) return res.status(400).json({ error: `Unsupported subscription type: ${item.type}` });
+    const exists = currentSubscriptions.some(record => Number(record.profile_id) === Number(profile_id) && record.type === item.type);
+    upsertScheduledSubscription({ profile_id, type: item.type, send_time: item.send_time, enabled: item.enabled, initial_cursor: item.type === 'librus_messages' && !exists ? latestMessageId : null });
+  }
+  insertAuditLog({ source: 'scheduled_job', sender_name: 'Admin Console', message_type: 'subscription_change', action_taken: `Updated scheduled subscriptions for profile ${profile_id}`, status: 'success' });
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, subscriptions: getScheduledSubscriptions() });
+});
+
 // Gemini Models API (admin)
 app.get('/api/admin/gemini/models', async (req, res) => {
   try {
@@ -563,36 +617,40 @@ app.get('/api/admin/photos', (req, res) => {
   res.json(getPhotos());
 });
 
-app.post('/api/admin/upload/photo', uploadPhoto.single('photo'), (req, res) => {
+app.post('/api/admin/upload/photo', uploadPhoto.single('photo'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
-  const { caption, show_in_screensaver } = req.body;
-  const url = `/uploads/photos/${req.file.filename}`;
-  const photo = insertPhoto({
-    filename: req.file.filename,
-    original_name: req.file.originalname,
-    source: 'upload',
-    caption: caption || null,
-    show_in_screensaver: show_in_screensaver !== '0'
-  });
-  io.emit('dashboard_update', getDashboardData());
-  res.json({ ok: true, url, photo });
+  try {
+    const { caption, show_in_screensaver } = req.body;
+    const derivative = await createScreensaverDerivative(req.file.path, req.file.filename);
+    await require('fs').promises.unlink(req.file.path).catch(() => {});
+    const photo = insertPhoto({ filename: derivative.filename, original_name: req.file.originalname, source: 'upload', caption: caption || null, show_in_screensaver: show_in_screensaver !== '0' });
+    io.emit('dashboard_update', getDashboardData());
+    res.json({ ok: true, url: `/uploads/photos/${derivative.filename}`, photo });
+  } catch (error) {
+    await require('fs').promises.unlink(req.file.path).catch(() => {});
+    insertAuditLog({ source: 'photo_processing', action_taken: 'Single photo derivative failed', status: 'error', error_message: error.message });
+    res.status(500).json({ error: `Photo processing failed: ${error.message}` });
+  }
 });
 
 // Multi-photo upload API (batch upload up to 50 photos)
-app.post('/api/admin/upload/photos', uploadPhoto.array('photos', 50), (req, res) => {
+app.post('/api/admin/upload/photos', uploadPhoto.array('photos', 50), async (req, res) => {
   if (!req.files || req.files.length === 0) return res.status(400).json({ error: 'No images uploaded' });
   const { caption, show_in_screensaver } = req.body;
-  const insertedPhotos = req.files.map((file) => {
-    return insertPhoto({
-      filename: file.filename,
-      original_name: file.originalname,
-      source: 'upload',
-      caption: caption || null,
-      show_in_screensaver: show_in_screensaver !== '0'
-    });
-  });
-  io.emit('dashboard_update', getDashboardData());
-  res.json({ ok: true, count: insertedPhotos.length, photos: insertedPhotos });
+  try {
+    const insertedPhotos = [];
+    for (const file of req.files) {
+      const derivative = await createScreensaverDerivative(file.path, file.filename);
+      await require('fs').promises.unlink(file.path).catch(() => {});
+      insertedPhotos.push(insertPhoto({ filename: derivative.filename, original_name: file.originalname, source: 'upload', caption: caption || null, show_in_screensaver: show_in_screensaver !== '0' }));
+    }
+    io.emit('dashboard_update', getDashboardData());
+    res.json({ ok: true, count: insertedPhotos.length, photos: insertedPhotos });
+  } catch (error) {
+    await Promise.all(req.files.map(file => require('fs').promises.unlink(file.path).catch(() => {})));
+    insertAuditLog({ source: 'photo_processing', action_taken: 'Batch photo derivative failed', status: 'error', error_message: error.message });
+    res.status(500).json({ error: `Photo processing failed: ${error.message}` });
+  }
 });
 
 app.patch('/api/admin/photos/:id', (req, res) => {
@@ -620,6 +678,14 @@ app.get('/api/photos', (req, res) => {
   const expectedToken = process.env.DASHBOARD_TOKEN || 'your_secret_token';
   if (req.query.token !== expectedToken) return res.status(403).json({ error: 'Forbidden' });
   res.json(getPhotos({ screensaverOnly: true }));
+});
+
+app.get('/uploads/photos/:filename', (req, res, next) => {
+  if (!/^screen-[a-zA-Z0-9_-]+\.jpg$/.test(req.params.filename)) return next();
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.sendFile(path.join(__dirname, '../public/uploads/photos', req.params.filename), (error) => {
+    if (error && !res.headersSent) res.status(error.statusCode || 404).end();
+  });
 });
 
 // Calendar API (admin)
@@ -852,6 +918,81 @@ startCalendarSyncCron(io);
 
 // Initialize Telegraf Bot
 const bot = initBot(io);
+
+async function syncConfiguredLibrusProfiles(syncKeys = ['librus_sync_timetable', 'librus_sync_grades', 'librus_sync_notifications', 'librus_sync_announcements', 'librus_sync_messages']) {
+  const configuredProfiles = getProfiles().filter(profile => profile.librus_login && profile.librus_password);
+  const candidates = configuredProfiles.length
+    ? configuredProfiles
+    : (process.env.LIBRUS_LOGIN && process.env.LIBRUS_PASSWORD ? [{ id: null, name: 'Family', language: getSettings().language, librus_login: process.env.LIBRUS_LOGIN, librus_password: process.env.LIBRUS_PASSWORD }] : []);
+  if (!candidates.length) throw new Error('No Librus profile credentials or global credentials are configured');
+
+  const errors = [];
+  for (const profile of candidates) {
+    try {
+      const data = await fetchLibrusData({ login: profile.librus_login, password: profile.librus_password, resources: syncKeys.map(key => key.replace('librus_sync_', '')) });
+      const timetable = normalizeTimetableData(data.timetable);
+      const existingData = getLibrusData(profile.id);
+      const sections = new Set(syncKeys);
+      const dueResources = new Set();
+      if (sections.has('librus_sync_timetable')) dueResources.add('timetable');
+      if (sections.has('librus_sync_grades')) { dueResources.add('grades'); dueResources.add('grade_detail'); }
+      if (sections.has('librus_sync_notifications')) dueResources.add('notification_counts');
+      if (sections.has('librus_sync_messages')) { dueResources.add('inbox'); dueResources.add('message_detail'); }
+      if (sections.has('librus_sync_announcements')) dueResources.add('announcements');
+      const relevantErrors = data.errors.filter(error => dueResources.has(error.resource));
+      if (sections.has('librus_sync_timetable')) {
+        upsertLibrusSchedule({ profile_id: profile.id, profile_name: profile.name, schedule: timetable });
+      }
+      const saved = saveLibrusData({
+        ...existingData,
+        grades: sections.has('librus_sync_grades') ? data.grades : existingData.grades,
+        notifications: sections.has('librus_sync_notifications') ? data.notifications : existingData.notifications,
+        notification_counts: sections.has('librus_sync_notifications') ? data.notificationCounts : existingData.notification_counts,
+        messages: sections.has('librus_sync_messages') ? data.messages : existingData.messages,
+        announcements: sections.has('librus_sync_announcements') ? data.announcements.map(item => ({ ...item, author: item.author || item.user })) : existingData.announcements,
+        sync_errors: relevantErrors,
+        timetable: sections.has('librus_sync_timetable') ? timetable : existingData.timetable,
+        account: data.accountInfo,
+        summary: buildSchoolDaySummary({ schedule: sections.has('librus_sync_timetable') ? timetable : existingData.timetable, grades: sections.has('librus_sync_grades') ? data.grades : existingData.grades, notifications: sections.has('librus_sync_notifications') ? data.notifications : existingData.notifications, announcements: sections.has('librus_sync_announcements') ? data.announcements : existingData.announcements, language: profile.language })
+      }, profile.id || null);
+      insertAuditLog({
+        source: 'librus_sync',
+        sender_name: profile.name || 'Librus',
+        message_type: 'scheduled_sync',
+        action_taken: `Scheduled sync saved ${saved.grades.length} grades, ${saved.messages.length} messages, ${saved.announcements.length} announcements`,
+        status: relevantErrors.length ? 'partial' : 'success',
+        error_message: relevantErrors.length ? JSON.stringify(relevantErrors) : null
+      });
+    } catch (error) {
+      errors.push(`${profile.name || 'Librus'}: ${error.message}`);
+      insertAuditLog({ source: 'librus_sync', sender_name: profile.name || 'Librus', message_type: 'scheduled_sync', action_taken: 'Profile Librus sync failed', status: 'error', error_message: error.message });
+    }
+  }
+  if (errors.length === candidates.length) throw new Error(errors.join('; '));
+  io.emit('dashboard_update', getDashboardData());
+}
+
+const maintenance = createMaintenanceService({
+  db,
+  bot,
+  getSettings,
+  updateSettings,
+  pruneData,
+  getSubscriptions: getScheduledSubscriptions,
+  markSubscriptionSent: markScheduledSubscriptionSent,
+  getLists,
+  getSchedules,
+  getLibrusData,
+  getWeather: () => getWeather(),
+  buildSummary: buildSchoolDaySummary,
+  syncLibrus: syncConfiguredLibrusProfiles,
+  getPhotos,
+  updatePhotoFilename,
+  createPhotoDerivative: filename => createScreensaverDerivative(path.join(photosDir, filename), filename),
+  removePhotoFile: filename => require('fs').promises.unlink(path.join(photosDir, filename)),
+  audit: insertAuditLog
+});
+maintenance.start();
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 
