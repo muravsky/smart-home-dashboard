@@ -1,6 +1,17 @@
 const assert = require('assert');
 const http = require('http');
 const ioClient = require('socket.io-client');
+const fs = require('fs');
+const path = require('path');
+
+// IMPORTANT: Set DB_PATH BEFORE requiring any modules that open the database
+const testDbPath = path.join(__dirname, '../data/test-theme-font.db');
+for (const suffix of ['', '-wal', '-shm']) {
+  const candidate = `${testDbPath}${suffix}`;
+  if (fs.existsSync(candidate)) fs.rmSync(candidate, { force: true });
+}
+process.env.DB_PATH = testDbPath;
+
 const { app, server } = require('../src/server');
 const { 
   db, 

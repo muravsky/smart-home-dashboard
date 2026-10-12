@@ -1082,6 +1082,21 @@ function clearCalendarFeedProfileIfMissing(id) {
   `).run(Number(id));
 }
 
+/**
+ * Clear orphaned profile_id values on existing calendar_events for a given feed.
+ * Called after feed-level repair to fix rows already stored with a bad profile reference.
+ * @param {number} feedId
+ * @returns {import('better-sqlite3').RunResult}
+ */
+function cleanOrphanedEventProfileIds(feedId) {
+  return db.prepare(`
+    UPDATE calendar_events
+    SET profile_id = NULL
+    WHERE feed_id = ? AND profile_id IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM profiles WHERE profiles.id = calendar_events.profile_id)
+  `).run(Number(feedId));
+}
+
 function insertCalendarFeed({ name, ical_url, color = '#38bdf8', profile_id = null }) {
   const stmt = db.prepare('INSERT INTO calendar_feeds (name, ical_url, color, profile_id) VALUES (?, ?, ?, ?)');
   const info = stmt.run(name.trim(), ical_url.trim(), color, profile_id || null);
@@ -1464,6 +1479,7 @@ module.exports = {
   getCalendarFeeds,
   getCalendarFeedById,
   clearCalendarFeedProfileIfMissing,
+  cleanOrphanedEventProfileIds,
   insertCalendarFeed,
   updateCalendarFeedSyncTime,
   deleteCalendarFeed,

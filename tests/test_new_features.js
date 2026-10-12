@@ -1,6 +1,15 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+
+// IMPORTANT: Set DB_PATH BEFORE requiring any modules that open the database
+const testDbPath = path.join(__dirname, '../data/test-new-features.db');
+for (const suffix of ['', '-wal', '-shm']) {
+  const candidate = `${testDbPath}${suffix}`;
+  if (fs.existsSync(candidate)) fs.rmSync(candidate, { force: true });
+}
+process.env.DB_PATH = testDbPath;
+
 const { server } = require('../src/server');
 
 async function testNewFeatures() {

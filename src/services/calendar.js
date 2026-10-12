@@ -2,6 +2,7 @@ const ical = require('node-ical');
 const {
   getCalendarFeeds,
   clearCalendarFeedProfileIfMissing,
+  cleanOrphanedEventProfileIds,
   updateCalendarFeedSyncTime,
   upsertCalendarEventByUid,
   deleteOldCalendarEventsByFeed,
@@ -64,6 +65,11 @@ async function syncFeed(feed) {
     });
     feed.profile_id = null;
     console.warn(`[Calendar] Feed #${feed.id} "${feed.name}" had a deleted profile assignment; cleared it.`);
+  }
+  // Also fix any existing events for this feed that still reference a missing profile
+  const eventsRepaired = cleanOrphanedEventProfileIds(feed.id);
+  if (eventsRepaired.changes) {
+    console.warn(`[Calendar] Feed #${feed.id} "${feed.name}": cleared orphaned profile_id on ${eventsRepaired.changes} existing event(s).`);
   }
   console.log(`[Calendar] Syncing feed #${feed.id} "${feed.name}" from ${redactedUrl}...`);
 

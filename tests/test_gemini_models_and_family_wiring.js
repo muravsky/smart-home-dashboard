@@ -8,6 +8,17 @@
  * 5. Action application for specific people, entire family, and recurring tasks/groceries/events
  */
 
+const fs = require('fs');
+const path = require('path');
+
+// IMPORTANT: Set DB_PATH BEFORE requiring any modules that open the database
+const testDbPath = path.join(__dirname, '../data/test-gemini-wiring.db');
+for (const suffix of ['', '-wal', '-shm']) {
+  const candidate = `${testDbPath}${suffix}`;
+  if (fs.existsSync(candidate)) fs.rmSync(candidate, { force: true });
+}
+process.env.DB_PATH = testDbPath;
+
 const assert = require('assert');
 const http = require('http');
 const {
