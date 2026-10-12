@@ -1073,6 +1073,15 @@ function getCalendarFeedById(id) {
   return db.prepare('SELECT * FROM calendar_feeds WHERE id = ?').get(id);
 }
 
+function clearCalendarFeedProfileIfMissing(id) {
+  return db.prepare(`
+    UPDATE calendar_feeds
+    SET profile_id = NULL
+    WHERE id = ? AND profile_id IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM profiles WHERE profiles.id = calendar_feeds.profile_id)
+  `).run(Number(id));
+}
+
 function insertCalendarFeed({ name, ical_url, color = '#38bdf8', profile_id = null }) {
   const stmt = db.prepare('INSERT INTO calendar_feeds (name, ical_url, color, profile_id) VALUES (?, ?, ?, ?)');
   const info = stmt.run(name.trim(), ical_url.trim(), color, profile_id || null);
@@ -1454,6 +1463,7 @@ module.exports = {
   deletePhoto,
   getCalendarFeeds,
   getCalendarFeedById,
+  clearCalendarFeedProfileIfMissing,
   insertCalendarFeed,
   updateCalendarFeedSyncTime,
   deleteCalendarFeed,

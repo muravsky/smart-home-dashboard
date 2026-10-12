@@ -1,5 +1,6 @@
 const http = require('http');
 const { server } = require('../src/server');
+const { db, insertProfile, insertCalendarFeed, getCalendarFeedById, clearCalendarFeedProfileIfMissing, deleteCalendarFeed, deleteProfile } = require('../src/db');
 
 async function runPhase6Tests() {
   const testPort = 3988;
@@ -88,6 +89,17 @@ async function runPhase6Tests() {
     assert(createFeedRes.statusCode === 200 && createFeedRes.json.ok, 'POST /api/admin/calendar/feeds creates feed');
     assert(createFeedRes.json.feed.name === 'Test Holiday Calendar', 'Feed name saved correctly');
     const feedId = createFeedRes.json.feed.id;
+
+    const temporaryProfile = insertProfile({ name: 'Calendar Orphan Test' });
+    const orphanFeed = insertCalendarFeed({ name: 'Orphan Profile Test', ical_url: 'https://example.com/orphan.ics', profile_id: temporaryProfile.id });
+    db.pragma('foreign_keys = OFF');
+    db.prepare('UPDATE calendar_feeds SET profile_id = ? WHERE id = ?').run(999999999, orphanFeed.id);
+    db.pragma('foreign_keys = ON');
+    const repaired = clearCalendarFeedProfileIfMissing(orphanFeed.id);
+    assert(repaired.changes === 1, 'orphaned calendar feed profile reference is repaired');
+    assert(getCalendarFeedById(orphanFeed.id).profile_id === null, 'orphaned calendar feed becomes family-shared');
+    deleteCalendarFeed(orphanFeed.id);
+    deleteProfile(temporaryProfile.id);
 
     const deleteFeedRes = await makeRequest(`/api/admin/calendar/feeds/${feedId}`, 'DELETE');
     assert(deleteFeedRes.statusCode === 200 && deleteFeedRes.json.ok, 'DELETE /api/admin/calendar/feeds/:id deletes feed');

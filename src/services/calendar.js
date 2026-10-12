@@ -1,6 +1,7 @@
 const ical = require('node-ical');
 const {
   getCalendarFeeds,
+  clearCalendarFeedProfileIfMissing,
   updateCalendarFeedSyncTime,
   upsertCalendarEventByUid,
   deleteOldCalendarEventsByFeed,
@@ -48,7 +49,23 @@ function normalizeCalendarUrl(url) {
 async function syncFeed(feed) {
   if (!feed || !feed.ical_url) return 0;
   const feedUrl = normalizeCalendarUrl(feed.ical_url);
-  console.log(`[Calendar] Syncing feed #${feed.id} "${feed.name}" from ${feedUrl}...`);
+  const redactedUrl = (() => {
+    try { return new URL(feedUrl).origin; } catch (error) { return '[invalid URL]'; }
+  })();
+  const profileRepair = clearCalendarFeedProfileIfMissing(feed.id);
+  if (profileRepair.changes) {
+    insertAuditLog({
+      source: 'calendar_sync',
+      sender_name: feed.name,
+      message_type: 'feed_profile_repair',
+      action_taken: 'Detached calendar feed from a deleted profile; events will be shared with the family',
+      status: 'partial',
+      error_message: `Orphaned profile_id on calendar feed ${feed.id} was cleared.`
+    });
+    feed.profile_id = null;
+    console.warn(`[Calendar] Feed #${feed.id} "${feed.name}" had a deleted profile assignment; cleared it.`);
+  }
+  console.log(`[Calendar] Syncing feed #${feed.id} "${feed.name}" from ${redactedUrl}...`);
 
   try {
     const data = await ical.async.fromURL(feedUrl);
@@ -69,8 +86,13 @@ async function syncFeed(feed) {
 
       // If the event has an RRULE (recurring event), expand occurrences within window
       if (item.rrule && typeof ical.expandRecurringEvent === 'function') {
+        let instances = null;
         try {
-          const instances = ical.expandRecurringEvent(item, { from: rangeFrom, to: rangeTo });
+          instances = ical.expandRecurringEvent(item, { from: rangeFrom, to: rangeTo });
+        } catch (rruleErr) {
+          console.warn(`[Calendar] Failed to expand recurring event "${title}":`, rruleErr.message);
+        }
+        if (instances) {
           for (let idx = 0; idx < instances.length; idx++) {
             const inst = instances[idx];
             const instStart = inst.start instanceof Date ? inst.start.toISOString() : new Date(inst.start).toISOString();
@@ -92,8 +114,6 @@ async function syncFeed(feed) {
             count++;
           }
           continue;
-        } catch (rruleErr) {
-          console.warn(`[Calendar] Failed to expand recurring event "${title}":`, rruleErr.message);
         }
       }
 
