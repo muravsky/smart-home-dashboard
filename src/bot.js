@@ -69,7 +69,7 @@ async function saveTelegramPhoto(ctx, io) {
     });
 
     const derivative = await createScreensaverDerivative(destPath, filename);
-    await fs.promises.unlink(destPath).catch(() => {});
+    if (derivative.optimized) await fs.promises.unlink(destPath).catch(() => {});
 
     const photo = insertPhoto({
       filename: derivative.filename,

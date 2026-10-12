@@ -39,6 +39,10 @@ if [ ! -d /run/systemd/system ]; then
   exit 0
 fi
 
+echo "Installing locked production dependencies..."
+cd "$PROJECT_DIR"
+npm ci --omit=dev
+
 # Create systemd service unit on real VM
 SERVICE_FILE="/etc/systemd/system/smart-home.service"
 echo "Generating systemd service definition..."

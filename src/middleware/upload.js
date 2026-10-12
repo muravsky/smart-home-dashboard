@@ -1,8 +1,13 @@
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
-const sharp = require('sharp');
 const crypto = require('crypto');
+let sharp = null;
+try {
+  sharp = require('sharp');
+} catch (error) {
+  console.warn('[Photos] sharp is not installed; using original photo files until dependencies are installed.');
+}
 
 // Ensure upload directories exist
 const avatarsDir = path.join(__dirname, '../../public/uploads/avatars');
@@ -50,6 +55,7 @@ const fileFilter = (req, file, cb) => {
 };
 
 async function createScreensaverDerivative(originalPath, filename) {
+  if (!sharp) return { filename, path: originalPath, optimized: false };
   const derivativeName = `screen-${path.basename(filename, path.extname(filename))}.jpg`;
   const derivativePath = path.join(photosDir, derivativeName);
   await sharp(originalPath)
@@ -57,7 +63,7 @@ async function createScreensaverDerivative(originalPath, filename) {
     .resize({ width: 1920, height: 1080, fit: 'inside', withoutEnlargement: true })
     .jpeg({ quality: 82, mozjpeg: true })
     .toFile(derivativePath);
-  return { filename: derivativeName, path: derivativePath };
+  return { filename: derivativeName, path: derivativePath, optimized: true };
 }
 
 const uploadAvatar = multer({

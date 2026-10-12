@@ -112,6 +112,10 @@ function createMaintenanceService({
       if (String(photo.filename).startsWith('screen-')) continue;
       try {
         const derivative = await createPhotoDerivative(photo.filename);
+        if (derivative.optimized === false || derivative.filename === photo.filename) {
+          failed++;
+          continue;
+        }
         updatePhotoFilename(photo.id, derivative.filename);
         await removePhotoFile(photo.filename);
         converted++;

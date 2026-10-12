@@ -622,7 +622,7 @@ app.post('/api/admin/upload/photo', uploadPhoto.single('photo'), async (req, res
   try {
     const { caption, show_in_screensaver } = req.body;
     const derivative = await createScreensaverDerivative(req.file.path, req.file.filename);
-    await require('fs').promises.unlink(req.file.path).catch(() => {});
+    if (derivative.optimized) await require('fs').promises.unlink(req.file.path).catch(() => {});
     const photo = insertPhoto({ filename: derivative.filename, original_name: req.file.originalname, source: 'upload', caption: caption || null, show_in_screensaver: show_in_screensaver !== '0' });
     io.emit('dashboard_update', getDashboardData());
     res.json({ ok: true, url: `/uploads/photos/${derivative.filename}`, photo });
@@ -641,7 +641,7 @@ app.post('/api/admin/upload/photos', uploadPhoto.array('photos', 50), async (req
     const insertedPhotos = [];
     for (const file of req.files) {
       const derivative = await createScreensaverDerivative(file.path, file.filename);
-      await require('fs').promises.unlink(file.path).catch(() => {});
+      if (derivative.optimized) await require('fs').promises.unlink(file.path).catch(() => {});
       insertedPhotos.push(insertPhoto({ filename: derivative.filename, original_name: file.originalname, source: 'upload', caption: caption || null, show_in_screensaver: show_in_screensaver !== '0' }));
     }
     io.emit('dashboard_update', getDashboardData());
