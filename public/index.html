@@ -1401,24 +1401,24 @@
                     <div 
                       v-for="(lesson, lIdx) in dayRow.lessons" 
                       :key="lesson.start + '-' + lIdx"
-                      class="flex items-center justify-between p-2 rounded-lg bg-neutral-900/60 border border-neutral-800 text-xs"
-                      :class="lesson.cancelled ? 'opacity-60 line-through' : ''"
+                      class="flex items-center justify-between gap-2 p-2 rounded-lg border text-xs"
+                      :class="lesson.cancelled ? 'border-red-500/80 bg-red-950/35 shadow-[inset_3px_0_0_0_#ef4444]' : (lesson.moved || lesson.replacement || lesson.replacementTeacher || lesson.flag) ? 'border-amber-400/70 bg-amber-950/30 shadow-[inset_3px_0_0_0_#f59e0b]' : 'border-neutral-800 bg-neutral-900/60'"
                     >
                       <div class="flex items-center gap-2.5">
                         <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-violet-950/40 text-violet-300 border border-violet-800/40 font-bold whitespace-nowrap">
                           {{ lesson.start }}–{{ lesson.end }}
                         </span>
                         <div>
-                          <div class="font-bold text-white">{{ lesson.name }}</div>
+                          <div class="font-bold text-white" :class="lesson.cancelled ? 'line-through text-neutral-400' : ''">{{ lesson.name }}</div>
                           <div v-if="lesson.replacementTeacher || lesson.teacher" class="text-[10px] text-violet-300">{{ lesson.replacementTeacher || lesson.teacher }}</div>
                           <div v-if="lesson.original" class="text-[10px] text-neutral-400">Changed from: {{ lesson.original.subject || lesson.original.name || lesson.original.title || lesson.original }}</div>
+                          <div v-if="lesson.flag" class="mt-1 inline-flex max-w-full items-center gap-1 rounded border border-amber-300/50 bg-amber-900/50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-100">⚠ {{ lesson.flag }}</div>
                         </div>
                       </div>
                       <div class="text-right flex items-center gap-1.5">
                         <span v-if="lesson.cancelled" class="px-1.5 py-0.5 rounded bg-red-900/70 text-red-200 text-[9px] font-mono">CANCELLED</span>
                         <span v-if="lesson.moved" class="px-1.5 py-0.5 rounded bg-sky-900/70 text-sky-200 text-[9px] font-mono">MOVED</span>
                         <span v-if="(lesson.replacement || lesson.replacementTeacher) && !lesson.moved" class="px-1.5 py-0.5 rounded bg-amber-900/70 text-amber-200 text-[9px] font-mono">REPLACEMENT</span>
-                        <span v-if="lesson.flag" class="text-[9px] text-neutral-400">{{ lesson.flag }}</span>
                         <span v-if="lesson.room" class="font-mono text-[11px] text-neutral-400 bg-neutral-800 px-1.5 py-0.5 rounded">{{ lesson.room }}</span>
                       </div>
                     </div>
@@ -1441,15 +1441,16 @@
                     <tr v-for="dayRow in getSchoolScheduleRows(w)" :key="dayRow.day" :class="dayRow.isToday ? 'bg-violet-500/10' : 'bg-transparent'">
                       <td class="px-2 py-2 border-t border-neutral-800 font-semibold text-white whitespace-nowrap">{{ dayRow.day }}</td>
                       <td v-for="slot in getSchoolScheduleColumns(w)" :key="slot.key + '-' + dayRow.day" class="px-1.5 py-2 border-t border-l border-neutral-800 align-top text-center min-w-[90px]">
-                        <div v-if="getLessonForSlot(dayRow.lessons, slot.key)" class="space-y-1 text-left rounded-md bg-neutral-900/60 p-1.5 border border-neutral-800" :class="getLessonForSlot(dayRow.lessons, slot.key).cancelled ? 'opacity-60' : ''">
+                        <div v-if="getLessonForSlot(dayRow.lessons, slot.key)" class="space-y-1 text-left rounded-md p-1.5 border" :class="getLessonForSlot(dayRow.lessons, slot.key).cancelled ? 'border-red-500/80 bg-red-950/40' : (getLessonForSlot(dayRow.lessons, slot.key).moved || getLessonForSlot(dayRow.lessons, slot.key).replacement || getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher || getLessonForSlot(dayRow.lessons, slot.key).flag) ? 'border-amber-400/70 bg-amber-950/40' : 'border-neutral-800 bg-neutral-900/60'">
                           <div v-if="getLessonForSlot(dayRow.lessons, slot.key).cancelled || getLessonForSlot(dayRow.lessons, slot.key).moved || getLessonForSlot(dayRow.lessons, slot.key).replacement || getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher" class="flex flex-wrap gap-1 text-[8px] font-mono">
                             <span v-if="getLessonForSlot(dayRow.lessons, slot.key).cancelled" class="px-1 rounded bg-red-900/70 text-red-200">CANCELLED</span>
                             <span v-if="getLessonForSlot(dayRow.lessons, slot.key).moved" class="px-1 rounded bg-sky-900/70 text-sky-200">MOVED</span>
                             <span v-if="(getLessonForSlot(dayRow.lessons, slot.key).replacement || getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher) && !getLessonForSlot(dayRow.lessons, slot.key).moved" class="px-1 rounded bg-amber-900/70 text-amber-200">REPLACEMENT</span>
                           </div>
-                          <div class="font-bold text-white text-[10px] leading-tight" :class="getLessonForSlot(dayRow.lessons, slot.key).cancelled ? 'line-through' : ''">{{ getLessonForSlot(dayRow.lessons, slot.key).name }}</div>
+                          <div class="font-bold text-white text-[10px] leading-tight" :class="getLessonForSlot(dayRow.lessons, slot.key).cancelled ? 'line-through text-neutral-400' : ''">{{ getLessonForSlot(dayRow.lessons, slot.key).name }}</div>
                           <div v-if="getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher || getLessonForSlot(dayRow.lessons, slot.key).teacher" class="text-[8px] text-violet-300">{{ getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher || getLessonForSlot(dayRow.lessons, slot.key).teacher }}</div>
                           <div v-if="getLessonForSlot(dayRow.lessons, slot.key).original" class="text-[8px] text-neutral-400">From: {{ getLessonForSlot(dayRow.lessons, slot.key).original.subject || getLessonForSlot(dayRow.lessons, slot.key).original.name || getLessonForSlot(dayRow.lessons, slot.key).original.title || getLessonForSlot(dayRow.lessons, slot.key).original }}</div>
+                          <div v-if="getLessonForSlot(dayRow.lessons, slot.key).flag" class="text-[8px] font-semibold text-amber-100">⚠ {{ getLessonForSlot(dayRow.lessons, slot.key).flag }}</div>
                           <div class="text-[8px] text-neutral-400">{{ getLessonForSlot(dayRow.lessons, slot.key).room }}</div>
                         </div>
                         <div v-else class="text-[8px] text-neutral-600">—</div>
@@ -1502,7 +1503,11 @@
                 <span class="font-mono text-xs uppercase tracking-widest text-yellow-400 font-semibold">{{ getLocalizedWidgetLabel('grades', 'Librus Grades') }}</span>
                 <div class="flex items-center gap-2">
                   <button @click.stop="refreshDashboardData" class="text-[9px] font-mono uppercase tracking-widest text-yellow-200 hover:text-white border border-yellow-800/70 rounded px-1.5 py-0.5">Refresh</button>
-                  <span class="text-[10px] font-mono text-neutral-500">{{ getNormalizedGrades().length }} items</span>
+                  <select :value="getSchoolDataProfileId(w) || 'family'" @change.stop="setSchoolDataProfile(w, $event.target.value)" class="max-w-28 bg-neutral-900 border border-neutral-800 rounded px-1.5 py-1 text-[10px] text-neutral-300">
+                    <option value="family">Family data</option>
+                    <option v-for="profile in profiles" :key="profile.id" :value="String(profile.id)">{{ profile.name }}</option>
+                  </select>
+                  <span class="text-[10px] font-mono text-neutral-500">{{ getNormalizedGrades(w).length }} items</span>
                 </div>
               </div>
               <div class="flex items-center justify-between gap-2 mb-2">
@@ -1514,9 +1519,9 @@
                   <button v-for="days in ['1', '3', '5', 'all']" :key="days" type="button" @click.stop="setGradeDayFilter(w, days)" class="px-1.5 py-1 text-[9px] font-mono rounded border" :class="getGradeDayFilter(w) === days ? 'border-yellow-600 text-yellow-200 bg-yellow-950/40' : 'border-neutral-800 text-neutral-500'">{{ days === 'all' ? 'ALL' : days + 'D' }}</button>
                 </div>
               </div>
-              <div v-if="!getNormalizedGrades().length" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">No grades synced yet.</div>
+              <div v-if="!getNormalizedGrades(w).length" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">No grades synced for this pupil.</div>
               <div v-else-if="getGradeViewMode(w) === 'subjects'" class="space-y-2 overflow-y-auto pr-1 flex-1">
-                <div v-for="group in getGradesBySubject()" :key="group.subject" class="flex items-start justify-between gap-2 border-b border-neutral-900/60 pb-1.5">
+                <div v-for="group in getGradesBySubject(w)" :key="group.subject" class="flex items-start justify-between gap-2 border-b border-neutral-900/60 pb-1.5">
                   <span class="font-semibold text-white text-[11px]">{{ group.subject }}</span>
                   <div class="flex flex-wrap justify-end gap-1">
                     <span v-for="grade in group.grades" :key="grade.key" class="text-yellow-300 font-mono font-bold text-[11px]" :title="grade.date || ''">{{ grade.value }}</span>
@@ -1537,28 +1542,43 @@
 
             <!-- ================= WIDGET TYPE 11: LIBRUS NOTIFICATIONS ================= -->
             <div v-else-if="w.widget_type === 'school_notifications'" class="h-full flex flex-col justify-between overflow-hidden">
-              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2 gap-2">
                 <span class="font-mono text-xs uppercase tracking-widest text-amber-400 font-semibold">Notifications</span>
-                <span class="text-[10px] font-mono text-neutral-500">{{ getNotificationTotal() }}</span>
+                <div class="flex items-center gap-2">
+                  <select :value="getSchoolDataProfileId(w) || 'family'" @change.stop="setSchoolDataProfile(w, $event.target.value)" class="max-w-28 bg-neutral-900 border border-neutral-800 rounded px-1.5 py-1 text-[10px] text-neutral-300">
+                    <option value="family">Family data</option>
+                    <option v-for="profile in profiles" :key="profile.id" :value="String(profile.id)">{{ profile.name }}</option>
+                  </select>
+                  <span class="text-[10px] font-mono text-neutral-500">{{ getNotificationTotal(w) }}</span>
+                </div>
               </div>
 
-              <div v-if="!getNotificationItems().length" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
-                No notifications synced yet.
+              <div v-if="!getNotificationItems(w).length" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
+                No Librus notifications for this pupil.
               </div>
               <ul v-else class="space-y-1.5 overflow-y-auto pr-1 flex-1">
-                <li v-for="note in getNotificationItems().slice(0, getWidgetItemLimit(w, Number(settings.notification_items_limit) || 5))" :key="note.id" class="flex items-center justify-between gap-2 border-b border-neutral-900/60 pb-1 text-[11px] text-neutral-200">
-                  <div class="font-semibold text-white capitalize">{{ note.title }}</div>
+                <li v-for="note in getNotificationItems(w).slice(0, getWidgetItemLimit(w, Number(settings.notification_items_limit) || 5))" :key="note.id" class="flex items-start justify-between gap-2 border-b border-neutral-900/60 pb-2 text-[11px] text-neutral-200">
+                  <div class="min-w-0">
+                    <div class="font-semibold text-white">{{ note.title }}</div>
+                    <div v-if="note.detail" class="text-[10px] text-neutral-400 mt-0.5 truncate">{{ note.detail }}</div>
+                  </div>
                   <div class="font-mono text-amber-300">{{ note.count }}</div>
                 </li>
               </ul>
             </div>
 
             <div v-else-if="w.widget_type === 'school_messages'" class="h-full flex flex-col justify-between overflow-hidden">
-              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2 gap-2">
                 <span class="font-mono text-xs uppercase tracking-widest text-sky-400 font-semibold">Librus Messages</span>
-                <span class="text-[10px] font-mono text-neutral-500">{{ librusData.messages.length }}</span>
+                <div class="flex items-center gap-2">
+                  <select :value="getSchoolDataProfileId(w) || 'family'" @change.stop="setSchoolDataProfile(w, $event.target.value)" class="max-w-28 bg-neutral-900 border border-neutral-800 rounded px-1.5 py-1 text-[10px] text-neutral-300">
+                    <option value="family">Family data</option>
+                    <option v-for="profile in profiles" :key="profile.id" :value="String(profile.id)">{{ profile.name }}</option>
+                  </select>
+                  <span class="text-[10px] font-mono text-neutral-500">{{ (getWidgetLibrusData(w).messages || []).length }}</span>
+                </div>
               </div>
-              <div v-if="!librusData.messages || !librusData.messages.length" class="text-sm font-mono text-neutral-600 py-6 text-center my-auto">No inbox messages synced.</div>
+              <div v-if="!getWidgetLibrusData(w).messages || !getWidgetLibrusData(w).messages.length" class="text-sm font-mono text-neutral-600 py-6 text-center my-auto">No inbox messages synced for this pupil.</div>
               <div v-else class="flex flex-col flex-1 min-h-0">
                 <article :key="getMessageAt(w).id || getMessageIndex(w)" class="flex-1 min-h-0 overflow-y-auto pr-1 py-2">
                   <template v-if="getMessageAt(w)">
@@ -1572,8 +1592,8 @@
                 </article>
                 <div class="flex items-center justify-between border-t border-neutral-800 pt-2 mt-1">
                   <button type="button" @click.stop="changeMessage(w, -1)" :disabled="getMessageIndex(w) === 0" class="px-3 py-1.5 rounded border border-neutral-800 text-sm font-mono disabled:opacity-40 disabled:cursor-not-allowed hover:bg-neutral-800" aria-label="Previous message">← Previous</button>
-                  <span class="text-[10px] font-mono text-neutral-500">{{ getMessageIndex(w) + 1 }} / {{ librusData.messages.length }}</span>
-                  <button type="button" @click.stop="changeMessage(w, 1)" :disabled="getMessageIndex(w) >= librusData.messages.length - 1" class="px-3 py-1.5 rounded border border-neutral-800 text-sm font-mono disabled:opacity-40 disabled:cursor-not-allowed hover:bg-neutral-800" aria-label="Next message">Next →</button>
+                  <span class="text-[10px] font-mono text-neutral-500">{{ getMessageIndex(w) + 1 }} / {{ (getWidgetLibrusData(w).messages || []).length }}</span>
+                  <button type="button" @click.stop="changeMessage(w, 1)" :disabled="getMessageIndex(w) >= (getWidgetLibrusData(w).messages || []).length - 1" class="px-3 py-1.5 rounded border border-neutral-800 text-sm font-mono disabled:opacity-40 disabled:cursor-not-allowed hover:bg-neutral-800" aria-label="Next message">Next →</button>
                 </div>
               </div>
             </div>
@@ -2155,6 +2175,7 @@
         const messageIndexes = ref({});
         const gradeViewModes = ref({});
         const gradeDayFilters = ref({});
+        const schoolDataProfileIds = ref({});
         const librusData = ref({
           grades: [],
           notifications: [],
@@ -2174,6 +2195,31 @@
           const selectedData = profileKey && librusProfileData.value[profileKey];
           const nextData = selectedData || data.librus;
           if (nextData) librusData.value = { ...librusData.value, ...nextData };
+        }
+
+        function getSchoolDataProfileId(widget) {
+          const key = widget ? String(widget.id) : 'default';
+          if (Object.prototype.hasOwnProperty.call(schoolDataProfileIds.value, key)) {
+            return schoolDataProfileIds.value[key] === 'family' ? null : Number(schoolDataProfileIds.value[key]);
+          }
+          const saved = localStorage.getItem(`librus_widget_profile_${key}`);
+          if (saved !== null) return saved === 'family' ? null : Number(saved);
+          return selectedProfileId.value === null ? null : Number(selectedProfileId.value);
+        }
+
+        function setSchoolDataProfile(widget, value) {
+          const key = widget ? String(widget.id) : 'default';
+          schoolDataProfileIds.value = { ...schoolDataProfileIds.value, [key]: value };
+          localStorage.setItem(`librus_widget_profile_${key}`, value);
+          messageIndexes.value = { ...messageIndexes.value, [key]: 0 };
+        }
+
+        function getWidgetLibrusData(widget) {
+          const profileId = getSchoolDataProfileId(widget);
+          if (profileId === null) return librusData.value;
+          return librusProfileData.value[String(profileId)] || (
+            Number(selectedProfileId.value) === profileId ? librusData.value : {}
+          );
         }
 
         const settings = ref({
@@ -3200,8 +3246,8 @@
           return Number.isNaN(timestamp) ? 0 : timestamp;
         }
 
-        function getNormalizedGrades() {
-          return normalizeLibrusGradeEntries(librusData.value.grades);
+        function getNormalizedGrades(widget) {
+          return normalizeLibrusGradeEntries(getWidgetLibrusData(widget).grades);
         }
 
         function getGradeViewMode(widget) {
@@ -3228,18 +3274,18 @@
 
         function getGradesForTimeline(widget) {
           const days = getGradeDayFilter(widget);
-          if (days === 'all') return getNormalizedGrades();
+          if (days === 'all') return getNormalizedGrades(widget);
           const cutoff = new Date(now.value.getFullYear(), now.value.getMonth(), now.value.getDate());
           cutoff.setDate(cutoff.getDate() - Number(days) + 1);
-          return getNormalizedGrades().filter(grade => {
+          return getNormalizedGrades(widget).filter(grade => {
             const timestamp = gradeDateTimestamp(grade.date);
             return timestamp > 0 && timestamp >= cutoff.getTime() && timestamp < cutoff.getTime() + Number(days) * 24 * 60 * 60 * 1000;
           });
         }
 
-        function getGradesBySubject() {
+        function getGradesBySubject(widget) {
           const groups = new Map();
-          getNormalizedGrades().forEach(grade => {
+          getNormalizedGrades(widget).forEach(grade => {
             if (!groups.has(grade.subject)) groups.set(grade.subject, []);
             groups.get(grade.subject).push(grade);
           });
@@ -3248,24 +3294,50 @@
             .map(([subject, grades]) => ({ subject, grades }));
         }
 
-        function getNotificationItems() {
-          const counts = librusData.value.notification_counts;
+        function getNotificationItems(widget) {
+          const data = getWidgetLibrusData(widget);
+          const counts = data.notification_counts;
+          const notificationLabels = {
+            grades: 'Grades',
+            absence: 'Absences',
+            inbox: 'Inbox messages',
+            announcements: 'Announcements',
+            calendar: 'Calendar updates',
+            homework: 'Homework'
+          };
+          const notificationDetails = {
+            grades: (data.grades || []).slice(0, 1).map(grade => `${grade.subject || grade.name || 'Grade'}: ${grade.value || grade.grade || grade.mark || ''}`).filter(Boolean)[0],
+            inbox: (data.messages || []).slice(0, 1).map(message => message.title || message.subject || message.user).filter(Boolean)[0],
+            announcements: (data.announcements || []).slice(0, 1).map(item => item.title || item.subject || item.message).filter(Boolean)[0]
+          };
           if (counts && typeof counts === 'object') {
             const countItems = Object.entries(counts)
-              .map(([category, count]) => ({ id: category, title: category.replace(/[_-]+/g, ' '), count: Number(count) || 0 }))
+              .map(([category, count]) => ({
+                id: category,
+                title: notificationLabels[category] || category.replace(/[_-]+/g, ' '),
+                detail: notificationDetails[category] || `${Number(count) || 0} pending ${notificationLabels[category] || category}`,
+                count: Number(count) || 0
+              }))
               .filter(item => item.count > 0);
             if (countItems.length) return countItems;
           }
-          return (Array.isArray(librusData.value.notifications) ? librusData.value.notifications : [])
+          return (Array.isArray(data.notifications) ? data.notifications : [])
             .map((note, index) => ({
               id: note.id || note.category || `notification-${index}`,
               title: note.title || note.name || note.category || 'Notification',
+              detail: note.message || note.content || note.body || '',
               count: Number(note.count) || 1
-            }));
+            })).concat(
+              (data.notifications && data.notifications.length ? [] : [
+                ...(data.grades || []).slice(0, 1).map((grade, index) => ({ id: `grade-${index}`, title: 'Latest grade', detail: `${grade.subject || grade.name || 'Subject'}: ${grade.value || grade.grade || grade.mark || '—'}`, count: 1 })),
+                ...(data.messages || []).slice(0, 1).map((message, index) => ({ id: `message-${index}`, title: 'Latest message', detail: message.title || message.subject || message.user || 'Inbox message', count: 1 })),
+                ...(data.announcements || []).slice(0, 1).map((item, index) => ({ id: `announcement-${index}`, title: 'Latest announcement', detail: item.title || item.subject || item.message || 'School announcement', count: 1 }))
+              ])
+            );
         }
 
-        function getNotificationTotal() {
-          return getNotificationItems().reduce((total, item) => total + item.count, 0);
+        function getNotificationTotal(widget) {
+          return getNotificationItems(widget).reduce((total, item) => total + item.count, 0);
         }
 
         function normalizeLibrusAnnouncements(rawAnnouncements) {
@@ -3316,19 +3388,22 @@
 
         function getMessageIndex(widget) {
           const key = widget ? String(widget.id) : 'default';
-          const lastIndex = Math.max(0, (Array.isArray(librusData.value.messages) ? librusData.value.messages.length : 0) - 1);
+          const messages = getWidgetLibrusData(widget).messages;
+          const lastIndex = Math.max(0, (Array.isArray(messages) ? messages.length : 0) - 1);
           return Math.min(messageIndexes.value[key] || 0, lastIndex);
         }
 
         function getMessageAt(widget) {
-          const messages = Array.isArray(librusData.value.messages) ? librusData.value.messages : [];
+          const messages = getWidgetLibrusData(widget).messages;
+          if (!Array.isArray(messages)) return null;
           return messages[getMessageIndex(widget)] || null;
         }
 
         function changeMessage(widget, offset) {
           triggerHaptic('tap');
           const key = widget ? String(widget.id) : 'default';
-          const messageCount = Array.isArray(librusData.value.messages) ? librusData.value.messages.length : 0;
+          const messages = getWidgetLibrusData(widget).messages;
+          const messageCount = Array.isArray(messages) ? messages.length : 0;
           const nextIndex = Math.max(0, Math.min(getMessageIndex(widget) + offset, messageCount - 1));
           messageIndexes.value = { ...messageIndexes.value, [key]: nextIndex };
         }
@@ -3641,11 +3716,6 @@
           triggerHaptic('tap');
           const wId = widget ? String(widget.id) : 'default';
           scheduleViewModes.value = { ...scheduleViewModes.value, [wId]: mode };
-          if (widget) {
-            if (!widget.config || typeof widget.config !== 'object') widget.config = {};
-            widget.config.schedule_view_mode = mode;
-            saveCurrentLayout();
-          }
         }
 
         function getDisplayedScheduleRows(widget) {
@@ -4426,6 +4496,9 @@
           getLessonForSlot,
           getLocalizedWidgetLabel,
           getNormalizedGrades,
+          getSchoolDataProfileId,
+          setSchoolDataProfile,
+          getWidgetLibrusData,
           getGradeViewMode,
           setGradeViewMode,
           getGradeDayFilter,
