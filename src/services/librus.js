@@ -106,6 +106,11 @@ function extractTimeFromHours(hours, lesson, idx = 0) {
   return null;
 }
 
+function hasMarker(value) {
+  if (value === true || value === 1) return true;
+  return typeof value === 'string' && /^(?:true|1|yes|tak)$/i.test(value.trim());
+}
+
 function normalizeSingleLesson(lesson, idx = 0, hours = []) {
   const source = lesson || {};
   const timeFromHours = extractTimeFromHours(hours, source, idx);
@@ -114,7 +119,10 @@ function normalizeSingleLesson(lesson, idx = 0, hours = []) {
   const room = source.room || source.classroom || source.className || source.clazz || '—';
   const teacher = source.teacher || source.teacherName || source.instructor || null;
   const replacementTeacher = source.replacementTeacher || source.replacement_teacher || source.substituteTeacher || source.substitute_teacher || null;
-  const replacement = Boolean(source.replacement || source.is_replacement || source.substitute || replacementTeacher || source.original || /replacement|zastęp|zastep/i.test(String(source.flag || '')));
+  const flag = [source.flag, source.status, source.changeType, source.change_type].filter(Boolean).join(', ');
+  const replacement = hasMarker(source.replacement) || hasMarker(source.is_replacement) || hasMarker(source.substitute) || Boolean(replacementTeacher || source.original) || /replacement|zastęp|zastep/i.test(flag);
+  const cancelled = [source.cancelled, source.canceled, source.isCancelled, source.isCanceled, source.is_cancelled, source.is_canceled].some(hasMarker) || /odwoł|odwol|cancel/i.test(flag);
+  const moved = [source.moved, source.isMoved, source.rescheduled, source.is_rescheduled].some(hasMarker) || Boolean(source.original) || /przen|zmian|move|resched/i.test(flag);
 
   return {
     number: Number(source.number || source.no || idx + 1) || idx + 1,
@@ -126,8 +134,9 @@ function normalizeSingleLesson(lesson, idx = 0, hours = []) {
     teacher: teacher ? String(teacher).trim() : null,
     replacementTeacher: replacementTeacher ? String(replacementTeacher).trim() : null,
     replacement,
-    cancelled: Boolean(source.cancelled || source.canceled || /odwoł|cancel/i.test(String(source.flag || ''))),
-    flag: source.flag || null,
+    cancelled,
+    moved,
+    flag: flag || null,
     original: source.original || null
   };
 }

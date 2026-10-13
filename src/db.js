@@ -477,6 +477,7 @@ function normalizeScheduleArray(schedule) {
       teacher: lesson && lesson.teacher ? String(lesson.teacher) : null,
       replacementTeacher: lesson && lesson.replacementTeacher ? String(lesson.replacementTeacher) : null,
       replacement: Boolean(lesson && lesson.replacement),
+      moved: Boolean(lesson && lesson.moved),
       cancelled: Boolean(lesson && lesson.cancelled),
       flag: lesson && lesson.flag ? String(lesson.flag) : null,
       original: lesson && lesson.original ? lesson.original : null

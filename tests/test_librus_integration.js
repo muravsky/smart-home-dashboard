@@ -119,10 +119,11 @@ assert.strictEqual(substitutedLesson.lessons[0].cancelled, true, 'cancelled less
 assert.strictEqual(substitutedLesson.lessons[1].replacement, true, 'replacement teachers should be marked');
 
 const packageChangedTimetable = normalizeTimetableData({
-  table: { Monday: [{ subject: 'Physics', time: '08:00-08:45', flag: 'zastępstwo, zmiana sali', original: { subject: 'Chemistry' } }, { subject: 'Math', time: '09:00-09:45', cancelled: true, flag: 'odwołane' }] }
+  table: { Monday: [{ subject: 'Physics', time: '08:00-08:45', flag: 'zastępstwo', original: { subject: 'Chemistry' } }, { subject: 'Math', time: '09:00-09:45', cancelled: true, flag: 'odwołane' }] }
 });
 const storedSchedule = db.insertSchedule({ name: 'Changed timetable', schedule: packageChangedTimetable });
 assert.strictEqual(storedSchedule.schedule[0].lessons[0].replacement, true, 'Librus replacement markers should survive schedule persistence');
+assert.strictEqual(storedSchedule.schedule[0].lessons[0].moved, true, 'Librus moved-lesson markers should survive schedule persistence');
 assert.strictEqual(storedSchedule.schedule[0].lessons[0].original.subject, 'Chemistry', 'original lesson details should survive schedule persistence');
 assert.strictEqual(storedSchedule.schedule[0].lessons[1].cancelled, true, 'Librus cancellations should survive schedule persistence');
 
