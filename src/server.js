@@ -38,6 +38,7 @@ const {
   updateList,
   deleteList,
   insertListItem,
+  addIngredientsToShoppingList,
   toggleListItemChecked,
   updateListItem,
   deleteListItem,
@@ -76,6 +77,13 @@ const {
   deleteMealMenu,
   applyMealMenuTemplate,
   setMealSlotEntry,
+  getRewards,
+  getRewardById,
+  insertReward,
+  updateReward,
+  deleteReward,
+  getRewardRedemptions,
+  redeemReward,
   saveLibrusData,
   getLibrusData,
   insertAuditLog,
@@ -130,29 +138,6 @@ if (enableHttps) {
   server = http.createServer(app);
 }
 
-function addIngredientsToShoppingList(rawIngredients = [], assigneeProfileId = null) {
-  const cleanItems = (Array.isArray(rawIngredients) ? rawIngredients : [])
-    .map(i => String(i || '').trim())
-    .filter(Boolean);
-  if (!cleanItems.length) return [];
-
-  let shopList = getLists().find(l => l.type === 'shopping');
-  if (!shopList) {
-    shopList = insertList({ name: 'Shopping List', type: 'shopping', color: '#34d399', icon: '🛒' });
-  }
-  const added = [];
-  for (const ing of cleanItems) {
-    const item = insertListItem({
-      list_id: shopList.id,
-      content: ing,
-      assignee_profile_id: assigneeProfileId || null,
-      reward: 0
-    });
-    if (item) added.push(item);
-  }
-  return added;
-}
-
 // Initialize Socket.IO
 const io = new Server(server, {
   cors: {
@@ -160,6 +145,58 @@ const io = new Server(server, {
     methods: ['GET', 'POST']
   }
 });
+
+function sanitizePublicProfiles() {
+  return getProfiles().map((p) => {
+    const copy = { ...p };
+    delete copy.telegram_id;
+    delete copy.librus_login;
+    delete copy.librus_password;
+    return copy;
+  });
+}
+
+function getScopedSectionPayload(section) {
+  switch (section) {
+    case 'lists':
+      return getLists();
+    case 'notes':
+      return getNotes();
+    case 'tasks':
+      return getTasks();
+    case 'events':
+      return getCalendarEvents({ limit: 250 });
+    case 'dishes':
+      return getDishes();
+    case 'meal_menus':
+      return getMealMenus();
+    case 'profiles':
+      return sanitizePublicProfiles();
+    case 'rewards':
+      return {
+        rewards: getRewards(),
+        reward_redemptions: getRewardRedemptions(30),
+        profiles: sanitizePublicProfiles()
+      };
+    default:
+      return null;
+  }
+}
+
+function broadcastDashboard(section = null) {
+  if (section) {
+    const deltaData = getScopedSectionPayload(section);
+    if (deltaData !== null) {
+      io.emit('dashboard:delta', {
+        section,
+        data: deltaData,
+        [section]: deltaData,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+  io.emit('dashboard_update', getDashboardData());
+}
 
 // Socket.IO authentication middleware
 io.use((socket, next) => {
@@ -190,13 +227,13 @@ io.on('connection', (socket) => {
   // Interactive task completion from tablet (legacy task)
   socket.on('task:toggle', ({ id, status, completed_by }) => {
     updateTaskStatus(id, status, completed_by || null);
-    io.emit('dashboard_update', getDashboardData());
+    broadcastDashboard('tasks');
   });
 
   // Interactive list item toggle from tablet
   socket.on('list:item:toggle', ({ id, checked, completed_by }) => {
     toggleListItemChecked(id, checked, completed_by || null);
-    io.emit('dashboard_update', getDashboardData());
+    broadcastDashboard('lists');
   });
 
   // Interactive list item addition from tablet
@@ -213,7 +250,7 @@ io.on('connection', (socket) => {
       recurrence_interval: data.recurrenceInterval || data.recurrence_interval || 1,
       recurrence_days: data.recurrenceDays || data.recurrence_days || null
     });
-    io.emit('dashboard_update', getDashboardData());
+    broadcastDashboard('lists');
   });
 
   // Interactive list item update from tablet
@@ -230,14 +267,14 @@ io.on('connection', (socket) => {
       recurrence_interval: data.recurrenceInterval !== undefined ? data.recurrenceInterval : data.recurrence_interval,
       recurrence_days: data.recurrenceDays !== undefined ? data.recurrenceDays : data.recurrence_days
     });
-    io.emit('dashboard_update', getDashboardData());
+    broadcastDashboard('lists');
   });
 
   // Interactive list item delete from tablet
   socket.on('list:item:delete', ({ id }) => {
     if (!id) return;
     deleteListItem(id);
-    io.emit('dashboard_update', getDashboardData());
+    broadcastDashboard('lists');
   });
 
   // Clear completed items in a list from tablet
@@ -245,51 +282,97 @@ io.on('connection', (socket) => {
     const targetId = listId || list_id;
     if (!targetId) return;
     clearCompletedListItems(targetId);
-    io.emit('dashboard_update', getDashboardData());
+    broadcastDashboard('lists');
   });
 
   // Notes CRUD from tablet
   socket.on('note:add', ({ content }) => {
     if (!content || !String(content).trim()) return;
     insertNote(String(content).trim());
-    io.emit('dashboard_update', getDashboardData());
+    broadcastDashboard('notes');
   });
 
   socket.on('note:update', ({ id, content }) => {
     if (!id || !content || !String(content).trim()) return;
     updateNote(id, String(content).trim());
-    io.emit('dashboard_update', getDashboardData());
+    broadcastDashboard('notes');
   });
 
   socket.on('note:delete', ({ id }) => {
     if (!id) return;
     deleteNote(id);
-    io.emit('dashboard_update', getDashboardData());
+    broadcastDashboard('notes');
+  });
+
+  // Reward redemption from tablet
+  socket.on('reward:redeem', (payload = {}) => {
+    const profileId = payload.profile_id || payload.profileId;
+    const rewardId = payload.reward_id || payload.rewardId;
+    if (!profileId || !rewardId) return;
+    const result = redeemReward(profileId, rewardId);
+    socket.emit('reward:redeem:result', result);
+    if (result.ok) {
+      broadcastDashboard('rewards');
+    }
   });
 
   // Meal Menu interactive updates from tablet
   socket.on('meal:slot:set', (payload) => {
     if (!payload || !payload.day || !payload.slot) return;
+    let entries = payload.entries;
+    if (!Array.isArray(entries)) {
+      const dishId = payload.dish_id !== undefined ? payload.dish_id : payload.dishId;
+      const customText = payload.custom_text !== undefined ? payload.custom_text : payload.customText;
+      if (dishId || customText) {
+        const dish = dishId ? getDishById(dishId) : null;
+        entries = [{
+          dish_id: dish ? dish.id : (dishId ? Number(dishId) : null),
+          name: dish ? dish.name : (customText || ''),
+          custom_text: customText || ''
+        }];
+      } else {
+        entries = [];
+      }
+    }
     setMealSlotEntry({
-      menu_id: payload.menu_id || null,
+      menu_id: payload.menu_id || payload.menuId || null,
       week_start: payload.week_start || null,
       day: payload.day,
       slot: payload.slot,
-      entries: payload.entries || []
+      entries
     });
-    io.emit('dashboard_update', getDashboardData());
+    broadcastDashboard('meal_menus');
   });
 
   socket.on('meal:ingredients:to_shopping', (payload) => {
     if (!payload) return;
-    let ingredients = Array.isArray(payload.ingredients) ? payload.ingredients : [];
-    if (!ingredients.length && payload.dish_id) {
-      const dish = getDishById(payload.dish_id);
-      if (dish && Array.isArray(dish.ingredients)) ingredients = dish.ingredients;
+    let ingredients = Array.isArray(payload.ingredients) ? [...payload.ingredients] : [];
+    const dishId = payload.dish_id || payload.dishId;
+    const menuId = payload.menu_id || payload.menuId;
+    if (dishId) {
+      const dish = getDishById(dishId);
+      if (dish && Array.isArray(dish.ingredients)) ingredients.push(...dish.ingredients);
     }
-    if (ingredients.length) {
-      addIngredientsToShoppingList(ingredients, payload.assignee_profile_id || null);
-      io.emit('dashboard_update', getDashboardData());
+    if (menuId) {
+      const menu = getMealMenuById(menuId);
+      if (menu && menu.schedule) {
+        const allDishesById = Object.fromEntries(getDishes().map(d => [String(d.id), d]));
+        for (const daySlots of Object.values(menu.schedule)) {
+          for (const slotEntries of Object.values(daySlots || {})) {
+            const list = Array.isArray(slotEntries) ? slotEntries : (slotEntries ? [slotEntries] : []);
+            for (const entry of list) {
+              if (entry && entry.dish_id && allDishesById[String(entry.dish_id)]) {
+                ingredients.push(...(allDishesById[String(entry.dish_id)].ingredients || []));
+              }
+            }
+          }
+        }
+      }
+    }
+    const cleanIngredients = ingredients.map(i => String(i || '').trim()).filter(Boolean);
+    if (cleanIngredients.length) {
+      addIngredientsToShoppingList(cleanIngredients, payload.assignee_profile_id || null);
+      broadcastDashboard('lists');
     }
   });
 
@@ -301,7 +384,7 @@ io.on('connection', (socket) => {
       } else if (data && Array.isArray(data.layouts)) {
         saveWidgetLayouts(data.layouts, data.profileId || null);
       }
-      io.emit('dashboard_update', getDashboardData());
+      broadcastDashboard();
     } catch (err) {
       console.error('[Socket] Failed to save layout:', err.message);
     }
@@ -318,7 +401,7 @@ io.on('connection', (socket) => {
           theme: data.theme || 'inherit',
           font_size: data.font_size || 'inherit'
         });
-        io.emit('dashboard_update', getDashboardData());
+        broadcastDashboard();
       } catch (err) {
         console.error('[Socket] Failed to save page config:', err.message);
       }
@@ -334,23 +417,113 @@ io.on('connection', (socket) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Password verification endpoint for Kiosk Edit Mode
-app.post('/api/verify-pass', (req, res) => {
-  const { password } = req.body;
-  const expectedPass = process.env.ADMIN_PASS || 'your_admin_pass';
-  if (password && basicAuth.safeCompare(String(password), expectedPass)) {
-    return res.json({ ok: true, token: process.env.DASHBOARD_TOKEN || 'your_secret_token' });
+// Sliding-window Rate Limiter for Auth Routes (/api/verify-pass and /admin)
+const AUTH_WINDOW_MS = 5 * 60 * 1000;
+const AUTH_MAX_FAILURES = 12;
+const authFailuresByIp = new Map();
+
+function getClientIp(req) {
+  return String(req.ip || req.connection?.remoteAddress || 'unknown');
+}
+
+function isRateLimited(ip) {
+  const now = Date.now();
+  const entry = authFailuresByIp.get(ip);
+  if (!entry) return false;
+  entry.timestamps = entry.timestamps.filter(ts => now - ts < AUTH_WINDOW_MS);
+  if (entry.timestamps.length === 0) {
+    authFailuresByIp.delete(ip);
+    return false;
   }
-  return res.status(401).json({ ok: false, error: 'Incorrect admin password' });
+  return entry.timestamps.length >= AUTH_MAX_FAILURES;
+}
+
+function recordAuthFailure(ip) {
+  const now = Date.now();
+  const entry = authFailuresByIp.get(ip) || { timestamps: [] };
+  entry.timestamps = entry.timestamps.filter(ts => now - ts < AUTH_WINDOW_MS);
+  entry.timestamps.push(now);
+  authFailuresByIp.set(ip, entry);
+}
+
+function clearAuthFailures(ip) {
+  authFailuresByIp.delete(ip);
+}
+
+function resetAuthRateLimiter() {
+  authFailuresByIp.clear();
+}
+app.locals.resetAuthRateLimiter = resetAuthRateLimiter;
+
+// Password or Kiosk PIN verification endpoint for Kiosk Edit Mode
+app.post('/api/verify-pass', (req, res) => {
+  const ip = getClientIp(req);
+  if (isRateLimited(ip)) {
+    return res.status(429).json({ ok: false, error: 'Too many failed authentication attempts. Please try again in a few minutes.' });
+  }
+  const candidate = String(req.body?.password ?? req.body?.pin ?? '').trim();
+  const expectedPass = process.env.ADMIN_PASS || 'your_admin_pass';
+  const currentSettings = getSettings();
+  const configuredPin = String(currentSettings.kiosk_pin || '').trim();
+
+  const matchesAdminPass = candidate.length > 0 && basicAuth.safeCompare(candidate, expectedPass);
+  const matchesKioskPin = configuredPin.length >= 4 && candidate.length > 0 && basicAuth.safeCompare(candidate, configuredPin);
+
+  if (matchesAdminPass || matchesKioskPin) {
+    clearAuthFailures(ip);
+    return res.json({
+      ok: true,
+      valid: true,
+      method: matchesKioskPin && !matchesAdminPass ? 'pin' : 'password',
+      token: process.env.DASHBOARD_TOKEN || 'your_secret_token'
+    });
+  }
+
+  recordAuthFailure(ip);
+  return res.status(401).json({ ok: false, error: 'Incorrect password or PIN' });
 });
 
-// Public Settings endpoint
+// Public Settings endpoint (sanitized)
 app.get('/api/settings', (req, res) => {
-  res.json(getSettings());
+  const s = getSettings();
+  s.has_kiosk_pin = Boolean(s.kiosk_pin && String(s.kiosk_pin).trim());
+  delete s.kiosk_pin;
+  delete s.weekly_backup_chat_id;
+  res.json(s);
 });
 
-// Express Basic Auth for Admin routes (/admin and /api/admin/*)
-const adminAuth = basicAuth({
+// Public Dashboard Snapshot endpoint (token-guarded for Kiosk & Offline Service Worker)
+app.get('/api/dashboard', (req, res) => {
+  const expectedToken = process.env.DASHBOARD_TOKEN || 'your_secret_token';
+  const token = req.query.token || req.headers['x-dashboard-token'];
+  if (token && token !== expectedToken) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  res.json(getDashboardData());
+});
+
+// Public Reward Redemption endpoint (for Kiosk)
+app.post('/api/rewards/redeem', (req, res) => {
+  const expectedToken = process.env.DASHBOARD_TOKEN || 'your_secret_token';
+  const token = req.body?.token || req.query.token || req.headers['x-dashboard-token'];
+  if (token && token !== expectedToken) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const profileId = req.body?.profile_id || req.body?.profileId;
+  const rewardId = req.body?.reward_id || req.body?.rewardId;
+  if (!profileId || !rewardId) {
+    return res.status(400).json({ error: 'profile_id and reward_id are required' });
+  }
+  const result = redeemReward(profileId, rewardId);
+  if (!result.ok) {
+    return res.status(400).json(result);
+  }
+  broadcastDashboard('rewards');
+  res.json(result);
+});
+
+// Express Basic Auth for Admin routes (/admin and /api/admin/*) with rate-limit protection
+const basicAdminMiddleware = basicAuth({
   authorizer: (username, password) => {
     const expectedPass = process.env.ADMIN_PASS || 'your_admin_pass';
     return basicAuth.safeCompare(password, expectedPass);
@@ -358,6 +531,26 @@ const adminAuth = basicAuth({
   challenge: true,
   realm: 'SmartHomeAdmin'
 });
+
+function adminAuth(req, res, next) {
+  const ip = getClientIp(req);
+  if (isRateLimited(ip)) {
+    return res.status(429).json({ error: 'Too many failed authentication attempts. Please try again later.' });
+  }
+  const authHeader = req.headers.authorization || '';
+  if (authHeader.startsWith('Basic ')) {
+    const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf8');
+    const sepIndex = decoded.indexOf(':');
+    const pass = sepIndex >= 0 ? decoded.slice(sepIndex + 1) : '';
+    const expectedPass = process.env.ADMIN_PASS || 'your_admin_pass';
+    if (!basicAuth.safeCompare(pass, expectedPass)) {
+      recordAuthFailure(ip);
+    } else {
+      clearAuthFailures(ip);
+    }
+  }
+  return basicAdminMiddleware(req, res, next);
+}
 
 app.use('/admin', adminAuth);
 app.use('/api/admin', adminAuth);
@@ -1011,7 +1204,7 @@ app.post('/api/admin/dishes', (req, res) => {
     if (!name || !String(name).trim()) return res.status(400).json({ error: 'Dish name is required' });
     const dish = insertDish({ name, photo_filename, ingredients, recipe, tags });
     io.emit('dashboard_update', getDashboardData());
-    res.json({ ok: true, dish });
+    res.json({ ok: true, dish, dishes: getDishes() });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -1022,7 +1215,7 @@ app.patch('/api/admin/dishes/:id', (req, res) => {
     const dish = updateDish(req.params.id, req.body || {});
     if (!dish) return res.status(404).json({ error: 'Dish not found' });
     io.emit('dashboard_update', getDashboardData());
-    res.json({ ok: true, dish });
+    res.json({ ok: true, dish, dishes: getDishes() });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -1031,7 +1224,7 @@ app.patch('/api/admin/dishes/:id', (req, res) => {
 app.delete('/api/admin/dishes/:id', (req, res) => {
   deleteDish(req.params.id);
   io.emit('dashboard_update', getDashboardData());
-  res.json({ ok: true });
+  res.json({ ok: true, dishes: getDishes() });
 });
 
 app.get('/api/admin/meal-menus', (req, res) => {
@@ -1042,7 +1235,7 @@ app.post('/api/admin/meal-menus', (req, res) => {
   try {
     const menu = insertMealMenu(req.body || {});
     io.emit('dashboard_update', getDashboardData());
-    res.json({ ok: true, menu });
+    res.json({ ok: true, menu, meal_menus: getMealMenus() });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -1053,7 +1246,7 @@ app.patch('/api/admin/meal-menus/:id', (req, res) => {
     const menu = updateMealMenu(req.params.id, req.body || {});
     if (!menu) return res.status(404).json({ error: 'Meal menu not found' });
     io.emit('dashboard_update', getDashboardData());
-    res.json({ ok: true, menu });
+    res.json({ ok: true, menu, meal_menus: getMealMenus() });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -1062,40 +1255,65 @@ app.patch('/api/admin/meal-menus/:id', (req, res) => {
 app.delete('/api/admin/meal-menus/:id', (req, res) => {
   deleteMealMenu(req.params.id);
   io.emit('dashboard_update', getDashboardData());
-  res.json({ ok: true });
+  res.json({ ok: true, meal_menus: getMealMenus() });
 });
 
 app.post('/api/admin/meal-menus/:id/apply-template', (req, res) => {
   const menu = applyMealMenuTemplate(req.params.id, req.body || {});
   if (!menu) return res.status(404).json({ error: 'Template not found' });
   io.emit('dashboard_update', getDashboardData());
-  res.json({ ok: true, menu });
+  res.json({ ok: true, menu, meal_menus: getMealMenus() });
 });
 
-app.post('/api/admin/meal-menus/slot', (req, res) => {
-  const { menu_id, week_start, day, slot, entries } = req.body || {};
+function handleMealSlotSetRequest(req, res) {
+  const body = req.body || {};
+  const menu_id = req.params.id || body.menu_id || body.menuId || null;
+  const { week_start, day, slot } = body;
   if (!day || !slot) return res.status(400).json({ error: 'day and slot are required' });
+
+  let entries = body.entries;
+  if (!Array.isArray(entries)) {
+    const dishId = body.dish_id !== undefined ? body.dish_id : body.dishId;
+    const customText = body.custom_text !== undefined ? body.custom_text : body.customText;
+    if (dishId || customText) {
+      const dish = dishId ? getDishById(dishId) : null;
+      entries = [{
+        dish_id: dish ? dish.id : (dishId ? Number(dishId) : null),
+        name: dish ? dish.name : (customText || ''),
+        custom_text: customText || ''
+      }];
+    } else {
+      entries = [];
+    }
+  }
+
   const menu = setMealSlotEntry({ menu_id, week_start, day, slot, entries });
   io.emit('dashboard_update', getDashboardData());
-  res.json({ ok: true, menu });
-});
+  res.json({ ok: true, menu, meal_menus: getMealMenus() });
+}
 
-app.post('/api/admin/meal-menus/add-to-shopping', (req, res) => {
-  const { dish_id, menu_id, day, ingredients } = req.body || {};
+app.post('/api/admin/meal-menus/slot', handleMealSlotSetRequest);
+app.post('/api/admin/meal-menus/:id/slot', handleMealSlotSetRequest);
+
+function handlePushIngredientsRequest(req, res) {
+  const { dish_id, dishId, menu_id, menuId, day, ingredients } = req.body || {};
+  const targetDishId = dish_id || dishId;
+  const targetMenuId = menu_id || menuId;
   let toAdd = Array.isArray(ingredients) ? [...ingredients] : [];
-  if (dish_id) {
-    const dish = getDishById(dish_id);
+  if (targetDishId) {
+    const dish = getDishById(targetDishId);
     if (dish && Array.isArray(dish.ingredients)) toAdd.push(...dish.ingredients);
   }
-  if (menu_id) {
-    const menu = getMealMenuById(menu_id);
+  if (targetMenuId) {
+    const menu = getMealMenuById(targetMenuId);
     if (menu && menu.schedule) {
       const allDishesById = Object.fromEntries(getDishes().map(d => [String(d.id), d]));
       const daysToScan = day ? [day] : Object.keys(menu.schedule);
       for (const dKey of daysToScan) {
         const daySlots = menu.schedule[dKey] || {};
         for (const entries of Object.values(daySlots)) {
-          for (const entry of (Array.isArray(entries) ? entries : [])) {
+          const entryList = Array.isArray(entries) ? entries : (entries ? [entries] : []);
+          for (const entry of entryList) {
             if (entry && entry.dish_id && allDishesById[String(entry.dish_id)]) {
               toAdd.push(...(allDishesById[String(entry.dish_id)].ingredients || []));
             }
@@ -1104,10 +1322,64 @@ app.post('/api/admin/meal-menus/add-to-shopping', (req, res) => {
       }
     }
   }
-  const uniqueIngredients = [...new Set(toAdd.map(i => String(i || '').trim()).filter(Boolean))];
-  const added = addIngredientsToShoppingList(uniqueIngredients);
-  io.emit('dashboard_update', getDashboardData());
-  res.json({ ok: true, count: added.length, items: added });
+  const cleanIngredients = toAdd.map(i => String(i || '').trim()).filter(Boolean);
+  const added = addIngredientsToShoppingList(cleanIngredients);
+  broadcastDashboard('lists');
+  res.json({ ok: true, count: added.length, addedCount: added.length, items: added, lists: getLists() });
+}
+
+app.post('/api/admin/meal-menus/add-to-shopping', handlePushIngredientsRequest);
+app.post('/api/admin/meal-menus/push-ingredients', handlePushIngredientsRequest);
+
+// Rewards Store API (admin)
+app.get('/api/admin/rewards', (req, res) => {
+  res.json({
+    rewards: getRewards(),
+    redemptions: getRewardRedemptions(50)
+  });
+});
+
+app.post('/api/admin/rewards', (req, res) => {
+  try {
+    const { title, cost, icon, profile_id } = req.body || {};
+    if (!title || !String(title).trim()) return res.status(400).json({ error: 'Reward title is required' });
+    const reward = insertReward({ title, cost, icon, profile_id });
+    broadcastDashboard('rewards');
+    res.json({ ok: true, reward, rewards: getRewards() });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.patch('/api/admin/rewards/:id', (req, res) => {
+  try {
+    const reward = updateReward(req.params.id, req.body || {});
+    if (!reward) return res.status(404).json({ error: 'Reward not found' });
+    broadcastDashboard('rewards');
+    res.json({ ok: true, reward, rewards: getRewards() });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/rewards/:id', (req, res) => {
+  deleteReward(req.params.id);
+  broadcastDashboard('rewards');
+  res.json({ ok: true, rewards: getRewards() });
+});
+
+app.post('/api/admin/rewards/redeem', (req, res) => {
+  const profileId = req.body?.profile_id || req.body?.profileId;
+  const rewardId = req.body?.reward_id || req.body?.rewardId;
+  if (!profileId || !rewardId) {
+    return res.status(400).json({ error: 'profile_id and reward_id are required' });
+  }
+  const result = redeemReward(profileId, rewardId);
+  if (!result.ok) {
+    return res.status(400).json(result);
+  }
+  broadcastDashboard('rewards');
+  res.json(result);
 });
 
 // Public calendar events endpoint (token-guarded for kiosk)
@@ -1323,6 +1595,8 @@ const maintenance = createMaintenanceService({
   getLists,
   getSchedules,
   getLibrusData,
+  getActiveMealMenu,
+  getDishes,
   getWeather: () => getWeather(),
   buildSummary: buildSchoolDaySummary,
   syncLibrus: syncConfiguredLibrusProfiles,

@@ -21,6 +21,8 @@
 
   <!-- Socket.IO client -->
   <script src="/socket.io/socket.io.js"></script>
+  <!-- Modular Kiosk Enhancements (Service Worker, WakeLock, Aisle Grouping, Delta Patcher) -->
+  <script src="/js/kiosk-enhancements.js"></script>
 
   <style>
     * {
@@ -731,8 +733,19 @@
       <!-- TOP NAVIGATION & STATUS BAR -->
       <header class="border-b border-neutral-900 pb-1.5 mb-1.5 shrink-0">
         <div class="flex items-center justify-end mb-1.5">
-          <!-- Controls: Voice Dictation, Edit Mode, Sleep Trigger -->
+          <!-- Controls: Rewards Store, Voice Dictation, Edit Mode, Sleep Trigger -->
           <div class="flex items-center gap-2">
+            <!-- Rewards Store Button -->
+            <button
+              @click.stop="openRewardsModal()"
+              class="text-xs font-mono border border-amber-800/70 bg-amber-950/30 hover:bg-amber-900/40 text-amber-300 px-3 py-1 rounded-full transition flex items-center gap-1.5 shadow"
+              title="Open Family Rewards Store"
+            >
+              <span>⭐</span>
+              <span class="hidden sm:inline">REWARDS</span>
+              <span v-if="selectedProfile && Number(selectedProfile.points_balance) > 0" class="font-bold text-amber-200">({{ selectedProfile.points_balance }})</span>
+            </button>
+
             <!-- Voice Dictation Button -->
             <button 
               @click.stop="startVoiceDictation"
@@ -808,7 +821,10 @@
             </div>
             <div class="text-left min-w-0">
               <div class="text-[10px] md:text-xs font-bold leading-tight text-white truncate">{{ p.name }}</div>
-              <div class="hidden lg:block text-[9px] font-mono truncate" :style="{ color: p.color }">Profile</div>
+              <div class="hidden lg:block text-[9px] font-mono truncate" :style="{ color: p.color }">
+                <span v-if="Number(p.points_balance) > 0">⭐ {{ p.points_balance }} pts</span>
+                <span v-else>Profile</span>
+              </div>
             </div>
           </button>
         </div>
@@ -1391,6 +1407,17 @@
                   >
                     + Add
                   </button>
+                  <button
+                    v-if="targetList(w)?.type === 'shopping' && getWidgetResolvedTab(w) !== 'resolved'"
+                    type="button"
+                    @click.stop="toggleWidgetAisleGroup(w)"
+                    class="text-xs font-mono px-2 py-0.5 rounded border transition"
+                    :class="isWidgetAisleGrouped(w) ? 'border-emerald-600 bg-emerald-950/60 text-emerald-300 font-bold' : 'border-neutral-800 bg-neutral-900 text-neutral-300'"
+                    :aria-pressed="isWidgetAisleGrouped(w)"
+                    title="Group shopping items by store aisle"
+                  >
+                    📂 Aisle
+                  </button>
                   <button type="button" @click.stop="toggleWidgetTimeSort(w)" class="text-xs font-mono px-2 py-0.5 rounded border border-neutral-800 bg-neutral-900 text-neutral-300" :aria-pressed="isWidgetTimeSortEnabled(w)">
                     {{ isWidgetTimeSortEnabled(w) ? 'Time ↑' : 'Sort' }}
                   </button>
@@ -1402,6 +1429,39 @@
                 <div v-if="getActiveListItems(targetList(w)).length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
                   List is empty. Tap + Add to add items.
                 </div>
+                <!-- Aisle-Grouped View for Shopping Lists -->
+                <div v-else-if="targetList(w)?.type === 'shopping' && isWidgetAisleGrouped(w)" class="space-y-2.5 overflow-y-auto pr-1 flex-1 task-list-widget">
+                  <div v-for="group in getGroupedShoppingItemsForWidget(getActiveListItems(targetList(w)), w)" :key="group.category" class="space-y-1">
+                    <div class="text-[10px] font-mono uppercase tracking-wider text-emerald-400 font-bold px-1.5 py-0.5 bg-emerald-950/30 rounded border border-emerald-900/40 flex items-center justify-between">
+                      <span>{{ group.icon }} {{ group.label }}</span>
+                      <span>{{ group.items.length }}</span>
+                    </div>
+                    <ul class="space-y-1">
+                      <li
+                        v-for="item in group.items"
+                        :key="item.id"
+                        @click="toggleListItem(item)"
+                        class="task-list-row text-neutral-300 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-1.5 px-2 rounded-lg hover:bg-neutral-900/60"
+                      >
+                        <div class="flex items-center gap-2.5 flex-1 min-w-0">
+                          <input
+                            type="checkbox"
+                            :checked="item.checked === 1"
+                            @change.stop="toggleListItem(item)"
+                            @click.stop
+                            class="w-4 h-4 rounded accent-sky-500 cursor-pointer shrink-0"
+                          />
+                          <span class="task-list-content">{{ item.content }}</span>
+                        </div>
+                        <div class="flex items-center gap-1 shrink-0">
+                          <button type="button" @click.stop="openEditItemModal(item)" class="text-[11px] text-neutral-500 hover:text-sky-400 px-1" title="Edit item">✏️</button>
+                          <button type="button" @click.stop="deleteListItemFromKiosk(item)" class="text-[11px] text-neutral-500 hover:text-red-400 px-1" title="Delete item">🗑️</button>
+                        </div>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+                <!-- Standard Flat List View -->
                 <ul v-else class="space-y-1 overflow-y-auto pr-1 flex-1 task-list-widget">
                   <li 
                     v-for="item in getSortedItemsForWidget(getActiveListItems(targetList(w)), w)"
@@ -1419,6 +1479,7 @@
                         class="w-4 h-4 rounded accent-sky-500 cursor-pointer shrink-0"
                       />
                       <span class="task-list-content" :class="{ 'line-through text-neutral-600': item.checked === 1 }">{{ item.content }}</span>
+                      <span v-if="targetList(w)?.type === 'shopping' && item.category && item.category !== 'Other'" class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-900/40 shrink-0">{{ item.category }}</span>
                       <span v-if="item.recurrence && item.recurrence !== 'none'" class="text-[9px] font-mono px-1 rounded bg-sky-950/40 text-sky-400 border border-sky-900/40 shrink-0">↻</span>
                     </div>
                     <div class="flex items-center gap-1 shrink-0">
@@ -2331,35 +2392,68 @@
 
     </div>
 
-    <!-- ADMIN PASSWORD AUTH MODAL FOR EDIT MODE -->
+    <!-- ADMIN PASSWORD / TOUCH PIN AUTH MODAL FOR EDIT MODE -->
     <div 
       v-if="showPasswordModal" 
       class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
       @click.self="showPasswordModal = false"
     >
       <div class="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-        <div class="text-center mb-4">
+        <div class="text-center mb-3">
           <div class="w-12 h-12 rounded-full bg-sky-950 border border-sky-800 text-sky-400 flex items-center justify-center text-xl mx-auto mb-2">
             🔒
           </div>
-          <h3 class="text-sm font-mono font-bold text-white">ADMIN AUTHENTICATION</h3>
-          <p class="text-xs text-neutral-400 mt-1">Enter admin password to unlock layout editing.</p>
+          <h3 class="text-sm font-mono font-bold text-white">UNLOCK KIOSK EDITOR</h3>
+          <p class="text-xs text-neutral-400 mt-1">Enter Kiosk PIN on keypad or type admin password.</p>
         </div>
 
-        <form @submit.prevent="verifyAdminPassword" class="space-y-4">
+        <form @submit.prevent="verifyAdminPassword" class="space-y-3">
           <div>
             <input 
               v-model="adminPasswordInput" 
               type="password" 
-              placeholder="Admin password..." 
-              class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-xl p-3 text-center text-base tracking-widest text-white outline-none"
-              autofocus
+              placeholder="PIN or Admin password..." 
+              class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-xl p-2.5 text-center text-lg tracking-widest text-white outline-none font-mono"
               required
             />
             <p v-if="passwordError" class="text-xs text-red-400 mt-1.5 text-center font-mono">{{ passwordError }}</p>
           </div>
 
-          <div class="flex items-center gap-2">
+          <!-- Touch Numeric PIN Keypad -->
+          <div class="grid grid-cols-3 gap-2 select-none">
+            <button
+              v-for="digit in ['1','2','3','4','5','6','7','8','9']"
+              :key="digit"
+              type="button"
+              @click="appendPinDigit(digit)"
+              class="py-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 active:bg-sky-900/50 border border-neutral-800 text-white font-mono text-base font-bold transition"
+            >
+              {{ digit }}
+            </button>
+            <button
+              type="button"
+              @click="clearPinDigits()"
+              class="py-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-neutral-400 font-mono text-xs font-bold transition"
+            >
+              CLR
+            </button>
+            <button
+              type="button"
+              @click="appendPinDigit('0')"
+              class="py-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 active:bg-sky-900/50 border border-neutral-800 text-white font-mono text-base font-bold transition"
+            >
+              0
+            </button>
+            <button
+              type="button"
+              @click="backspacePinDigit()"
+              class="py-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-amber-400 font-mono text-sm font-bold transition"
+            >
+              ⌫
+            </button>
+          </div>
+
+          <div class="flex items-center gap-2 pt-1">
             <button 
               type="submit" 
               class="flex-1 bg-sky-600 hover:bg-sky-500 text-white font-mono text-xs font-bold py-2.5 rounded-xl transition"
@@ -2711,6 +2805,91 @@
       </div>
     </div>
 
+    <!-- FAMILY REWARD STORE MODAL -->
+    <div
+      v-if="showRewardsModal"
+      class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+      @click.self="showRewardsModal = false"
+    >
+      <div class="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 max-w-lg w-full shadow-2xl max-h-[85vh] overflow-y-auto space-y-4">
+        <div class="flex items-center justify-between border-b border-neutral-800 pb-3">
+          <div>
+            <h3 class="text-base font-mono font-bold text-amber-400 flex items-center gap-2">
+              <span>⭐</span>
+              <span>FAMILY REWARD STORE</span>
+            </h3>
+            <p class="text-xs text-neutral-400">Complete chores to earn stars and redeem rewards!</p>
+          </div>
+          <button @click="showRewardsModal = false" class="text-neutral-400 hover:text-white text-sm px-2">✕</button>
+        </div>
+
+        <!-- Profile Selector for Redemption -->
+        <div>
+          <label class="block text-[10px] font-mono uppercase text-neutral-400 mb-1.5">Redeeming For:</label>
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="p in profiles"
+              :key="p.id"
+              type="button"
+              @click="rewardRedeemProfileId = p.id"
+              class="px-3 py-1.5 rounded-xl border text-xs font-mono flex items-center gap-2 transition"
+              :class="rewardRedeemProfileId === p.id ? 'bg-amber-950/60 border-amber-500 text-white font-bold' : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:text-white'"
+            >
+              <span>{{ p.avatar_value || '🙂' }}</span>
+              <span>{{ p.name }}</span>
+              <span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold">{{ Number(p.points_balance) || 0 }} ⭐</span>
+            </button>
+          </div>
+        </div>
+
+        <div v-if="rewardRedeemFeedback" class="p-2.5 rounded-xl text-xs font-mono text-center border" :class="rewardRedeemFeedbackOk ? 'bg-emerald-950/50 border-emerald-700 text-emerald-300' : 'bg-red-950/50 border-red-800 text-red-300'">
+          {{ rewardRedeemFeedback }}
+        </div>
+
+        <!-- Available Rewards -->
+        <div class="space-y-2">
+          <div class="text-xs font-mono uppercase text-neutral-400 font-bold">🎁 Available Rewards</div>
+          <div v-if="rewards.length === 0" class="text-xs font-mono text-neutral-500 py-4 text-center">
+            No rewards configured yet. Add rewards in the Admin Panel!
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div
+              v-for="r in rewards"
+              :key="r.id"
+              class="p-3 rounded-xl bg-neutral-950 border border-neutral-800 flex items-center justify-between gap-2"
+            >
+              <div class="flex items-center gap-2.5 min-w-0">
+                <span class="text-2xl shrink-0">{{ r.icon || '🎁' }}</span>
+                <div class="min-w-0">
+                  <div class="text-xs font-bold text-white truncate">{{ r.title }}</div>
+                  <div class="text-[11px] font-mono text-amber-400 font-bold">{{ r.cost }} ⭐</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                @click="redeemRewardFromKiosk(r)"
+                class="px-3 py-1.5 rounded-lg font-mono text-xs font-bold transition shrink-0"
+                :class="(activeRewardProfile && Number(activeRewardProfile.points_balance) >= Number(r.cost)) ? 'bg-amber-500 hover:bg-amber-400 text-black' : 'bg-neutral-800 text-neutral-500 cursor-not-allowed'"
+              >
+                Redeem
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Redemptions -->
+        <div v-if="rewardRedemptions.length > 0" class="space-y-1.5 pt-2 border-t border-neutral-800">
+          <div class="text-[10px] font-mono uppercase text-neutral-400 font-bold">📜 Recent Redemptions</div>
+          <ul class="space-y-1 max-h-32 overflow-y-auto text-xs font-mono text-neutral-300">
+            <li v-for="red in rewardRedemptions.slice(0, 8)" :key="red.id" class="flex items-center justify-between py-1 px-2 rounded bg-neutral-950/70">
+              <span>{{ red.reward_icon || '🎁' }} <strong>{{ red.profile_name || 'Family' }}</strong> redeemed {{ red.reward_title }}</span>
+              <span class="text-amber-400">-{{ red.cost }} ⭐</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <script>
@@ -2731,6 +2910,13 @@
         const lists = ref([]);
         const dishes = ref([]);
         const mealMenus = ref([]);
+        const rewards = ref([]);
+        const rewardRedemptions = ref([]);
+        const showRewardsModal = ref(false);
+        const rewardRedeemProfileId = ref(null);
+        const rewardRedeemFeedback = ref('');
+        const rewardRedeemFeedbackOk = ref(true);
+        const widgetAisleGroupState = ref({});
         const layouts = ref([]);
         const profileLayouts = ref({});
         const photos = ref([]);
@@ -4879,12 +5065,18 @@
         // ==========================================================================
         const activeMealMenu = computed(() => {
           if (!Array.isArray(mealMenus.value) || mealMenus.value.length === 0) return null;
-          return mealMenus.value.find(m => m.is_active === 1) || mealMenus.value[0];
+          return mealMenus.value.find(m => Boolean(m.is_active) && !Boolean(m.is_template))
+            || mealMenus.value.find(m => Boolean(m.is_active))
+            || mealMenus.value[0];
         });
 
         function getActiveMealSlots() {
+          const menu = activeMealMenu.value;
+          if (menu && Array.isArray(menu.meal_slots) && menu.meal_slots.length) {
+            return menu.meal_slots;
+          }
           try {
-            const raw = settings.value.meal_slots;
+            const raw = settings.value.meal_slots || settings.value.meal_default_slots;
             if (Array.isArray(raw) && raw.length) return raw;
             if (typeof raw === 'string' && raw.trim()) {
               const parsed = JSON.parse(raw);
@@ -4914,7 +5106,9 @@
           const tomorrowName = jsDayMap[(now.value.getDay() + 1) % 7];
           const mode = getMealViewMode(widget);
           const menu = activeMealMenu.value;
-          const plan = (menu && menu.plan && typeof menu.plan === 'object') ? menu.plan : {};
+          const rawSchedule = (menu && (menu.schedule || menu.plan) && typeof (menu.schedule || menu.plan) === 'object')
+            ? (menu.schedule || menu.plan)
+            : {};
           const dishById = new Map((dishes.value || []).map(d => [Number(d.id), d]));
           const slots = getActiveMealSlots();
 
@@ -4923,24 +5117,50 @@
           else if (mode === 'tomorrow') targetDays = [tomorrowName];
 
           return targetDays.map(dayName => {
-            const dayPlan = (plan[dayName] && typeof plan[dayName] === 'object') ? plan[dayName] : {};
-            const resolvedSlots = {};
-            slots.forEach(slot => {
-              const entry = dayPlan[slot];
-              if (entry && typeof entry === 'object') {
-                const dishId = entry.dish_id ? Number(entry.dish_id) : null;
-                resolvedSlots[slot] = {
-                  dishId,
-                  dish: entry.dish || (dishId ? dishById.get(dishId) || null : null),
-                  customText: entry.custom_text || ''
-                };
-              } else {
-                resolvedSlots[slot] = null;
-              }
+            const dayPlan = (rawSchedule[dayName] && typeof rawSchedule[dayName] === 'object') ? rawSchedule[dayName] : {};
+            const resolvedSlots = slots.map(slotName => {
+              const rawEntry = dayPlan[slotName];
+              const entries = Array.isArray(rawEntry)
+                ? rawEntry
+                : (rawEntry && typeof rawEntry === 'object' ? [rawEntry] : []);
+              const slotDishes = entries
+                .filter(Boolean)
+                .map(entry => {
+                  const dishId = entry.dish_id ? Number(entry.dish_id) : null;
+                  const catalogDish = dishId ? dishById.get(dishId) : null;
+                  const customName = entry.custom_text || entry.custom_title || entry.name || '';
+                  if (catalogDish) {
+                    return {
+                      ...catalogDish,
+                      name: (entry.custom_text || entry.custom_title)
+                        ? `${catalogDish.name} (${entry.custom_text || entry.custom_title})`
+                        : catalogDish.name
+                    };
+                  }
+                  if (customName) {
+                    return {
+                      id: dishId,
+                      name: customName,
+                      photo_filename: null,
+                      tags: [],
+                      ingredients: [],
+                      recipe: entry.notes || ''
+                    };
+                  }
+                  return null;
+                })
+                .filter(Boolean);
+
+              return {
+                slotName: String(slotName || 'Meal'),
+                dishes: slotDishes
+              };
             });
+
             return {
               day: dayName,
               isToday: dayName === todayName,
+              badge: dayName === todayName ? 'Today' : (dayName === tomorrowName ? 'Tomorrow' : 'Week'),
               slots: resolvedSlots
             };
           });
@@ -4965,7 +5185,12 @@
         function openDishDetailModal(dish, day, slot) {
           if (!dish) return;
           triggerHaptic('tap');
-          selectedDishModal.value = { dish, day, slot };
+          selectedDishModal.value = {
+            dish,
+            day,
+            slot,
+            slotContext: (day && slot) ? `${day} • ${slot}` : ''
+          };
         }
 
         function openMealSlotPicker(day, slot) {
@@ -4980,12 +5205,19 @@
           const { day, slot } = mealSlotPicker.value;
           const menuId = activeMealMenu.value ? activeMealMenu.value.id : null;
           if (socket && socket.connected) {
-            socket.emit('meal:slot:set', { menuId, day, slot, dishId: dish.id });
+            socket.emit('meal:slot:set', {
+              menu_id: menuId,
+              menuId,
+              day,
+              slot,
+              dishId: dish.id,
+              entries: [{ dish_id: dish.id, name: dish.name }]
+            });
           } else if (menuId) {
             fetch(`/api/admin/meal-menus/${menuId}/slot`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ day, slot, dish_id: dish.id })
+              body: JSON.stringify({ day, slot, dish_id: dish.id, entries: [{ dish_id: dish.id, name: dish.name }] })
             }).then(() => refreshDashboardData()).catch(() => {});
           }
           mealSlotPicker.value = null;
@@ -4997,12 +5229,12 @@
           const { day, slot } = mealSlotPicker.value;
           const menuId = activeMealMenu.value ? activeMealMenu.value.id : null;
           if (socket && socket.connected) {
-            socket.emit('meal:slot:set', { menuId, day, slot, dishId: null, customText: null });
+            socket.emit('meal:slot:set', { menu_id: menuId, menuId, day, slot, entries: [] });
           } else if (menuId) {
             fetch(`/api/admin/meal-menus/${menuId}/slot`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ day, slot, dish_id: null, custom_text: null })
+              body: JSON.stringify({ day, slot, entries: [] })
             }).then(() => refreshDashboardData()).catch(() => {});
           }
           mealSlotPicker.value = null;
@@ -5012,9 +5244,13 @@
           if (!dish || !dish.id) return;
           triggerHaptic('success');
           if (socket && socket.connected) {
-            socket.emit('meal:ingredients:to_shopping', { dishId: dish.id });
+            socket.emit('meal:ingredients:to_shopping', {
+              dish_id: dish.id,
+              dishId: dish.id,
+              ingredients: Array.isArray(dish.ingredients) ? dish.ingredients : []
+            });
           } else {
-            fetch('/api/admin/meal-menus/push-ingredients', {
+            fetch('/api/admin/meal-menus/add-to-shopping', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ dish_id: dish.id })
@@ -5027,9 +5263,9 @@
           if (!menuId) return;
           triggerHaptic('success');
           if (socket && socket.connected) {
-            socket.emit('meal:ingredients:to_shopping', { menuId });
+            socket.emit('meal:ingredients:to_shopping', { menu_id: menuId, menuId });
           } else {
-            fetch('/api/admin/meal-menus/push-ingredients', {
+            fetch('/api/admin/meal-menus/add-to-shopping', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ menu_id: menuId })
@@ -5175,6 +5411,106 @@
           }
         }
 
+        function appendPinDigit(digit) {
+          triggerHaptic('tap');
+          passwordError.value = '';
+          adminPasswordInput.value = String(adminPasswordInput.value || '') + String(digit);
+        }
+
+        function backspacePinDigit() {
+          triggerHaptic('tap');
+          passwordError.value = '';
+          adminPasswordInput.value = String(adminPasswordInput.value || '').slice(0, -1);
+        }
+
+        function clearPinDigits() {
+          triggerHaptic('tap');
+          passwordError.value = '';
+          adminPasswordInput.value = '';
+        }
+
+        const activeRewardProfile = computed(() => {
+          if (rewardRedeemProfileId.value) {
+            const found = profiles.value.find(p => Number(p.id) === Number(rewardRedeemProfileId.value));
+            if (found) return found;
+          }
+          if (selectedProfile.value) return selectedProfile.value;
+          return profiles.value[0] || null;
+        });
+
+        function openRewardsModal() {
+          triggerHaptic('tap');
+          rewardRedeemFeedback.value = '';
+          if (selectedProfileId.value !== null) {
+            rewardRedeemProfileId.value = selectedProfileId.value;
+          } else if (profiles.value.length > 0 && !rewardRedeemProfileId.value) {
+            rewardRedeemProfileId.value = profiles.value[0].id;
+          }
+          showRewardsModal.value = true;
+        }
+
+        function redeemRewardFromKiosk(reward) {
+          if (!reward) return;
+          const prof = activeRewardProfile.value;
+          if (!prof) {
+            rewardRedeemFeedbackOk.value = false;
+            rewardRedeemFeedback.value = 'Please select a family member profile first.';
+            return;
+          }
+          if ((Number(prof.points_balance) || 0) < (Number(reward.cost) || 1)) {
+            triggerHaptic('tap');
+            rewardRedeemFeedbackOk.value = false;
+            rewardRedeemFeedback.value = `Not enough stars! ${prof.name} has ${Number(prof.points_balance) || 0} ⭐ (needs ${reward.cost} ⭐).`;
+            return;
+          }
+          triggerHaptic('success');
+          if (socket && socket.connected) {
+            socket.emit('reward:redeem', { profile_id: prof.id, reward_id: reward.id });
+          } else {
+            const token = localStorage.getItem('dashboard_token') || 'your_secret_token';
+            fetch('/api/rewards/redeem', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ profile_id: prof.id, reward_id: reward.id, token })
+            }).then(r => r.json()).then(res => {
+              if (res.ok) {
+                rewardRedeemFeedbackOk.value = true;
+                rewardRedeemFeedback.value = `🎉 ${prof.name} redeemed "${reward.title}" (-${reward.cost} ⭐)!`;
+              } else {
+                rewardRedeemFeedbackOk.value = false;
+                rewardRedeemFeedback.value = res.error || 'Could not redeem reward';
+              }
+            }).catch(() => {});
+          }
+        }
+
+        function isWidgetAisleGrouped(w) {
+          const key = String(w?.id || 'default');
+          if (widgetAisleGroupState.value[key] !== undefined) {
+            return Boolean(widgetAisleGroupState.value[key]);
+          }
+          return Boolean(w?.config?.groupByAisle);
+        }
+
+        function toggleWidgetAisleGroup(w) {
+          triggerHaptic('tap');
+          const key = String(w?.id || 'default');
+          const next = !isWidgetAisleGrouped(w);
+          widgetAisleGroupState.value[key] = next;
+          if (w) {
+            if (!w.config || typeof w.config !== 'object') w.config = {};
+            w.config.groupByAisle = next;
+          }
+        }
+
+        function getGroupedShoppingItemsForWidget(items, w) {
+          const sorted = getSortedItemsForWidget(items || [], w);
+          if (window.KioskEnhancements && typeof window.KioskEnhancements.groupShoppingItemsByAisle === 'function') {
+            return window.KioskEnhancements.groupShoppingItemsByAisle(sorted);
+          }
+          return [{ category: 'Other', icon: '🛒', label: 'Items', items: sorted }];
+        }
+
         async function verifyAdminPassword() {
           try {
             const res = await fetch('/api/verify-pass', {
@@ -5190,7 +5526,8 @@
               triggerHaptic('success');
               nextTick(reinitSortable);
             } else {
-              passwordError.value = 'Incorrect password. Access denied.';
+              const errData = await res.json().catch(() => ({}));
+              passwordError.value = errData.error || 'Incorrect password or PIN. Access denied.';
               triggerHaptic('tap');
             }
           } catch (e) {
@@ -5486,6 +5823,39 @@
             }
           });
 
+          socket.on('reward:redeem:result', (res) => {
+            if (res && res.ok) {
+              rewardRedeemFeedbackOk.value = true;
+              rewardRedeemFeedback.value = `🎉 ${res.profile?.name || 'Family'} redeemed "${res.reward?.title}" (-${res.reward?.cost} ⭐)!`;
+            } else if (res) {
+              rewardRedeemFeedbackOk.value = false;
+              rewardRedeemFeedback.value = res.error || 'Could not redeem reward';
+            }
+          });
+
+          socket.on('dashboard:delta', (delta) => {
+            if (!delta || !delta.section) return;
+            if (delta.section === 'lists' && Array.isArray(delta.data)) {
+              applyIncomingLists(delta.data);
+            } else if (delta.section === 'notes' && Array.isArray(delta.data)) {
+              notes.value = delta.data;
+            } else if (delta.section === 'tasks' && Array.isArray(delta.data)) {
+              tasks.value = delta.data;
+            } else if (delta.section === 'events' && Array.isArray(delta.data)) {
+              events.value = delta.data;
+            } else if (delta.section === 'dishes' && Array.isArray(delta.data)) {
+              dishes.value = delta.data;
+            } else if (delta.section === 'meal_menus' && Array.isArray(delta.data)) {
+              mealMenus.value = delta.data;
+            } else if (delta.section === 'profiles' && Array.isArray(delta.data)) {
+              profiles.value = delta.data;
+            } else if (delta.section === 'rewards' && delta.data) {
+              if (Array.isArray(delta.data.rewards)) rewards.value = delta.data.rewards;
+              if (Array.isArray(delta.data.reward_redemptions)) rewardRedemptions.value = delta.data.reward_redemptions;
+              if (Array.isArray(delta.data.profiles)) profiles.value = delta.data.profiles;
+            }
+          });
+
           socket.on('dashboard_update', (data) => {
             if (data.notes) notes.value = data.notes;
             if (data.tasks) tasks.value = data.tasks;
@@ -5494,6 +5864,8 @@
             if (data.lists) applyIncomingLists(data.lists);
             if (data.dishes) dishes.value = data.dishes;
             if (data.meal_menus) mealMenus.value = data.meal_menus;
+            if (data.rewards) rewards.value = data.rewards;
+            if (data.reward_redemptions) rewardRedemptions.value = data.reward_redemptions;
             if (data.profile_layouts) profileLayouts.value = data.profile_layouts;
             if (data.photos && Array.isArray(data.photos)) photos.value = data.photos;
             if (data.events && Array.isArray(data.events)) events.value = data.events;
@@ -5544,16 +5916,28 @@
           initSocket();
           fetchWeather();
           setInterval(fetchWeather, 15 * 60 * 1000);
+          if (window.KioskEnhancements && window.KioskEnhancements.WakeLockManager) {
+            window.KioskEnhancements.WakeLockManager.sync({
+              sleeping: isSleeping.value,
+              nightModeActive: isNightModeActive.value
+            });
+          }
         });
 
         // Watch active intervals, timeouts, and night mode transitions to dynamically reconfigure kiosk
-        watch([() => activePhotoInterval.value, () => activeSleepTimeout.value, () => isNightModeActive.value], ([newInterval]) => {
+        watch([() => activePhotoInterval.value, () => activeSleepTimeout.value, () => isNightModeActive.value, () => isSleeping.value], ([newInterval]) => {
           if (photoInterval) clearInterval(photoInterval);
           const ms = (newInterval || 8) * 1000;
           photoInterval = setInterval(() => {
             advanceScreensaverPhoto();
           }, ms);
           resetSleepTimer();
+          if (window.KioskEnhancements && window.KioskEnhancements.WakeLockManager) {
+            window.KioskEnhancements.WakeLockManager.sync({
+              sleeping: isSleeping.value,
+              nightModeActive: isNightModeActive.value
+            });
+          }
         });
 
         onUnmounted(() => {
@@ -5580,6 +5964,21 @@
           lists,
           dishes,
           mealMenus,
+          rewards,
+          rewardRedemptions,
+          showRewardsModal,
+          rewardRedeemProfileId,
+          rewardRedeemFeedback,
+          rewardRedeemFeedbackOk,
+          activeRewardProfile,
+          openRewardsModal,
+          redeemRewardFromKiosk,
+          appendPinDigit,
+          backspacePinDigit,
+          clearPinDigits,
+          isWidgetAisleGrouped,
+          toggleWidgetAisleGroup,
+          getGroupedShoppingItemsForWidget,
           activeMealMenu,
           layouts,
           photos,

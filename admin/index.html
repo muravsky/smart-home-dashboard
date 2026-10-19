@@ -325,6 +325,9 @@
                     <span v-if="prof.font_size && prof.font_size !== 'normal'" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-neutral-800 border border-neutral-700 text-neutral-300">
                       Aa: {{ prof.font_size }}
                     </span>
+                    <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-950/60 border border-amber-700/60 text-amber-300 font-bold">
+                      ⭐ {{ prof.points_balance || 0 }} pts
+                    </span>
                   </div>
                 </div>
               </div>
@@ -345,6 +348,63 @@
                 >
                   ✕
                 </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- KIDS CHORE REWARD STORE & REDEMPTION LEDGER -->
+          <div class="mt-6 bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg space-y-4">
+            <div class="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <div>
+                <h2 class="font-mono text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
+                  <span>⭐</span> FAMILY CHORE REWARD STORE
+                </h2>
+                <p class="text-[11px] text-neutral-400 mt-0.5">Define rewards that kids can claim on the Kiosk or via Telegram using points earned from completed tasks.</p>
+              </div>
+            </div>
+
+            <form @submit.prevent="createRewardAdmin" class="grid grid-cols-1 md:grid-cols-12 gap-2.5 bg-neutral-950 p-3 rounded-lg border border-neutral-800">
+              <div class="md:col-span-2">
+                <label class="block text-neutral-400 text-[10px] font-mono mb-1">ICON</label>
+                <input v-model="newReward.icon" type="text" class="w-full bg-neutral-900 border border-neutral-800 rounded p-2 text-xs text-center text-white outline-none" placeholder="🎁" />
+              </div>
+              <div class="md:col-span-5">
+                <label class="block text-neutral-400 text-[10px] font-mono mb-1">REWARD TITLE</label>
+                <input v-model="newReward.title" type="text" required class="w-full bg-neutral-900 border border-neutral-800 rounded p-2 text-xs text-white outline-none" placeholder="e.g. 30 Min Extra Screen Time" />
+              </div>
+              <div class="md:col-span-3">
+                <label class="block text-neutral-400 text-[10px] font-mono mb-1">COST (POINTS)</label>
+                <input v-model.number="newReward.cost" type="number" min="1" required class="w-full bg-neutral-900 border border-neutral-800 rounded p-2 text-xs text-amber-300 font-mono outline-none" />
+              </div>
+              <div class="md:col-span-2 flex items-end">
+                <button type="submit" class="w-full font-mono text-xs bg-amber-600 hover:bg-amber-500 text-white py-2 px-3 rounded font-semibold transition">
+                  + Add
+                </button>
+              </div>
+            </form>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+              <div v-for="rw in rewards" :key="rw.id" class="p-3 rounded-lg bg-neutral-950 border border-neutral-800 flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <span class="text-xl shrink-0">{{ rw.icon || '🎁' }}</span>
+                  <div class="truncate">
+                    <div class="text-xs font-bold text-neutral-100 truncate">{{ rw.title }}</div>
+                    <div class="text-[11px] font-mono text-amber-400 font-semibold">⭐ {{ rw.cost }} pts</div>
+                  </div>
+                </div>
+                <button @click="deleteRewardAdmin(rw.id)" class="text-neutral-500 hover:text-red-400 text-xs font-mono px-2 py-1 rounded border border-neutral-800 hover:border-red-900 transition">
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div v-if="rewardRedemptions && rewardRedemptions.length > 0" class="pt-2 border-t border-neutral-800">
+              <div class="text-[10px] font-mono uppercase tracking-wider text-neutral-400 mb-2">Recent Reward Redemptions</div>
+              <div class="space-y-1 max-h-36 overflow-y-auto">
+                <div v-for="red in rewardRedemptions.slice(0, 8)" :key="red.id" class="text-[11px] font-mono flex items-center justify-between px-2.5 py-1.5 rounded bg-neutral-950 border border-neutral-800/70">
+                  <span class="text-neutral-200">{{ red.reward_icon || '🎁' }} <strong>{{ red.profile_name }}</strong> claimed <em>{{ red.reward_title }}</em></span>
+                  <span class="text-amber-400">-{{ red.points_spent }} pts</span>
+                </div>
               </div>
             </div>
           </div>
@@ -2107,6 +2167,23 @@
               </select>
             </div>
           </div>
+          <div class="pt-3 border-t border-neutral-800/80 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+            <div>
+              <label class="block text-neutral-300 text-xs font-mono mb-1 font-semibold">🔢 KIOSK EDIT MODE NUMERIC PIN (OPTIONAL)</label>
+              <p class="text-[11px] text-neutral-500">Set a 4–6 digit numeric PIN for fast unlocking on touchscreens without opening the on-screen keyboard. Admin password always works too.</p>
+            </div>
+            <div>
+              <input
+                v-model="settings.kiosk_pin"
+                type="text"
+                inputmode="numeric"
+                pattern="[0-9]*"
+                maxlength="12"
+                placeholder="e.g. 1234 (leave blank to require Admin Password)"
+                class="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2.5 text-sm font-mono tracking-widest text-neutral-100 outline-none focus:border-sky-400"
+              />
+            </div>
+          </div>
         </div>
 
         <div class="bg-neutral-950/70 border border-neutral-800/80 rounded-xl p-4 md:p-5 space-y-4">
@@ -2718,6 +2795,9 @@
         const alertSuccess = ref(true);
 
         const profiles = ref([]);
+        const rewards = ref([]);
+        const rewardRedemptions = ref([]);
+        const newReward = ref({ title: '', cost: 25, icon: '🎁' });
         const schedules = ref([]);
         const lists = ref([]);
         const notes = ref([]);
@@ -2828,6 +2908,7 @@
           header_clock_enabled: 1,
           header_weather_enabled: 1,
           header_display_size: 'large',
+          kiosk_pin: '',
           librus_sync_timetable: 'manual',
           librus_sync_grades: 'daily',
           librus_sync_notifications: 'daily',
@@ -2901,11 +2982,13 @@
         const savingSubscriptions = ref(false);
         const subscriptionOptions = [
           { type: 'morning_summary', label: 'Morning school and task summary' },
+          { type: 'evening_summary', label: 'Evening next-day prep summary (classes, menu & tasks)' },
           { type: 'librus_messages', label: 'New Librus inbox messages' },
           { type: 'librus_grades', label: 'Grades added today' }
         ];
         const subscriptionDraft = ref({
           morning_summary: { enabled: false, send_time: '07:00' },
+          evening_summary: { enabled: false, send_time: '19:30' },
           librus_messages: { enabled: false, send_time: '16:00' },
           librus_grades: { enabled: false, send_time: '16:00' }
         });
@@ -2919,6 +3002,7 @@
             const records = scheduledSubscriptions.value.filter(item => Number(item.profile_id) === profileId);
             const next = {
               morning_summary: { enabled: false, send_time: '07:00' },
+              evening_summary: { enabled: false, send_time: '19:30' },
               librus_messages: { enabled: false, send_time: '16:00' },
               librus_grades: { enabled: false, send_time: '16:00' }
             };
@@ -3314,13 +3398,17 @@
         const currentMealMenu = computed(() => {
           if (!mealMenus.value.length) return null;
           return mealMenus.value.find(m => m.id === selectedMealMenuId.value)
-            || mealMenus.value.find(m => m.is_active === 1)
+            || mealMenus.value.find(m => Boolean(m.is_active))
             || mealMenus.value[0];
         });
 
         const activeMealSlotsList = computed(() => {
+          const menu = currentMealMenu.value;
+          if (menu && Array.isArray(menu.meal_slots) && menu.meal_slots.length) {
+            return menu.meal_slots;
+          }
           try {
-            const raw = settings.value.meal_slots;
+            const raw = settings.value.meal_slots || settings.value.meal_default_slots;
             if (Array.isArray(raw) && raw.length) return raw;
             if (typeof raw === 'string' && raw.trim()) {
               const parsed = JSON.parse(raw);
@@ -3342,6 +3430,8 @@
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
             profiles.value = data.profiles || [];
+            rewards.value = data.rewards || [];
+            rewardRedemptions.value = data.reward_redemptions || [];
             schedules.value = data.schedules || [];
             lists.value = data.lists || [];
             notes.value = data.notes || [];
@@ -3356,9 +3446,10 @@
               if (data.settings.weather_lon) settings.value.weather_lon = String(data.settings.weather_lon);
               if (data.settings.weather_units) settings.value.weather_units = data.settings.weather_units;
               try {
-                const parsedSlots = typeof data.settings.meal_slots === 'string'
-                  ? JSON.parse(data.settings.meal_slots)
-                  : data.settings.meal_slots;
+                const rawSlots = data.settings.meal_slots || data.settings.meal_default_slots;
+                const parsedSlots = typeof rawSlots === 'string'
+                  ? JSON.parse(rawSlots)
+                  : rawSlots;
                 if (Array.isArray(parsedSlots) && parsedSlots.length) {
                   mealSlotsCsv.value = parsedSlots.join(', ');
                 }
@@ -3369,12 +3460,47 @@
               selectedListId.value = lists.value[0].id;
             }
             if (mealMenus.value.length > 0 && (!selectedMealMenuId.value || !mealMenus.value.some(m => m.id === selectedMealMenuId.value))) {
-              const active = mealMenus.value.find(m => m.is_active === 1) || mealMenus.value[0];
+              const active = mealMenus.value.find(m => Boolean(m.is_active)) || mealMenus.value[0];
               selectedMealMenuId.value = active.id;
             }
             loadPhotos();
           } catch (err) {
             showAlert('Failed to load data: ' + err.message, false);
+          }
+        }
+
+        async function createRewardAdmin() {
+          if (!newReward.value.title.trim()) return;
+          try {
+            const res = await fetch('/api/admin/rewards', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title: newReward.value.title.trim(),
+                cost: Math.max(1, Number(newReward.value.cost) || 10),
+                icon: newReward.value.icon || '🎁'
+              })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to create reward');
+            rewards.value = data.rewards || rewards.value;
+            newReward.value = { title: '', cost: 25, icon: '🎁' };
+            showAlert('Reward added to Family Store!');
+          } catch (err) {
+            showAlert('Error adding reward: ' + err.message, false);
+          }
+        }
+
+        async function deleteRewardAdmin(id) {
+          if (!confirm('Remove this reward from the store?')) return;
+          try {
+            const res = await fetch('/api/admin/rewards/' + id, { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to delete reward');
+            rewards.value = data.rewards || rewards.value.filter(r => r.id !== id);
+            showAlert('Reward removed');
+          } catch (err) {
+            showAlert('Error deleting reward: ' + err.message, false);
           }
         }
 
@@ -3406,16 +3532,25 @@
         }
 
         // Meal Planner Helpers
+        function getRawSlotEntry(menu, day, slot) {
+          if (!menu) return null;
+          const sched = menu.schedule || menu.plan || {};
+          if (!sched[day] || !sched[day][slot]) return null;
+          const raw = sched[day][slot];
+          if (Array.isArray(raw)) return raw[0] || null;
+          if (raw && typeof raw === 'object') return raw;
+          return null;
+        }
+
         function getMenuSlotDishId(day, slot) {
-          const menu = currentMealMenu.value;
-          if (!menu || !menu.plan || !menu.plan[day] || !menu.plan[day][slot]) return '';
-          return menu.plan[day][slot].dish_id || '';
+          const entry = getRawSlotEntry(currentMealMenu.value, day, slot);
+          return (entry && entry.dish_id) ? entry.dish_id : '';
         }
 
         function getMenuSlotCustomText(day, slot) {
-          const menu = currentMealMenu.value;
-          if (!menu || !menu.plan || !menu.plan[day] || !menu.plan[day][slot]) return '';
-          return menu.plan[day][slot].custom_text || '';
+          const entry = getRawSlotEntry(currentMealMenu.value, day, slot);
+          if (!entry) return '';
+          return entry.custom_text || entry.custom_title || (entry.dish_id ? '' : (entry.name || '')) || '';
         }
 
         async function updateMenuSlotDish(day, slot, dishIdVal) {
@@ -3485,17 +3620,18 @@
         async function createMealMenuAdmin() {
           if (!newMealMenuName.value.trim()) return;
           try {
-            const plan = (newMealMenuCloneCurrent.value && currentMealMenu.value && currentMealMenu.value.plan)
-              ? currentMealMenu.value.plan
+            const schedule = (newMealMenuCloneCurrent.value && currentMealMenu.value && (currentMealMenu.value.schedule || currentMealMenu.value.plan))
+              ? (currentMealMenu.value.schedule || currentMealMenu.value.plan)
               : {};
             const res = await fetch('/api/admin/meal-menus', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 name: newMealMenuName.value.trim(),
-                is_template: 1,
+                is_template: 0,
                 is_active: 0,
-                plan
+                schedule,
+                plan: schedule
               })
             });
             const data = await res.json();
@@ -3503,7 +3639,7 @@
             if (data.meal_menus) mealMenus.value = data.meal_menus;
             if (data.menu) selectedMealMenuId.value = data.menu.id;
             newMealMenuName.value = '';
-            showAlert('New meal menu template created!');
+            showAlert('New meal menu created!');
           } catch (err) {
             showAlert('Error creating menu: ' + err.message, false);
           }
@@ -4346,6 +4482,11 @@
           checkHttpsStatus,
           generateSelfSignedCert,
           profiles,
+          rewards,
+          rewardRedemptions,
+          newReward,
+          createRewardAdmin,
+          deleteRewardAdmin,
           lists,
           notes,
           editingNote,

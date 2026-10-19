@@ -24,6 +24,7 @@ const {
   updateCalendarEvent,
   deleteCalendarEvent,
   getProfileByTelegramId,
+  getProfileById,
   getProfiles,
   getLists,
   getListById,
@@ -39,8 +40,11 @@ const {
   insertDish,
   getDefaultMealSlots,
   getMealMenus,
+  getMealMenuById,
   getActiveMealMenu,
   setMealSlotEntry,
+  getRewards,
+  redeemReward,
   insertAuditLog,
   getCalendarFeeds
 } = require('./db');
@@ -107,10 +111,53 @@ async function saveTelegramPhoto(ctx, io) {
   }
 }
 
+function escapeMd(text) {
+  if (text === null || text === undefined) return '';
+  return String(text).replace(/([_*`\[\]()])/g, '\\$1');
+}
+
+async function safeReplyMarkdown(ctx, text, extra = {}) {
+  try {
+    return await ctx.replyWithMarkdown(text, extra);
+  } catch (err) {
+    console.warn('[Telegram] replyWithMarkdown failed, falling back to plain text:', err.message);
+    try {
+      const plainText = text.replace(/[*_`\\]/g, '');
+      return await ctx.reply(plainText, extra);
+    } catch (err2) {
+      console.error('[Telegram] Failed to send fallback message:', err2.message);
+    }
+  }
+}
+
+async function safeEditMarkdown(ctx, text, extra = {}) {
+  try {
+    return await ctx.editMessageText(text, { parse_mode: 'Markdown', ...(extra || {}) });
+  } catch (err) {
+    console.warn('[Telegram] editMessageText failed with Markdown, trying plain text:', err.message);
+    try {
+      const plainText = text.replace(/[*_`\\]/g, '');
+      return await ctx.editMessageText(plainText, extra || {});
+    } catch (err2) {
+      console.warn('[Telegram] editMessageText plain failed, falling back to reply:', err2.message);
+      return await safeReplyMarkdown(ctx, text, extra);
+    }
+  }
+}
+
 function getOrCreateDashboardList(type, name, icon = '📋') {
   const allLists = getLists();
-  const existing = allLists.find((list) => list.type === type);
-  if (existing) return existing;
+  const matchingNameAndType = allLists.filter(l => l.type === type && (l.name || '').toLowerCase() === (name || '').toLowerCase());
+  if (matchingNameAndType.length > 0) {
+    matchingNameAndType.sort((a, b) => ((b.items || []).filter(i => Number(i.checked) !== 1).length) - ((a.items || []).filter(i => Number(i.checked) !== 1).length));
+    return matchingNameAndType[0];
+  }
+
+  const sameTypeLists = allLists.filter(l => l.type === type);
+  if (sameTypeLists.length > 0) {
+    sameTypeLists.sort((a, b) => ((b.items || []).filter(i => Number(i.checked) !== 1).length) - ((a.items || []).filter(i => Number(i.checked) !== 1).length));
+    return sameTypeLists[0];
+  }
   return insertList({ name, type, icon });
 }
 
@@ -528,54 +575,54 @@ async function applyParsedGeminiActions(parsedData, senderProfile, ioInstance = 
 
 function buildConfirmationMessage(parsedData, senderProfile) {
   const { notes, tasks, shopping_items, calendar_events, meal_actions, timer, response_message } = parsedData || {};
-  const greeting = senderProfile ? `👋 *Hi ${senderProfile.name}!*` : `✅ *Smart Home Dashboard Updated!*`;
+  const greeting = senderProfile ? `👋 *Hi ${escapeMd(senderProfile.name)}!*` : `✅ *Smart Home Dashboard Updated!*`;
   let msg = `${greeting}\n`;
 
   if (response_message) {
-    msg += `_${response_message}_\n\n`;
+    msg += `_${escapeMd(response_message)}_\n\n`;
   }
 
   if (tasks && tasks.length > 0) {
     msg += `📋 *Tasks:*\n` + tasks.map(t => {
       const act = t.action && t.action !== 'add' ? `[${t.action.toUpperCase()}] ` : '';
-      const who = t.assignee ? `(@${t.assignee}) ` : '(Family) ';
+      const who = t.assignee ? `(@${escapeMd(t.assignee)}) ` : '(Family) ';
       const rew = t.reward ? ` [+${t.reward}]` : '';
       const rec = t.recurrence && t.recurrence !== 'none' ? ` [🔁 ${t.recurrence}]` : '';
-      return `• ${act}${t.new_title || t.title} ${who}${rew}${rec}`;
+      return `• ${act}${escapeMd(t.new_title || t.title)} ${who}${rew}${rec}`;
     }).join('\n') + '\n';
   }
 
   if (shopping_items && shopping_items.length > 0) {
     msg += `🛒 *Lists updated:*\n` + shopping_items.map(s => {
       const act = s.action && s.action !== 'add' ? `[${s.action.toUpperCase()}] ` : '';
-      const listTag = s.list_name ? `[${s.list_name}] ` : '';
-      const who = s.assignee ? `(@${s.assignee}) ` : '';
+      const listTag = s.list_name ? `[${escapeMd(s.list_name)}] ` : '';
+      const who = s.assignee ? `(@${escapeMd(s.assignee)}) ` : '';
       const rec = s.recurrence && s.recurrence !== 'none' ? ` [🔁 ${s.recurrence}]` : '';
-      return `• ${act}${listTag}${s.new_content || s.content} ${who}${rec}`.trim();
+      return `• ${act}${listTag}${escapeMd(s.new_content || s.content)} ${who}${rec}`.trim();
     }).join('\n') + '\n';
   }
 
   if (calendar_events && calendar_events.length > 0) {
     msg += `📅 *Calendar events:*\n` + calendar_events.map(e => {
       const act = e.action && e.action !== 'add' ? `[${e.action.toUpperCase()}] ` : '';
-      const who = e.person ? `(@${e.person}) ` : '(Family) ';
+      const who = e.person ? `(@${escapeMd(e.person)}) ` : '(Family) ';
       const rec = e.recurrence && e.recurrence !== 'none' ? ` [🔁 ${e.recurrence}]` : '';
-      return `• ${act}${e.new_title || e.title} ${who}(${e.date || 'today'} ${e.time || ''})${rec}`;
+      return `• ${act}${escapeMd(e.new_title || e.title)} ${who}(${escapeMd(e.date || 'today')} ${escapeMd(e.time || '')})${rec}`;
     }).join('\n') + '\n';
   }
 
   if (meal_actions && meal_actions.length > 0) {
     msg += `🍽️ *Menu of the Week:*\n` + meal_actions.map(m => {
-      if (m.action === 'set_meal') return `• ${m.day || 'Today'} ${m.slot || 'Meal'}: *${m.dish_name}*`;
-      if (m.action === 'add_dish') return `• Added dish: *${m.dish_name}*`;
-      return `• Added ingredients for *${m.dish_name || 'menu'}* to Shopping List`;
+      if (m.action === 'set_meal') return `• ${m.day || 'Today'} ${m.slot || 'Meal'}: *${escapeMd(m.dish_name)}*`;
+      if (m.action === 'add_dish') return `• Added dish: *${escapeMd(m.dish_name)}*`;
+      return `• Added ingredients for *${escapeMd(m.dish_name || 'menu')}* to Shopping List`;
     }).join('\n') + '\n';
   }
 
   if (notes && notes.length > 0) {
     msg += `📝 *Notes:*\n` + notes.map(n => {
-      if (typeof n === 'string') return `• ${n}`;
-      return `• [${(n.action || 'add').toUpperCase()}] ${n.content || n.match || `#${n.id}`}`;
+      if (typeof n === 'string') return `• ${escapeMd(n)}`;
+      return `• [${(n.action || 'add').toUpperCase()}] ${escapeMd(n.content || n.match || `#${n.id}`)}`;
     }).join('\n') + '\n';
   }
 
@@ -584,7 +631,9 @@ function buildConfirmationMessage(parsedData, senderProfile) {
   }
 
   if (!tasks?.length && !shopping_items?.length && !calendar_events?.length && !notes?.length && !meal_actions?.length && !timer) {
-    msg += `_(No specific actions detected)_`;
+    if (!response_message) {
+      msg += `_(No specific actions detected)_`;
+    }
   }
 
   return msg.trim();
@@ -593,11 +642,11 @@ function buildConfirmationMessage(parsedData, senderProfile) {
 function buildMainMenuKeyboard() {
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback('🛒 Shopping List', 'menu:list_type:shopping'),
-      Markup.button.callback('✅ Tasks', 'menu:list_type:tasks')
+      Markup.button.callback('🛒 Shopping List', 'menu:list:shopping'),
+      Markup.button.callback('✅ Tasks', 'menu:list:tasks')
     ],
     [
-      Markup.button.callback('📋 Custom Lists', 'menu:custom_lists'),
+      Markup.button.callback('📋 All Lists', 'menu:lists_all'),
       Markup.button.callback('🍽️ Meal Menu', 'menu:meals:today')
     ],
     [
@@ -606,17 +655,65 @@ function buildMainMenuKeyboard() {
     ],
     [
       Markup.button.callback('🍲 Dish Catalog', 'menu:dishes'),
+      Markup.button.callback('⭐ Rewards Store', 'menu:rewards')
+    ],
+    [
       Markup.button.callback('📊 Status', 'menu:status')
     ]
   ]);
 }
 
-function buildListKeyboardAndText(list, showHistory = false) {
-  const allItems = Array.isArray(list.items) ? list.items : [];
-  const activeItems = allItems.filter(i => i.checked !== 1);
-  const completedItems = allItems.filter(i => i.checked === 1);
+function buildRewardsMessage(senderProfile = null) {
+  const profiles = getProfiles();
+  const rewards = getRewards();
+  const activeProfile = senderProfile || profiles[0] || null;
 
-  let text = `${list.icon || '📋'} *${list.name}*\n`;
+  let text = `⭐ *Family Rewards Store*\n\n`;
+  if (profiles.length > 0) {
+    text += `*Points Balance:*\n`;
+    for (const p of profiles) {
+      const marker = activeProfile && p.id === activeProfile.id ? '👉 ' : '• ';
+      text += `${marker}${p.avatar_value || '🙂'} *${p.name}:* ${Number(p.points_balance) || 0} ⭐\n`;
+    }
+    text += `\n`;
+  }
+
+  const buttons = [];
+  if (rewards.length === 0) {
+    text += `_No rewards configured yet._\n`;
+  } else {
+    text += `*Available Rewards:*\n`;
+    for (const r of rewards) {
+      text += `• ${r.icon || '🎁'} *${r.title}* — *${r.cost} ⭐*\n`;
+      if (activeProfile) {
+        buttons.push([
+          Markup.button.callback(
+            `${r.icon || '🎁'} Redeem "${r.title}" (${r.cost} ⭐ as ${activeProfile.name})`,
+            `reward:redeem:${r.id}:${activeProfile.id}`
+          )
+        ]);
+      }
+    }
+  }
+
+  buttons.push([Markup.button.callback('🏠 Main Menu', 'menu:home')]);
+  return { text, keyboard: Markup.inlineKeyboard(buttons) };
+}
+
+function buildListKeyboardAndText(listOrId, showHistory = false) {
+  const allLists = getLists();
+  const list = (listOrId && typeof listOrId === 'object') ? listOrId : allLists.find(l => l.id === Number(listOrId));
+  if (!list) {
+    return {
+      text: '❌ List not found.',
+      keyboard: Markup.inlineKeyboard([[Markup.button.callback('🏠 Main Menu', 'menu:home')]])
+    };
+  }
+  const allItems = Array.isArray(list.items) ? list.items : [];
+  const activeItems = allItems.filter(i => Number(i.checked) !== 1);
+  const completedItems = allItems.filter(i => Number(i.checked) === 1);
+
+  let text = `${list.icon || '📋'} *${escapeMd(list.name)}*\n`;
   const buttons = [];
 
   if (!showHistory) {
@@ -624,19 +721,26 @@ function buildListKeyboardAndText(list, showHistory = false) {
     if (activeItems.length === 0) {
       text += `🎉 No active items in this list!\n`;
     } else {
-      for (const item of activeItems.slice(0, 15)) {
-        const who = item.assignee_name ? ` (@${item.assignee_name})` : '';
-        const due = item.due_date ? ` [${item.due_date}]` : '';
-        const pts = item.reward ? ` [+${item.reward}pts]` : '';
-        text += `⬜ *#${item.id}* ${item.content}${who}${due}${pts}\n`;
+      const displayedItems = activeItems.slice(0, 15);
+      for (const item of displayedItems) {
+        const who = item.assignee_name ? ` (@${escapeMd(item.assignee_name)})` : '';
+        const due = item.due_date ? ` • 📅 ${escapeMd(item.due_date)}` : '';
+        const pts = item.reward ? ` • ⭐+${item.reward}pts` : '';
+        const cat = item.category && list.type === 'shopping' ? ` • 🏷️ ${escapeMd(item.category)}` : '';
+        text += `⬜ *#${item.id}* ${escapeMd(item.content)}${cat}${who}${due}${pts}\n`;
+        const btnLabel = `✅ ${item.content}`.slice(0, 26);
         buttons.push([
-          Markup.button.callback(`✅ Check: ${item.content.slice(0, 22)}`, `item:toggle:${item.id}:1`),
+          Markup.button.callback(btnLabel, `item:toggle:${item.id}:1`),
           Markup.button.callback('🗑️', `item:del:${item.id}:${list.id}`)
         ]);
       }
+      if (activeItems.length > 15) {
+        text += `\n_...and ${activeItems.length - 15} more active items._\n`;
+      }
     }
+
     const navRow = [
-      Markup.button.callback(`📜 History (${completedItems.length})`, `menu:list_hist:${list.id}`)
+      Markup.button.callback(`📜 History (${completedItems.length})`, `menu:list_resolved:${list.id}`)
     ];
     if (completedItems.length > 0) {
       navRow.push(Markup.button.callback('🧹 Clear Done', `list:clear:${list.id}`));
@@ -647,14 +751,19 @@ function buildListKeyboardAndText(list, showHistory = false) {
     if (completedItems.length === 0) {
       text += `_No completed items yet._\n`;
     } else {
-      for (const item of completedItems.slice(0, 15)) {
+      const displayedDone = completedItems.slice(0, 15);
+      for (const item of displayedDone) {
         const when = item.last_completed_at ? item.last_completed_at.slice(0, 16).replace('T', ' ') : '';
-        const by = item.completed_by ? ` by *${item.completed_by}*` : '';
-        text += `✅ *#${item.id}* ~${item.content}~${by}${when ? ` _(${when})_` : ''}\n`;
+        const by = item.completed_by ? ` by *${escapeMd(item.completed_by)}*` : '';
+        text += `✓ *#${item.id}* ${escapeMd(item.content)}${by}${when ? ` (${escapeMd(when)})` : ''}\n`;
+        const btnLabel = `↩️ ${item.content}`.slice(0, 24);
         buttons.push([
-          Markup.button.callback(`↩️ Restore: ${item.content.slice(0, 20)}`, `item:toggle:${item.id}:0`),
+          Markup.button.callback(btnLabel, `item:toggle:${item.id}:0`),
           Markup.button.callback('🗑️', `item:del:${item.id}:${list.id}`)
         ]);
+      }
+      if (completedItems.length > 15) {
+        text += `\n_...and ${completedItems.length - 15} more completed items._\n`;
       }
     }
     buttons.push([
@@ -663,8 +772,57 @@ function buildListKeyboardAndText(list, showHistory = false) {
     ]);
   }
 
-  buttons.push([Markup.button.callback('🏠 Main Menu', 'menu:home')]);
+  // Sibling lists switcher buttons (e.g. other shopping lists or other task lists that have active items)
+  const siblingLists = allLists.filter(l => l.id !== list.id && l.type === list.type && (l.items || []).some(i => Number(i.checked) !== 1));
+  if (siblingLists.length > 0) {
+    const sibButtons = siblingLists.slice(0, 2).map(sl => {
+      const cnt = (sl.items || []).filter(i => Number(i.checked) !== 1).length;
+      return Markup.button.callback(`${sl.icon || '📋'} ${sl.name} (${cnt})`, `menu:list_id:${sl.id}`);
+    });
+    buttons.push(sibButtons);
+  }
+
+  buttons.push([
+    Markup.button.callback('📋 All Lists', 'menu:lists_all'),
+    Markup.button.callback('🏠 Main Menu', 'menu:home')
+  ]);
   return { text, keyboard: Markup.inlineKeyboard(buttons) };
+}
+
+function detectListQueryIntent(text) {
+  if (!text || typeof text !== 'string') return null;
+  const clean = text.trim().toLowerCase();
+
+  // Shopping query: "shopping list", "show shopping", "what's on the shopping list", "list shopping", "groceries", "покупки", "список покупок", "купить что надо"
+  if (/^(?:show\s+|view\s+|list\s+|open\s+|what(?:'s|\s+is)\s+(?:in|on)\s+(?:the\s+|my\s+)?|get\s+)?(?:shopping|groceries|grocery)(?:\s+list)?\??$/i.test(clean) ||
+      /(?:покажи|показать|что\s+в|какой|список)\s+(?:списк[еау]\s+|список\s+)?покуп(?:ок|ки|ках)?/i.test(clean) ||
+      /^(?:покупки|список\s+покупок|що\s+купити|список\s+покупок)\??$/i.test(clean)) {
+    return { type: 'shopping' };
+  }
+
+  // Tasks query: "tasks", "show tasks", "what are my tasks", "list tasks", "to do", "chores", "задачи", "список задач", "что сделать", "завдання"
+  if (/^(?:show\s+|view\s+|list\s+|open\s+|what(?:'s|\s+are)\s+(?:the\s+|my\s+)?|get\s+)?(?:tasks?|to-?dos?|chores?)(?:\s+list)?\??$/i.test(clean) ||
+      /(?:покажи|показать|что\s+в|какие|список)\s+(?:списк[еау]\s+|список\s+)?задач/i.test(clean) ||
+      /^(?:задачи|список\s+задач|дела|список\s+дел|завдання)\??$/i.test(clean)) {
+    return { type: 'tasks' };
+  }
+
+  // All lists query: "lists", "all lists", "show lists", "списки", "все списки"
+  if (/^(?:show\s+|view\s+|list\s+|open\s+|what\s+are\s+)?(?:all\s+)?lists\??$/i.test(clean) ||
+      /^(?:списки|все\s+списки|всі\s+списки)\??$/i.test(clean)) {
+    return { type: 'all' };
+  }
+
+  // Specific list by name: e.g. "show Packing list", "list Hardware Store"
+  const showMatch = clean.match(/^(?:show|view|list|open)\s+(?:the\s+)?(.+?)(?:\s+list)?\??$/i);
+  if (showMatch && showMatch[1]) {
+    const listQuery = showMatch[1].trim();
+    if (!['notes', 'menu', 'today', 'status', 'help', 'events', 'photos', 'dishes', 'rewards'].includes(listQuery)) {
+      return { type: 'named', name: listQuery };
+    }
+  }
+
+  return null;
 }
 
 function buildMealMenuMessage(mode = 'today') {
@@ -747,6 +905,7 @@ function initBot(io) {
     { command: 'lists', description: '📋 View all custom lists' },
     { command: 'mealmenu', description: '🍽️ View Menu of the Week (meals)' },
     { command: 'dishes', description: '🍲 Browse dish catalog & recipes' },
+    { command: 'rewards', description: '⭐ View points balance & redeem rewards' },
     { command: 'notes', description: '📝 View, edit, or delete notes' },
     { command: 'today', description: '📅 Today’s events & tasks' },
     { command: 'status', description: '📊 Dashboard snapshot' },
@@ -799,6 +958,7 @@ function initBot(io) {
       `• /mealmenu — View Menu of the Week\n` +
       `• /dishes — Browse dish catalog & tags\n` +
       `• /setmeal <Day> <Slot> <Dish> — Set a meal\n` +
+      `• /rewards — View points balance & redeem rewards\n` +
       `• /notes — View & manage notes\n` +
       `• /addnote <text> | /editnote <id> <text> | /delnote <id>\n` +
       `• /check <id> | /uncheck <id> | /edititem <id> <text> | /delitem <id>\n` +
@@ -814,7 +974,14 @@ function initBot(io) {
       action_taken: 'Displayed interactive main menu',
       status: 'success'
     });
-    await ctx.replyWithMarkdown(msg, buildMainMenuKeyboard());
+    await safeReplyMarkdown(ctx, msg, buildMainMenuKeyboard());
+  });
+
+  bot.command('rewards', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const { text, keyboard } = buildRewardsMessage(senderProfile);
+    await safeReplyMarkdown(ctx, text, keyboard);
   });
 
   bot.command('status', async (ctx) => {
@@ -842,7 +1009,7 @@ function initBot(io) {
       action_taken: `Reported status: ${taskCount} tasks, ${shoppingCount} shopping, ${notes.length} notes, ${todayEvents.length} events`,
       status: 'success'
     });
-    await ctx.replyWithMarkdown(reply);
+    await safeReplyMarkdown(ctx, reply);
   });
 
   bot.command('tasks', async (ctx) => {
@@ -858,7 +1025,7 @@ function initBot(io) {
       action_taken: `Listed ${items.length} tasks`,
       status: 'success'
     });
-    await ctx.replyWithMarkdown(text, keyboard);
+    await safeReplyMarkdown(ctx, text, keyboard);
   });
 
   bot.command('shopping', async (ctx) => {
@@ -874,7 +1041,7 @@ function initBot(io) {
       action_taken: `Listed ${items.length} shopping items`,
       status: 'success'
     });
-    await ctx.replyWithMarkdown(text, keyboard);
+    await safeReplyMarkdown(ctx, text, keyboard);
   });
 
   bot.command('lists', async (ctx) => {
@@ -882,9 +1049,9 @@ function initBot(io) {
     let reply = `📋 *All Dashboard Lists (${allLists.length}):*\n\n`;
     const buttons = [];
     for (const l of allLists) {
-      const activeCount = (l.items || []).filter(i => i.checked !== 1).length;
-      const doneCount = (l.items || []).filter(i => i.checked === 1).length;
-      reply += `• ${l.icon || '📋'} *${l.name}* — ${activeCount} active, ${doneCount} completed\n`;
+      const activeCount = (l.items || []).filter(i => Number(i.checked) !== 1).length;
+      const doneCount = (l.items || []).filter(i => Number(i.checked) === 1).length;
+      reply += `• ${l.icon || '📋'} *${escapeMd(l.name)}* — ${activeCount} active, ${doneCount} completed\n`;
       buttons.push([Markup.button.callback(`${l.icon || '📋'} ${l.name} (${activeCount})`, `menu:list_id:${l.id}`)]);
     }
     reply += `\n_Use /list <name> or tap a button below to open a list, or /addlist <List> | <Item> to add an item._`;
@@ -898,7 +1065,7 @@ function initBot(io) {
       action_taken: `Listed ${allLists.length} lists`,
       status: 'success'
     });
-    await ctx.replyWithMarkdown(reply, Markup.inlineKeyboard(buttons));
+    await safeReplyMarkdown(ctx, reply, Markup.inlineKeyboard(buttons));
   });
 
   bot.command('list', async (ctx) => {
@@ -907,12 +1074,12 @@ function initBot(io) {
       return ctx.reply('Usage: /list <list name>  e.g. /list Packing List');
     }
     const allLists = getLists();
-    const match = allLists.find(l => l.name.toLowerCase().includes(nameQuery.toLowerCase()));
+    const match = allLists.find(l => (l.name || '').toLowerCase().includes(nameQuery.toLowerCase()));
     if (!match) {
       return ctx.reply(`❌ List matching "${nameQuery}" not found. Use /lists to see all lists or /addlist ${nameQuery} | <item> to create it.`);
     }
     const { text, keyboard } = buildListKeyboardAndText(match.id, false);
-    await ctx.replyWithMarkdown(text, keyboard);
+    await safeReplyMarkdown(ctx, text, keyboard);
   });
 
   bot.command('addlist', async (ctx) => {
@@ -942,7 +1109,7 @@ function initBot(io) {
       status: 'success'
     });
     const { text, keyboard } = buildListKeyboardAndText(targetList.id, false);
-    await ctx.replyWithMarkdown(`✅ Added *${itemContent}* to *${targetList.name}*!\n\n${text}`, keyboard);
+    await safeReplyMarkdown(ctx, `✅ Added *${escapeMd(itemContent)}* to *${escapeMd(targetList.name)}*!\n\n${text}`, keyboard);
   });
 
   bot.command('notes', async (ctx) => {
@@ -963,7 +1130,7 @@ function initBot(io) {
     let reply = `📝 *Recent Notes (${notes.length}):*\n\n`;
     const buttons = [];
     for (const n of notes) {
-      reply += `• *#${n.id}:* ${n.content}\n`;
+      reply += `• *#${n.id}:* ${escapeMd(n.content)}\n`;
       buttons.push([
         Markup.button.callback(`🗑️ Delete #${n.id}: ${n.content.slice(0, 22)}`, `note:del:${n.id}`)
       ]);
@@ -979,7 +1146,7 @@ function initBot(io) {
       action_taken: `Listed ${notes.length} notes`,
       status: 'success'
     });
-    await ctx.replyWithMarkdown(reply, Markup.inlineKeyboard(buttons));
+    await safeReplyMarkdown(ctx, reply, Markup.inlineKeyboard(buttons));
   });
 
   bot.command('editnote', async (ctx) => {
@@ -1005,7 +1172,7 @@ function initBot(io) {
       action_taken: `Edited note #${noteId}: "${newText}"`,
       status: 'success'
     });
-    await ctx.replyWithMarkdown(`✏️ *Note #${noteId} updated:*\n\n_${updated.content}_`);
+    await safeReplyMarkdown(ctx, `✏️ *Note #${noteId} updated:*\n\n_${escapeMd(updated.content)}_`);
   });
 
   bot.command('delnote', async (ctx) => {
@@ -1076,7 +1243,7 @@ function initBot(io) {
       action_taken: `Edited item #${itemId} to "${newText}"`,
       status: 'success'
     });
-    await ctx.replyWithMarkdown(`✏️ *Item #${itemId} updated:* ${updated.content}`);
+    await safeReplyMarkdown(ctx, `✏️ *Item #${itemId} updated:* ${escapeMd(updated.content)}`);
   });
 
   bot.command('delitem', async (ctx) => {
@@ -1125,7 +1292,7 @@ function initBot(io) {
     const modeArg = ctx.message.text.replace(/^\/mealmenu\s*/i, '').trim().toLowerCase();
     const mode = ['today', 'tomorrow', 'week'].includes(modeArg) ? modeArg : 'today';
     const { text, keyboard } = buildMealMenuMessage(mode);
-    await ctx.replyWithMarkdown(text, keyboard);
+    await safeReplyMarkdown(ctx, text, keyboard);
   });
 
   bot.command('dishes', async (ctx) => {
@@ -1134,18 +1301,18 @@ function initBot(io) {
     if (dishes.length === 0) {
       return ctx.reply(tagFilter ? `🍲 No dishes found with tag "${tagFilter}".` : '🍲 No dishes in catalog yet.');
     }
-    let reply = `🍲 *Dish Catalog${tagFilter ? ` (${tagFilter})` : ''} (${dishes.length}):*\n\n`;
+    let reply = `🍲 *Dish Catalog${tagFilter ? ` (${escapeMd(tagFilter)})` : ''} (${dishes.length}):*\n\n`;
     const buttons = [];
     for (const d of dishes.slice(0, 15)) {
-      const tags = (d.tags || []).length ? ` _[${d.tags.join(', ')}]_` : '';
-      reply += `• *#${d.id} ${d.name}*${tags}\n`;
+      const tags = (d.tags || []).length ? ` _[${escapeMd(d.tags.join(', '))}]_` : '';
+      reply += `• *#${d.id} ${escapeMd(d.name)}*${tags}\n`;
       buttons.push([
         Markup.button.callback(`📖 ${d.name}`, `dish:view:${d.id}`),
         Markup.button.callback(`🛒 Ingredients`, `dish:shop:${d.id}`)
       ]);
     }
     buttons.push([Markup.button.callback('🍽️ Back to Meal Menu', 'menu:meals:today')]);
-    await ctx.replyWithMarkdown(reply, Markup.inlineKeyboard(buttons));
+    await safeReplyMarkdown(ctx, reply, Markup.inlineKeyboard(buttons));
   });
 
   bot.command('setmeal', async (ctx) => {
@@ -1183,7 +1350,7 @@ function initBot(io) {
       status: 'success'
     });
     const { text, keyboard } = buildMealMenuMessage('week');
-    await ctx.replyWithMarkdown(`✅ Set *${day} — ${slot}* to *${dish.name}*!\n\n${text}`, keyboard);
+    await safeReplyMarkdown(ctx, `✅ Set *${escapeMd(day)} — ${escapeMd(slot)}* to *${escapeMd(dish.name)}*!\n\n${text}`, keyboard);
   });
 
   bot.command('addnote', async (ctx) => {
@@ -1203,7 +1370,7 @@ function initBot(io) {
       action_taken: `Saved note #${note.id}: "${note.content}"`,
       status: 'success'
     });
-    await ctx.replyWithMarkdown(`✅ *Note saved:*\n\n_${note.content}_`);
+    await safeReplyMarkdown(ctx, `✅ *Note saved:*\n\n_${escapeMd(note.content)}_`);
   });
 
   bot.command('addtask', async (ctx) => {
@@ -1244,7 +1411,7 @@ function initBot(io) {
       action_taken: `Created task #${item.id} "${title.trim()}" (reward: ${reward})`,
       status: 'success'
     });
-    await ctx.replyWithMarkdown(`✅ *Task added:*\n\n• #${item.id} ${title.trim()}${reward ? ` [+${reward} pts]` : ''}`);
+    await safeReplyMarkdown(ctx, `✅ *Task added:*\n\n• #${item.id} ${escapeMd(title.trim())}${reward ? ` [+${reward} pts]` : ''}`);
   });
 
   bot.command('addshopping', async (ctx) => {
@@ -1270,7 +1437,7 @@ function initBot(io) {
       action_taken: `Added shopping item #${item.id} "${text}"`,
       status: 'success'
     });
-    await ctx.replyWithMarkdown(`✅ *Added to shopping list:*\n\n• ${text}`);
+    await safeReplyMarkdown(ctx, `✅ *Added to shopping list:*\n\n• ${escapeMd(text)}`);
   });
 
   bot.command('timer', async (ctx) => {
@@ -1290,7 +1457,7 @@ function initBot(io) {
       action_taken: `Started timer for ${minutes} minutes`,
       status: 'success'
     });
-    await ctx.replyWithMarkdown(`⏳ *Kitchen timer set for ${minutes} minutes!*`);
+    await safeReplyMarkdown(ctx, `⏳ *Kitchen timer set for ${minutes} minutes!*`);
   });
 
   bot.command('photos', async (ctx) => {
@@ -1327,7 +1494,7 @@ function initBot(io) {
       action_taken: `Listed ${photos.length} photos`,
       status: 'success'
     });
-    await ctx.replyWithMarkdown(reply);
+    await safeReplyMarkdown(ctx, reply);
   });
 
   bot.command('school', async (ctx) => {
@@ -1358,7 +1525,7 @@ function initBot(io) {
 
       const parts = [`📚 *School Summary*\n\n${summary}`];
       if (notifications.length > 0) {
-        parts.push(`\n*Notifications:*\n${notifications.map((n) => `• ${n.title || n.name || 'Notice'}`).join('\n')}`);
+        parts.push(`\n*Notifications:*\n${notifications.map((n) => `• ${escapeMd(n.title || n.name || 'Notice')}`).join('\n')}`);
       }
 
       insertAuditLog({
@@ -1370,7 +1537,7 @@ function initBot(io) {
         action_taken: 'Retrieved Librus school summary and notifications',
         status: 'success'
       });
-      await ctx.replyWithMarkdown(parts.join('\n'));
+      await safeReplyMarkdown(ctx, parts.join('\n'));
     } catch (err) {
       console.error('[Telegram] School sync failed:', err.message);
       insertAuditLog({
@@ -1408,7 +1575,7 @@ function initBot(io) {
         if (!ev.all_day && ev.start_datetime.includes('T')) {
           timeStr = ev.start_datetime.split('T')[1].slice(0, 5);
         }
-        reply += `• *${timeStr}* — ${ev.title} _(#${ev.id})_\n`;
+        reply += `• *${timeStr}* — ${escapeMd(ev.title)} _(#${ev.id})_\n`;
       }
       reply += `\n`;
     }
@@ -1418,8 +1585,8 @@ function initBot(io) {
     } else {
       reply += `*Pending Tasks (${tasks.length}):*\n`;
       for (const t of tasks.slice(0, 5)) {
-        const who = t.assignee_name ? `(@${t.assignee_name}) ` : '';
-        reply += `• #${t.id}: ${t.content} ${who}\n`;
+        const who = t.assignee_name ? `(@${escapeMd(t.assignee_name)}) ` : '';
+        reply += `• #${t.id}: ${escapeMd(t.content)} ${who}\n`;
       }
       if (tasks.length > 5) reply += `_...and ${tasks.length - 5} more._\n`;
     }
@@ -1433,7 +1600,7 @@ function initBot(io) {
       action_taken: `Reported today overview: ${todayEvents.length} events, ${tasks.length} pending tasks`,
       status: 'success'
     });
-    await ctx.replyWithMarkdown(reply);
+    await safeReplyMarkdown(ctx, reply);
   });
 
   // Command: /event <YYYY-MM-DD> <HH:MM> <title>
@@ -1468,7 +1635,7 @@ function initBot(io) {
         action_taken: `Created calendar event #${ev.id} "${title}" on ${startIso}`,
         status: 'success'
       });
-      await ctx.replyWithMarkdown(`✅ *Calendar Event Added!*\n\n📅 *${title}*\n🕒 ${dateStr} at ${timeStr}`);
+      await safeReplyMarkdown(ctx, `✅ *Calendar Event Added!*\n\n📅 *${escapeMd(title)}*\n🕒 ${dateStr} at ${timeStr}`);
     } catch (err) {
       insertAuditLog({
         source: 'telegram_command',
@@ -1569,13 +1736,7 @@ function initBot(io) {
     const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
 
     try {
-      const safeEdit = async (text, keyboard) => {
-        try {
-          await ctx.editMessageText(text, { parse_mode: 'Markdown', ...(keyboard || {}) });
-        } catch (e) {
-          await ctx.replyWithMarkdown(text, keyboard);
-        }
-      };
+      const safeEdit = (text, keyboard) => safeEditMarkdown(ctx, text, keyboard);
 
       if (data === 'menu:home') {
         await ctx.answerCbQuery();
@@ -1622,7 +1783,7 @@ function initBot(io) {
         const buttons = [];
         for (const l of allLists) {
           const activeCount = (l.items || []).filter(i => i.checked !== 1).length;
-          reply += `• ${l.icon || '📋'} *${l.name}* (${activeCount} active)\n`;
+          reply += `• ${l.icon || '📋'} *${escapeMd(l.name)}* (${activeCount} active)\n`;
           buttons.push([Markup.button.callback(`${l.icon || '📋'} ${l.name} (${activeCount})`, `menu:list_id:${l.id}`)]);
         }
         buttons.push([Markup.button.callback('🏠 Main Menu', 'menu:home')]);
@@ -1675,7 +1836,7 @@ function initBot(io) {
           reply += `_No notes yet. Send /addnote <text> to add one._\n`;
         } else {
           for (const n of notes) {
-            reply += `• *#${n.id}:* ${n.content}\n`;
+            reply += `• *#${n.id}:* ${escapeMd(n.content)}\n`;
             buttons.push([Markup.button.callback(`🗑️ Delete #${n.id}: ${n.content.slice(0, 20)}`, `note:del:${n.id}`)]);
           }
         }
@@ -1693,7 +1854,7 @@ function initBot(io) {
         let reply = `📝 *Notes (${notes.length}):*\n\n`;
         const buttons = [];
         for (const n of notes) {
-          reply += `• *#${n.id}:* ${n.content}\n`;
+          reply += `• *#${n.id}:* ${escapeMd(n.content)}\n`;
           buttons.push([Markup.button.callback(`🗑️ Delete #${n.id}: ${n.content.slice(0, 20)}`, `note:del:${n.id}`)]);
         }
         buttons.push([Markup.button.callback('🏠 Main Menu', 'menu:home')]);
@@ -1807,6 +1968,29 @@ function initBot(io) {
         return;
       }
 
+      if (data === 'menu:rewards') {
+        await ctx.answerCbQuery();
+        const { text, keyboard } = buildRewardsMessage(senderProfile);
+        await safeEdit(text, keyboard);
+        return;
+      }
+
+      if (data.startsWith('reward:redeem:')) {
+        const parts = data.split(':');
+        const rewardId = Number(parts[2]);
+        const profileId = Number(parts[3]) || (senderProfile ? senderProfile.id : null);
+        const result = redeemReward(profileId, rewardId);
+        if (!result.ok) {
+          await ctx.answerCbQuery(`❌ ${result.error}`);
+          return;
+        }
+        io.emit('dashboard_update', getDashboardData());
+        await ctx.answerCbQuery(`🎉 Redeemed ${result.reward.title}! (-${result.reward.cost} ⭐)`);
+        const { text, keyboard } = buildRewardsMessage(result.profile);
+        await safeEdit(text, keyboard);
+        return;
+      }
+
       if (data === 'menu:status') {
         await ctx.answerCbQuery();
         const tasksList = getOrCreateDashboardList('tasks', 'Family Tasks', '✅');
@@ -1835,7 +2019,7 @@ function initBot(io) {
     try {
       await ctx.reply('📷 Saving photo to dashboard screensaver...');
       const photo = await saveTelegramPhoto(ctx, io);
-      const cap = photo.caption ? `\n_"${photo.caption}"_` : '';
+      const cap = photo.caption ? `\n_"${escapeMd(photo.caption)}"_` : '';
       insertAuditLog({
         source: 'telegram_photo',
         sender_id: senderId,
@@ -1845,7 +2029,7 @@ function initBot(io) {
         action_taken: `Saved photo #${photo.id} (${photo.filename}) to screensaver`,
         status: 'success'
       });
-      await ctx.replyWithMarkdown(`✅ Photo added to screensaver slideshow! 🖼️${cap}\n\nID: #${photo.id}`);
+      await safeReplyMarkdown(ctx, `✅ Photo added to screensaver slideshow! 🖼️${cap}\n\nID: #${photo.id}`);
     } catch (err) {
       insertAuditLog({
         source: 'telegram_photo',
@@ -1910,7 +2094,22 @@ function initBot(io) {
       });
 
       const replyMsg = buildConfirmationMessage(parsedData, senderProfile);
-      await ctx.replyWithMarkdown(replyMsg);
+      await safeReplyMarkdown(ctx, replyMsg);
+
+      if (!parsedData.tasks?.length && !parsedData.shopping_items?.length && !parsedData.calendar_events?.length && !parsedData.meal_actions?.length && !parsedData.notes?.length) {
+        const voiceIntent = detectListQueryIntent(parsedData.response_message);
+        if (voiceIntent) {
+          if (voiceIntent.type === 'shopping') {
+            const list = getOrCreateDashboardList('shopping', 'Shopping List', '🛒');
+            const { text, keyboard } = buildListKeyboardAndText(list.id, false);
+            await safeReplyMarkdown(ctx, text, keyboard);
+          } else if (voiceIntent.type === 'tasks') {
+            const list = getOrCreateDashboardList('tasks', 'Family Tasks', '✅');
+            const { text, keyboard } = buildListKeyboardAndText(list.id, false);
+            await safeReplyMarkdown(ctx, text, keyboard);
+          }
+        }
+      }
     } catch (err) {
       console.error('[Telegram] Failed to process voice message:', err);
       insertAuditLog({
@@ -1937,6 +2136,41 @@ function initBot(io) {
     const senderName = senderProfile ? senderProfile.name : (ctx.from.first_name || 'User');
     console.log(`[Telegram] Message from ${senderName} (${senderId}): "${userText}"`);
 
+    // Natural Language list query intent detection
+    const listIntent = detectListQueryIntent(userText);
+    if (listIntent) {
+      if (listIntent.type === 'shopping') {
+        const list = getOrCreateDashboardList('shopping', 'Shopping List', '🛒');
+        const { text, keyboard } = buildListKeyboardAndText(list.id, false);
+        return await safeReplyMarkdown(ctx, text, keyboard);
+      }
+      if (listIntent.type === 'tasks') {
+        const list = getOrCreateDashboardList('tasks', 'Family Tasks', '✅');
+        const { text, keyboard } = buildListKeyboardAndText(list.id, false);
+        return await safeReplyMarkdown(ctx, text, keyboard);
+      }
+      if (listIntent.type === 'all') {
+        const allLists = getLists();
+        let reply = `📋 *All Lists (${allLists.length}):*\n\n`;
+        const buttons = [];
+        for (const l of allLists) {
+          const activeCount = (l.items || []).filter(i => Number(i.checked) !== 1).length;
+          reply += `• ${l.icon || '📋'} *${escapeMd(l.name)}* (${activeCount} active)\n`;
+          buttons.push([Markup.button.callback(`${l.icon || '📋'} ${l.name} (${activeCount})`, `menu:list_id:${l.id}`)]);
+        }
+        buttons.push([Markup.button.callback('🏠 Main Menu', 'menu:home')]);
+        return await safeReplyMarkdown(ctx, reply, Markup.inlineKeyboard(buttons));
+      }
+      if (listIntent.type === 'named') {
+        const allLists = getLists();
+        const target = allLists.find(l => (l.name || '').toLowerCase().includes(listIntent.name.toLowerCase()));
+        if (target) {
+          const { text, keyboard } = buildListKeyboardAndText(target.id, false);
+          return await safeReplyMarkdown(ctx, text, keyboard);
+        }
+      }
+    }
+
     try {
       const parsedData = await parseTextWithGemini(userText, senderName);
       const { summary } = await applyParsedGeminiActions(parsedData, senderProfile, io);
@@ -1953,7 +2187,7 @@ function initBot(io) {
       });
 
       const replyMsg = buildConfirmationMessage(parsedData, senderProfile);
-      await ctx.replyWithMarkdown(replyMsg);
+      await safeReplyMarkdown(ctx, replyMsg);
     } catch (err) {
       console.error('[Telegram] Error processing message:', err);
       insertAuditLog({
@@ -1985,5 +2219,12 @@ module.exports = {
   applyParsedGeminiActions,
   getOrCreateDashboardList,
   resolveProfileIdFromName,
-  normalizeDateString
+  normalizeDateString,
+  buildRewardsMessage,
+  escapeMd,
+  safeReplyMarkdown,
+  safeEditMarkdown,
+  detectListQueryIntent,
+  buildListKeyboardAndText,
+  buildConfirmationMessage
 };

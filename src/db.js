@@ -1,6 +1,48 @@
 const path = require('path');
 const Database = require('better-sqlite3');
 const fs = require('fs');
+const crypto = require('crypto');
+
+const SECRET_PREFIX = 'enc:v1:';
+
+function getEncryptionKey() {
+  const rawSecret = process.env.CREDENTIALS_SECRET || process.env.DASHBOARD_TOKEN || 'smart-home-default-key';
+  return crypto.createHash('sha256').update(String(rawSecret)).digest();
+}
+
+function isEncryptedSecret(value) {
+  return typeof value === 'string' && value.startsWith(SECRET_PREFIX);
+}
+
+function encryptSecret(plaintext) {
+  if (plaintext === null || plaintext === undefined || plaintext === '') return null;
+  const str = String(plaintext);
+  if (isEncryptedSecret(str)) return str;
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', getEncryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(str, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return `${SECRET_PREFIX}${iv.toString('base64')}:${authTag.toString('base64')}:${encrypted.toString('base64')}`;
+}
+
+function decryptSecret(ciphertext) {
+  if (ciphertext === null || ciphertext === undefined || ciphertext === '') return null;
+  const str = String(ciphertext);
+  if (!isEncryptedSecret(str)) return str;
+  try {
+    const body = str.slice(SECRET_PREFIX.length);
+    const [ivB64, tagB64, dataB64] = body.split(':');
+    if (!ivB64 || !tagB64 || dataB64 === undefined) return str;
+    const iv = Buffer.from(ivB64, 'base64');
+    const authTag = Buffer.from(tagB64, 'base64');
+    const encrypted = Buffer.from(dataB64, 'base64');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', getEncryptionKey(), iv);
+    decipher.setAuthTag(authTag);
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+  } catch (err) {
+    return str;
+  }
+}
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../data/smart_home.db');
 const SAMPLE_DB_PATH = path.join(__dirname, '../data/samples/smart_home_sample.db');
@@ -256,10 +298,41 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS rewards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    cost INTEGER NOT NULL DEFAULT 50,
+    icon TEXT DEFAULT '🎁',
+    profile_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS reward_redemptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id INTEGER NOT NULL,
+    reward_id INTEGER,
+    reward_title TEXT NOT NULL,
+    reward_icon TEXT DEFAULT '🎁',
+    cost INTEGER NOT NULL DEFAULT 0,
+    points_spent INTEGER NOT NULL DEFAULT 0,
+    redeemed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+  );
+
   CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
 `);
 
 // Non-destructive column migrations for existing databases
+try {
+  const rewardCols = db.pragma('table_info(rewards)').map(c => c.name);
+  if (!rewardCols.includes('profile_id')) db.exec('ALTER TABLE rewards ADD COLUMN profile_id INTEGER');
+  const redCols = db.pragma('table_info(reward_redemptions)').map(c => c.name);
+  if (!redCols.includes('reward_icon')) db.exec("ALTER TABLE reward_redemptions ADD COLUMN reward_icon TEXT DEFAULT '🎁'");
+  if (!redCols.includes('points_spent')) db.exec('ALTER TABLE reward_redemptions ADD COLUMN points_spent INTEGER DEFAULT 0');
+} catch (e) {
+  console.warn('Migration rewards columns check:', e.message);
+}
+
 try {
   const profCols = db.pragma('table_info(profiles)').map(c => c.name);
   if (!profCols.includes('telegram_id')) {
@@ -279,6 +352,17 @@ try {
   }
   if (!profCols.includes('language')) {
     db.exec("ALTER TABLE profiles ADD COLUMN language TEXT DEFAULT 'en'");
+  }
+  if (!profCols.includes('points_balance')) {
+    db.exec('ALTER TABLE profiles ADD COLUMN points_balance INTEGER DEFAULT 0');
+  }
+  // Encrypt any legacy plaintext librus_password rows at rest
+  const rowsWithPass = db.prepare("SELECT id, librus_password FROM profiles WHERE librus_password IS NOT NULL AND librus_password != ''").all();
+  const updateEncPass = db.prepare('UPDATE profiles SET librus_password = ? WHERE id = ?');
+  for (const r of rowsWithPass) {
+    if (!isEncryptedSecret(r.librus_password)) {
+      updateEncPass.run(encryptSecret(r.librus_password), r.id);
+    }
   }
 } catch (e) {
   console.warn('Migration profiles columns check:', e.message);
@@ -302,6 +386,7 @@ try {
   if (!itemCols.includes('recurrence_days')) db.exec('ALTER TABLE list_items ADD COLUMN recurrence_days TEXT');
   if (!itemCols.includes('last_completed_at')) db.exec('ALTER TABLE list_items ADD COLUMN last_completed_at TEXT');
   if (!itemCols.includes('completed_by')) db.exec('ALTER TABLE list_items ADD COLUMN completed_by TEXT');
+  if (!itemCols.includes('category')) db.exec('ALTER TABLE list_items ADD COLUMN category TEXT');
 } catch (e) {
   console.warn('Migration list_items columns check:', e.message);
 }
@@ -318,6 +403,20 @@ try {
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_page_configs_profile_page ON page_configs(profile_key, page)');
 } catch (e) {
   console.warn('Migration page_configs unique index check:', e.message);
+}
+
+// Seed default rewards if empty
+try {
+  const existingRewards = db.prepare('SELECT COUNT(*) as count FROM rewards').get();
+  if (existingRewards.count === 0) {
+    const insertRewardStmt = db.prepare('INSERT INTO rewards (title, cost, icon) VALUES (?, ?, ?)');
+    insertRewardStmt.run('30m Extra Screen Time', 50, '🎮');
+    insertRewardStmt.run('Ice Cream Treat', 40, '🍦');
+    insertRewardStmt.run('Pick Friday Dinner', 100, '🍕');
+    insertRewardStmt.run('Movie Night Choice', 150, '🎬');
+  }
+} catch (e) {
+  console.warn('Seed rewards check:', e.message);
 }
 
 // Seed default settings if empty
@@ -543,21 +642,34 @@ function deleteTask(id) {
 /* ==========================================================================
    Profiles Methods
    ========================================================================== */
+function normalizeProfileRow(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    points_balance: Number(row.points_balance) || 0,
+    librus_password: row.librus_password ? decryptSecret(row.librus_password) : null
+  };
+}
+
+function getRawProfileById(id) {
+  return db.prepare('SELECT * FROM profiles WHERE id = ?').get(id);
+}
+
 function getProfiles() {
-  return db.prepare('SELECT * FROM profiles ORDER BY name ASC').all();
+  return db.prepare('SELECT * FROM profiles ORDER BY name ASC').all().map(normalizeProfileRow);
 }
 
 function getProfileById(id) {
-  return db.prepare('SELECT * FROM profiles WHERE id = ?').get(id);
+  return normalizeProfileRow(db.prepare('SELECT * FROM profiles WHERE id = ?').get(id));
 }
 
 function getProfileByTelegramId(telegramId) {
   if (!telegramId) return null;
-  return db.prepare('SELECT * FROM profiles WHERE telegram_id = ?').get(String(telegramId).trim());
+  return normalizeProfileRow(db.prepare('SELECT * FROM profiles WHERE telegram_id = ?').get(String(telegramId).trim()));
 }
 
-function insertProfile({ name, color = '#38bdf8', avatar_type = 'builtin', avatar_value = '🙂', telegram_id = null, theme = 'dark', font_size = 'normal', language = 'en', librus_login = null, librus_password = null }) {
-  const stmt = db.prepare('INSERT INTO profiles (name, color, avatar_type, avatar_value, telegram_id, theme, font_size, language, librus_login, librus_password) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+function insertProfile({ name, color = '#38bdf8', avatar_type = 'builtin', avatar_value = '🙂', telegram_id = null, theme = 'dark', font_size = 'normal', language = 'en', librus_login = null, librus_password = null, points_balance = 0 }) {
+  const stmt = db.prepare('INSERT INTO profiles (name, color, avatar_type, avatar_value, telegram_id, theme, font_size, language, librus_login, librus_password, points_balance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
   const info = stmt.run(
     name.trim(),
     color,
@@ -568,17 +680,19 @@ function insertProfile({ name, color = '#38bdf8', avatar_type = 'builtin', avata
     font_size || 'normal',
     language || 'en',
     librus_login ? String(librus_login).trim() : null,
-    librus_password ? String(librus_password) : null
+    librus_password ? encryptSecret(String(librus_password)) : null,
+    Number(points_balance) || 0
   );
   return getProfileById(info.lastInsertRowid);
 }
 
-function updateProfile(id, { name, color, avatar_type, avatar_value, telegram_id, theme, font_size, language, librus_login, librus_password }) {
+function updateProfile(id, { name, color, avatar_type, avatar_value, telegram_id, theme, font_size, language, librus_login, librus_password, points_balance }) {
   const current = getProfileById(id);
   if (!current) return null;
+  const nextPlainPass = librus_password !== undefined ? (librus_password ? String(librus_password) : null) : current.librus_password;
   const stmt = db.prepare(`
     UPDATE profiles 
-    SET name = ?, color = ?, avatar_type = ?, avatar_value = ?, telegram_id = ?, theme = ?, font_size = ?, language = ?, librus_login = ?, librus_password = ?
+    SET name = ?, color = ?, avatar_type = ?, avatar_value = ?, telegram_id = ?, theme = ?, font_size = ?, language = ?, librus_login = ?, librus_password = ?, points_balance = ?
     WHERE id = ?
   `);
   stmt.run(
@@ -591,10 +705,20 @@ function updateProfile(id, { name, color, avatar_type, avatar_value, telegram_id
     font_size !== undefined ? font_size : (current.font_size || 'normal'),
     language !== undefined ? (language || 'en') : (current.language || 'en'),
     librus_login !== undefined ? (librus_login ? String(librus_login).trim() : null) : current.librus_login,
-    librus_password !== undefined ? (librus_password ? String(librus_password) : null) : current.librus_password,
+    nextPlainPass ? encryptSecret(nextPlainPass) : null,
+    points_balance !== undefined ? Math.max(0, Number(points_balance) || 0) : (Number(current.points_balance) || 0),
     id
   );
   return getProfileById(id);
+}
+
+function addProfilePoints(profileId, delta) {
+  if (!profileId || !Number(delta)) return null;
+  const current = getProfileById(profileId);
+  if (!current) return null;
+  const nextPoints = Math.max(0, (Number(current.points_balance) || 0) + Math.round(Number(delta)));
+  db.prepare('UPDATE profiles SET points_balance = ? WHERE id = ?').run(nextPoints, Number(profileId));
+  return getProfileById(profileId);
 }
 
 function deleteProfile(id) {
@@ -885,6 +1009,61 @@ function calculateNextDueDate(currentDueDateStr, recurrence, interval = 1, daysO
   return `${y}-${m}-${d}`;
 }
 
+function inferShoppingCategory(rawText) {
+  const s = String(rawText || '').toLowerCase();
+  if (!s) return 'Other';
+  if (/milk|egg|cheese|parmesan|mozzarella|yogurt|butter|cream|cottage|sour cream|kefir/.test(s)) return 'Dairy';
+  if (/apple|banana|berry|berries|blueberry|strawberry|lemon|lime|orange|lettuce|romaine|spinach|broccoli|carrot|onion|garlic|tomato|potato|cucumber|pepper|avocado|herb|basil|parsley|dill|fruit|veg|salad|mushroom|zucchini/.test(s)) return 'Produce';
+  if (/bread|sourdough|bun|roll|crouton|bagel|tortilla|pita|pastry|croissant|muffin/.test(s)) return 'Bakery';
+  if (/chicken|beef|pork|salmon|fish|turkey|bacon|sausage|meat|steak|ham|shrimp|tuna|minced/.test(s)) return 'Meat';
+  if (/soap|detergent|paper|towel|trash|bag|sponge|battery|batteries|cleaner|toothpaste|shampoo|tissue|foil|wrap/.test(s)) return 'Household';
+  if (/flour|sugar|salt|oil|olive|pasta|spaghetti|lasagna|rice|oat|cereal|syrup|maple|sauce|dressing|bean|soup|spice|coffee|tea|honey|nut|peanut|jam|vinegar|ketchup|mustard|mayo|chocolate|snack/.test(s)) return 'Pantry';
+  return 'Other';
+}
+
+function parseIngredientQuantity(rawText) {
+  const clean = String(rawText || '').trim().replace(/\s+/g, ' ');
+  if (!clean) return { quantity: null, unit: '', name: '', normKey: '', formatted: '' };
+
+  const unitPattern = '(?:kg|g|mg|ml|l|oz|lb|lbs|tbsp|tsp|cup|cups|pcs|pc|pack|packs|can|cans|bottle|bottles|slice|slices|clove|cloves)?';
+  // Pattern 1: Leading quantity, e.g. "2 Eggs", "200g Flour", "3 tbsp Flour"
+  const leadMatch = clean.match(new RegExp(`^(\\d+(?:\\.\\d+)?)\\s*(${unitPattern})\\s+(.+)$`, 'i'));
+  if (leadMatch) {
+    const qty = parseFloat(leadMatch[1]);
+    const unit = (leadMatch[2] || '').toLowerCase();
+    const name = leadMatch[3].trim();
+    const normKey = name.toLowerCase().replace(/s$/, '');
+    return { quantity: qty, unit, name, normKey, style: 'leading' };
+  }
+
+  // Pattern 2: Trailing quantity, e.g. "Cottage cheese 400g", "Eggs 2"
+  const trailMatch = clean.match(new RegExp(`^(.+?)\\s+(\\d+(?:\\.\\d+)?)\\s*(${unitPattern})$`, 'i'));
+  if (trailMatch) {
+    const name = trailMatch[1].trim();
+    const qty = parseFloat(trailMatch[2]);
+    const unit = (trailMatch[3] || '').toLowerCase();
+    const normKey = name.toLowerCase().replace(/s$/, '');
+    return { quantity: qty, unit, name, normKey, style: 'trailing' };
+  }
+
+  return {
+    quantity: null,
+    unit: '',
+    name: clean,
+    normKey: clean.toLowerCase().replace(/s$/, ''),
+    style: 'none'
+  };
+}
+
+function formatIngredientWithQuantity(qty, unit, name, style = 'leading') {
+  const rounded = Math.round(qty * 100) / 100;
+  const unitStr = unit ? (['g', 'kg', 'mg', 'ml', 'l', 'oz', 'lb'].includes(unit) ? unit : ` ${unit}`) : '';
+  if (style === 'trailing') {
+    return `${name} ${rounded}${unitStr}`.trim();
+  }
+  return `${rounded}${unitStr} ${name}`.trim();
+}
+
 function insertListItem({ 
   list_id, 
   content, 
@@ -895,30 +1074,54 @@ function insertListItem({
   due_time = null,
   recurrence = 'none',
   recurrence_interval = 1,
-  recurrence_days = null
+  recurrence_days = null,
+  category = null
 }) {
   const cleanContent = String(content || '').trim();
   const listRow = db.prepare('SELECT id, type FROM lists WHERE id = ?').get(Number(list_id));
+  const resolvedCategory = category || (listRow && listRow.type === 'shopping' ? inferShoppingCategory(cleanContent) : null);
+
   if (listRow && listRow.type === 'shopping' && cleanContent) {
-    const existing = db.prepare(`
+    // 1. Check exact match first (preserves deduplication & reactivation behavior)
+    const existingExact = db.prepare(`
       SELECT * FROM list_items
       WHERE list_id = ? AND LOWER(TRIM(content)) = LOWER(?)
       ORDER BY checked ASC, id DESC
       LIMIT 1
     `).get(Number(list_id), cleanContent);
-    if (existing) {
-      if (existing.checked === 1) {
-        db.prepare('UPDATE list_items SET checked = 0, created_at = CURRENT_TIMESTAMP WHERE id = ?').run(existing.id);
+
+    if (existingExact) {
+      if (existingExact.checked === 1) {
+        db.prepare('UPDATE list_items SET checked = 0, category = COALESCE(category, ?), created_at = CURRENT_TIMESTAMP WHERE id = ?')
+          .run(resolvedCategory, existingExact.id);
+      } else if (!existingExact.category && resolvedCategory) {
+        db.prepare('UPDATE list_items SET category = ? WHERE id = ?').run(resolvedCategory, existingExact.id);
       }
-      return db.prepare('SELECT * FROM list_items WHERE id = ?').get(existing.id);
+      return db.prepare('SELECT * FROM list_items WHERE id = ?').get(existingExact.id);
+    }
+
+    // 2. Smart quantity merging for quantified ingredients (e.g., "2 Eggs" + "3 Eggs" -> "5 Eggs")
+    const incomingParsed = parseIngredientQuantity(cleanContent);
+    if (incomingParsed.quantity !== null && incomingParsed.normKey) {
+      const uncheckedItems = db.prepare('SELECT * FROM list_items WHERE list_id = ? AND checked = 0').all(Number(list_id));
+      for (const candidate of uncheckedItems) {
+        const candParsed = parseIngredientQuantity(candidate.content);
+        if (candParsed.normKey === incomingParsed.normKey && candParsed.unit === incomingParsed.unit && candParsed.quantity !== null) {
+          const mergedQty = candParsed.quantity + incomingParsed.quantity;
+          const mergedText = formatIngredientWithQuantity(mergedQty, incomingParsed.unit, candParsed.name || incomingParsed.name, candParsed.style);
+          db.prepare('UPDATE list_items SET content = ?, category = COALESCE(category, ?) WHERE id = ?')
+            .run(mergedText, resolvedCategory, candidate.id);
+          return { ...db.prepare('SELECT * FROM list_items WHERE id = ?').get(candidate.id), merged: true };
+        }
+      }
     }
   }
 
   const stmt = db.prepare(`
     INSERT INTO list_items (
       list_id, content, assignee_profile_id, reward, position,
-      due_date, due_time, recurrence, recurrence_interval, recurrence_days
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      due_date, due_time, recurrence, recurrence_interval, recurrence_days, category
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const recDaysStr = recurrence_days ? (typeof recurrence_days === 'string' ? recurrence_days : JSON.stringify(recurrence_days)) : null;
   const info = stmt.run(
@@ -931,9 +1134,30 @@ function insertListItem({
     due_time || null,
     recurrence || 'none',
     Number(recurrence_interval) || 1,
-    recDaysStr
+    recDaysStr,
+    resolvedCategory
   );
   return db.prepare('SELECT * FROM list_items WHERE id = ?').get(info.lastInsertRowid);
+}
+
+function addIngredientsToShoppingList(rawIngredients = [], assigneeProfileId = null) {
+  let shoppingList = getLists().find(l => l.type === 'shopping');
+  if (!shoppingList) {
+    shoppingList = insertList({ name: 'Shopping List', type: 'shopping', color: '#34d399', icon: '🛒' });
+  }
+  const results = [];
+  for (const raw of rawIngredients) {
+    const content = String(raw || '').trim();
+    if (!content) continue;
+    const item = insertListItem({
+      list_id: shoppingList.id,
+      content,
+      assignee_profile_id: assigneeProfileId || null,
+      reward: 0
+    });
+    results.push(item);
+  }
+  return results;
 }
 
 function toggleListItemChecked(id, checked, completedBy = null) {
@@ -946,6 +1170,13 @@ function toggleListItemChecked(id, checked, completedBy = null) {
   if (!item) return null;
 
   const actor = completedBy || item.assignee_name || null;
+  const rewardPoints = Number(item.reward) || 0;
+
+  let targetProfileId = item.assignee_profile_id ? Number(item.assignee_profile_id) : null;
+  if (!targetProfileId && actor) {
+    const matchedProf = db.prepare('SELECT id FROM profiles WHERE LOWER(name) = LOWER(?) LIMIT 1').get(String(actor).trim());
+    if (matchedProf) targetProfileId = matchedProf.id;
+  }
 
   if (checked && item.recurrence && item.recurrence !== 'none') {
     const nextDate = calculateNextDueDate(item.due_date, item.recurrence, item.recurrence_interval, item.recurrence_days);
@@ -955,22 +1186,35 @@ function toggleListItemChecked(id, checked, completedBy = null) {
       SET checked = 0, due_date = ?, last_completed_at = ?, completed_by = ?
       WHERE id = ?
     `).run(nextDate, nowIso, actor, id);
+    if (rewardPoints > 0 && targetProfileId) {
+      addProfilePoints(targetProfileId, rewardPoints);
+    }
   } else {
     const nowIso = checked ? new Date().toISOString() : null;
     if (checked) {
       db.prepare('UPDATE list_items SET checked = 1, last_completed_at = ?, completed_by = COALESCE(?, completed_by) WHERE id = ?')
         .run(nowIso, actor, id);
+      if (item.checked !== 1 && rewardPoints > 0 && targetProfileId) {
+        addProfilePoints(targetProfileId, rewardPoints);
+      }
     } else {
       db.prepare('UPDATE list_items SET checked = 0 WHERE id = ?').run(id);
+      if (item.checked === 1 && rewardPoints > 0 && targetProfileId) {
+        addProfilePoints(targetProfileId, -rewardPoints);
+      }
     }
   }
 
-  return db.prepare(`
+  const updated = db.prepare(`
     SELECT i.*, p.name as assignee_name, p.color as assignee_color, p.avatar_type as assignee_avatar_type, p.avatar_value as assignee_avatar_value
     FROM list_items i
     LEFT JOIN profiles p ON i.assignee_profile_id = p.id
     WHERE i.id = ?
   `).get(id);
+  if (updated) {
+    updated.completed_at = updated.last_completed_at || null;
+  }
+  return updated;
 }
 
 function updateListItem(id, { 
@@ -983,7 +1227,8 @@ function updateListItem(id, {
   recurrence,
   recurrence_interval,
   recurrence_days,
-  completed_by
+  completed_by,
+  category
 }) {
   const current = db.prepare('SELECT * FROM list_items WHERE id = ?').get(id);
   if (!current) return null;
@@ -992,12 +1237,13 @@ function updateListItem(id, {
     ? new Date().toISOString()
     : current.last_completed_at;
   const completedByVal = completed_by !== undefined ? completed_by : current.completed_by;
+  const nextCategory = category !== undefined ? category : current.category;
 
   const stmt = db.prepare(`
     UPDATE list_items 
     SET content = ?, checked = ?, assignee_profile_id = ?, reward = ?,
         due_date = ?, due_time = ?, recurrence = ?, recurrence_interval = ?, recurrence_days = ?,
-        last_completed_at = ?, completed_by = ?
+        last_completed_at = ?, completed_by = ?, category = ?
     WHERE id = ?
   `);
   const recDaysStr = recurrence_days !== undefined
@@ -1015,6 +1261,7 @@ function updateListItem(id, {
     recDaysStr,
     lastCompletedAt,
     completedByVal,
+    nextCategory,
     id
   );
   return db.prepare(`
@@ -1167,6 +1414,7 @@ function getSettings() {
     librus_sync_time: '06:00',
     librus_sync_weekday: 1,
     meal_default_slots: '["Breakfast","Lunch","Dinner","Snack"]',
+    kiosk_pin: '',
     gemini_model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
     gemini_system_prompt: `You are the smart assistant for a family smart home tablet dashboard. Today is ${new Date().toISOString().slice(0, 10)}.\nAnalyze the user's natural language input and return ONLY raw JSON matching this schema:\n{\n  "notes": ["string of note content"],\n  "tasks": [\n    {\n      "title": "string",\n      "assignee": "string or null",\n      "reward": 0,\n      "due_date": "YYYY-MM-DD or null",\n      "due_time": "HH:MM or null",\n      "recurrence": "none|daily|weekly|weekdays|weekends|interval",\n      "recurrence_interval": 1,\n      "action": "add"\n    }\n  ],\n  "shopping_items": [\n    {\n      "content": "string (e.g. milk, eggs)",\n      "action": "add"\n    }\n  ],\n  "calendar_events": [\n    {\n      "title": "string",\n      "date": "YYYY-MM-DD",\n      "time": "HH:MM or null",\n      "all_day": false\n    }\n  ],\n  "timer": {\n    "action": "start",\n    "minutes": 5\n  },\n  "response_message": "Friendly 1-line confirmation of what was created or done"\n}\n\nRules:\n1. Shopping items: If the user mentions groceries, shopping, buy X, need X, put them in shopping_items.\n2. Calendar events: If user mentions an appointment, meeting, practice, schedule, event with a date or time, put them in calendar_events with accurate ISO date (e.g. tomorrow = calculate relative to today).\n3. Timer: If user says "set timer for 10 minutes", populate timer object (minutes as number).\n4. Tasks: Chores, to-dos, things to do. If reward is mentioned (e.g. "for 15 points"), set reward number. If the user mentions a date or time, fill due_date and due_time. If they say recurring, use recurrence and recurrence_interval.\n5. Notes: Generic info, reminders, thoughts.\n6. Only return non-empty arrays/objects when detected. If a field is not present, use empty array [] or null for timer. If the request is not clearly actionable, return notes with the user text as a reminder.`,
     gemini_text_prompt: 'Extract actionable family dashboard items from the message and return only the structured JSON schema described above.',
@@ -1533,7 +1781,7 @@ function deleteDish(id) {
 
 function getDefaultMealSlots() {
   const settings = getSettings();
-  const slots = parseJsonArray(settings.meal_default_slots, ['Breakfast', 'Lunch', 'Dinner', 'Snack']);
+  const slots = parseJsonArray(settings.meal_slots || settings.meal_default_slots, ['Breakfast', 'Lunch', 'Dinner', 'Snack']);
   return slots.length > 0 ? slots : ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
 }
 
@@ -1551,12 +1799,14 @@ function normalizeMealMenuRow(row) {
       schedule = {};
     }
   }
+  const normalizedSchedule = schedule && typeof schedule === 'object' ? schedule : {};
   return {
     ...row,
     is_template: Boolean(row.is_template),
     is_active: Boolean(row.is_active),
     meal_slots: mealSlots.length > 0 ? mealSlots : defaultSlots,
-    schedule: schedule && typeof schedule === 'object' ? schedule : {}
+    schedule: normalizedSchedule,
+    plan: normalizedSchedule
   };
 }
 
@@ -1581,10 +1831,11 @@ function getActiveMealMenu(weekStart = null) {
   return normalizeMealMenuRow(fallback);
 }
 
-function insertMealMenu({ name, is_template = 0, week_start = null, is_active = 0, meal_slots = null, schedule = {} }) {
+function insertMealMenu({ name, is_template = 0, week_start = null, is_active = 0, meal_slots = null, schedule = undefined, plan = undefined }) {
   const cleanName = String(name || 'Weekly Menu').trim() || 'Weekly Menu';
   const slots = parseJsonArray(meal_slots, getDefaultMealSlots());
-  const schedObj = (typeof schedule === 'string') ? JSON.parse(schedule || '{}') : (schedule || {});
+  const rawSched = schedule !== undefined ? schedule : (plan !== undefined ? plan : {});
+  const schedObj = (typeof rawSched === 'string') ? JSON.parse(rawSched || '{}') : (rawSched || {});
 
   if (is_active && !is_template) {
     db.prepare('UPDATE meal_menus SET is_active = 0 WHERE is_template = 0').run();
@@ -1604,7 +1855,7 @@ function insertMealMenu({ name, is_template = 0, week_start = null, is_active = 
   return getMealMenuById(info.lastInsertRowid);
 }
 
-function updateMealMenu(id, { name, is_template, week_start, is_active, meal_slots, schedule }) {
+function updateMealMenu(id, { name, is_template, week_start, is_active, meal_slots, schedule, plan }) {
   const current = getMealMenuById(id);
   if (!current) return null;
 
@@ -1618,8 +1869,9 @@ function updateMealMenu(id, { name, is_template, week_start, is_active, meal_slo
   const nextName = name !== undefined ? (String(name).trim() || current.name) : current.name;
   const nextWeekStart = week_start !== undefined ? (week_start ? String(week_start) : null) : current.week_start;
   const nextSlots = meal_slots !== undefined ? parseJsonArray(meal_slots, current.meal_slots) : current.meal_slots;
-  const nextSchedule = schedule !== undefined
-    ? (typeof schedule === 'string' ? JSON.parse(schedule || '{}') : (schedule || {}))
+  const rawNextSched = schedule !== undefined ? schedule : plan;
+  const nextSchedule = rawNextSched !== undefined
+    ? (typeof rawNextSched === 'string' ? JSON.parse(rawNextSched || '{}') : (rawNextSched || {}))
     : current.schedule;
 
   db.prepare(`
@@ -1666,7 +1918,26 @@ function applyMealMenuTemplate(templateId, { week_start = null, name = null, set
   });
 }
 
-function setMealSlotEntry({ menu_id = null, week_start = null, day, slot, entries }) {
+function setMealSlotEntry(arg1, dayArg, slotArg, entriesArg) {
+  let menu_id = null;
+  let week_start = null;
+  let day;
+  let slot;
+  let entries;
+
+  if (arg1 && typeof arg1 === 'object' && ('day' in arg1 || 'slot' in arg1 || 'entries' in arg1)) {
+    menu_id = arg1.menu_id ?? null;
+    week_start = arg1.week_start ?? null;
+    day = arg1.day;
+    slot = arg1.slot;
+    entries = arg1.entries;
+  } else {
+    menu_id = arg1 ?? null;
+    day = dayArg;
+    slot = slotArg;
+    entries = entriesArg;
+  }
+
   let menu = menu_id ? getMealMenuById(menu_id) : getActiveMealMenu(week_start);
   if (!menu) {
     menu = insertMealMenu({
@@ -1787,11 +2058,115 @@ function savePageConfig({ profile_key = 'family', page = 0, theme = 'inherit', f
 }
 
 /* ==========================================================================
+   Rewards & Redemptions (Kids Chore Reward Store) Methods
+   ========================================================================== */
+function getRewards() {
+  return db.prepare('SELECT * FROM rewards ORDER BY cost ASC, id ASC').all();
+}
+
+function getRewardById(id) {
+  return db.prepare('SELECT * FROM rewards WHERE id = ?').get(Number(id));
+}
+
+function insertReward({ title, cost = 10, icon = '🎁', profile_id = null }) {
+  const cleanTitle = String(title || '').trim();
+  if (!cleanTitle) throw new Error('Reward title is required');
+  const numCost = Math.max(1, Math.round(Number(cost) || 10));
+  const info = db.prepare(`
+    INSERT INTO rewards (title, cost, icon, profile_id)
+    VALUES (?, ?, ?, ?)
+  `).run(cleanTitle, numCost, String(icon || '🎁').trim() || '🎁', profile_id ? Number(profile_id) : null);
+  return getRewardById(info.lastInsertRowid);
+}
+
+function updateReward(id, { title, cost, icon, profile_id }) {
+  const current = getRewardById(id);
+  if (!current) return null;
+  db.prepare(`
+    UPDATE rewards
+    SET title = ?, cost = ?, icon = ?, profile_id = ?
+    WHERE id = ?
+  `).run(
+    title !== undefined ? (String(title).trim() || current.title) : current.title,
+    cost !== undefined ? Math.max(1, Math.round(Number(cost) || current.cost)) : current.cost,
+    icon !== undefined ? (String(icon).trim() || current.icon) : current.icon,
+    profile_id !== undefined ? (profile_id ? Number(profile_id) : null) : current.profile_id,
+    Number(id)
+  );
+  return getRewardById(id);
+}
+
+function deleteReward(id) {
+  return db.prepare('DELETE FROM rewards WHERE id = ?').run(Number(id));
+}
+
+function getRewardRedemptions(limit = 30) {
+  return db.prepare(`
+    SELECT r.*, COALESCE(r.points_spent, r.cost) AS points_spent, p.name AS profile_name, p.color AS profile_color, p.avatar_value AS profile_avatar
+    FROM reward_redemptions r
+    LEFT JOIN profiles p ON r.profile_id = p.id
+    ORDER BY r.redeemed_at DESC, r.id DESC
+    LIMIT ?
+  `).all(Math.max(1, Number(limit) || 30));
+}
+
+function redeemReward(profileId, rewardId) {
+  const profile = getProfileById(profileId);
+  if (!profile) {
+    return { ok: false, error: 'Profile not found' };
+  }
+  const reward = getRewardById(rewardId);
+  if (!reward) {
+    return { ok: false, error: 'Reward not found' };
+  }
+  const cost = Math.max(1, Number(reward.cost) || 1);
+  const currentPoints = Number(profile.points_balance) || 0;
+  if (currentPoints < cost) {
+    return {
+      ok: false,
+      error: `Not enough points (${currentPoints}/${cost} ⭐)`
+    };
+  }
+
+  const nextPoints = currentPoints - cost;
+  const tx = db.transaction(() => {
+    db.prepare('UPDATE profiles SET points_balance = ? WHERE id = ?').run(nextPoints, Number(profile.id));
+    const info = db.prepare(`
+      INSERT INTO reward_redemptions (profile_id, reward_id, reward_title, reward_icon, cost, points_spent)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(Number(profile.id), Number(reward.id), reward.title, reward.icon || '🎁', cost, cost);
+    return info.lastInsertRowid;
+  });
+
+  const redemptionId = tx();
+  const redemption = db.prepare(`
+    SELECT r.*, COALESCE(r.points_spent, r.cost) AS points_spent, p.name AS profile_name, p.color AS profile_color
+    FROM reward_redemptions r
+    LEFT JOIN profiles p ON r.profile_id = p.id
+    WHERE r.id = ?
+  `).get(redemptionId);
+  if (redemption) {
+    redemption.remaining_points = nextPoints;
+  }
+
+  return {
+    ok: true,
+    profile: getProfileById(profile.id),
+    reward,
+    redemption
+  };
+}
+
+/* ==========================================================================
    Unified Dashboard State
    ========================================================================== */
 function getDashboardData({ includePrivateSettings = false } = {}) {
   const settings = getSettings();
-  if (!includePrivateSettings) delete settings.weekly_backup_chat_id;
+  settings.has_kiosk_pin = Boolean(settings.kiosk_pin && String(settings.kiosk_pin).trim());
+  if (!includePrivateSettings) {
+    delete settings.weekly_backup_chat_id;
+    delete settings.kiosk_pin;
+  }
   const profiles = getProfiles();
   if (!includePrivateSettings) {
     profiles.forEach(profile => {
@@ -1814,6 +2189,8 @@ function getDashboardData({ includePrivateSettings = false } = {}) {
     feeds: getCalendarFeeds(),
     dishes: getDishes(),
     meal_menus: getMealMenus(),
+    rewards: getRewards(),
+    reward_redemptions: getRewardRedemptions(30),
     settings,
     librus: getLibrusData(),
     librus_by_profile: getAllLibrusProfileData()
@@ -1914,6 +2291,9 @@ function pruneData({ auditDays = 90, notesDays = 365, completedTaskDays = 180 } 
 
 module.exports = {
   db,
+  encryptSecret,
+  decryptSecret,
+  isEncryptedSecret,
   insertNote,
   getNoteById,
   updateNote,
@@ -1926,9 +2306,11 @@ module.exports = {
   getTasks,
   getProfiles,
   getProfileById,
+  getRawProfileById,
   getProfileByTelegramId,
   insertProfile,
   updateProfile,
+  addProfilePoints,
   deleteProfile,
   getSchedules,
   getScheduleById,
@@ -1942,7 +2324,11 @@ module.exports = {
   insertList,
   updateList,
   deleteList,
+  inferShoppingCategory,
+  parseIngredientQuantity,
+  formatIngredientWithQuantity,
   insertListItem,
+  addIngredientsToShoppingList,
   toggleListItemChecked,
   updateListItem,
   deleteListItem,
@@ -1989,6 +2375,13 @@ module.exports = {
   deleteMealMenu,
   applyMealMenuTemplate,
   setMealSlotEntry,
+  getRewards,
+  getRewardById,
+  insertReward,
+  updateReward,
+  deleteReward,
+  getRewardRedemptions,
+  redeemReward,
   saveLibrusData,
   getLibrusData,
   getAllLibrusProfileData,

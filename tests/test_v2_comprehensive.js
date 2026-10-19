@@ -67,7 +67,8 @@ async function runTests() {
   assert(publicHtml.includes('html.theme-white .screensaver-overlay') && publicHtml.includes('background-color: #000000 !important'), 'screensaver overlay enforces dark background in white theme');
   assert(publicHtml.includes('displayedScreensaverPhoto,'), 'displayedScreensaverPhoto is exported from setup()');
   assert(publicHtml.includes('if (isNightModeActive.value)'), 'activeTheme switches to dark when Night Mode is active');
-  pass('Public Kiosk HTML includes screensaver & night mode fixes');
+  assert(publicHtml.includes('slotName: String(slotName || \'Meal\')') && publicHtml.includes('dishes: slotDishes'), 'getDisplayedMealDays returns non-null { slotName, dishes } objects');
+  pass('Public Kiosk HTML includes screensaver, night mode, and meal_menu slotName fixes');
 
   // --- 2. Timetable Sunday / Next-Week Resolution ---
   console.log('\n--- 2. Timetable Sunday / Next-Week Resolution ---');

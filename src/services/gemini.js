@@ -172,8 +172,12 @@ function buildSystemPrompt(mode = 'text', senderName = null) {
   try {
     const lists = typeof getLists === 'function' ? getLists() : [];
     if (lists && lists.length > 0) {
-      const listNames = lists.map(l => `- ${l.name} (type: ${l.type})`).join('\n');
-      prompt += `\n\nExisting dashboard lists (Shopping, Tasks, and Custom Lists):\n${listNames}\n(Select from these existing lists when applicable by setting list_name. You can also target any custom list or create a new custom list if requested.)`;
+      const listDescriptions = lists.map(l => {
+        const active = (l.items || []).filter(i => i.checked !== 1);
+        const preview = active.slice(0, 10).map(i => i.content).join(', ');
+        return `- ${l.name} (type: ${l.type}, ${active.length} active items${preview ? `: ${preview}` : ''})`;
+      }).join('\n');
+      prompt += `\n\nExisting dashboard lists (Shopping, Tasks, and Custom Lists):\n${listDescriptions}\n(Select from these existing lists when applicable by setting list_name. You can also target any custom list or create a new custom list if requested.)`;
     }
   } catch (e) {}
 

@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const SUBSCRIPTION_TYPES = new Set(['morning_summary', 'librus_messages', 'librus_grades']);
+const SUBSCRIPTION_TYPES = new Set(['morning_summary', 'evening_summary', 'librus_messages', 'librus_grades']);
 
 function dateKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -40,6 +40,8 @@ function createMaintenanceService({
   getLists,
   getSchedules,
   getLibrusData,
+  getActiveMealMenu,
+  getDishes,
   getPhotos,
   updatePhotoFilename,
   createPhotoDerivative,
@@ -56,15 +58,17 @@ function createMaintenanceService({
   let running = false;
 
   function writeAudit(action, status, errorMessage = null, details = null) {
-    audit({
-      source: 'scheduled_job',
-      sender_name: 'Maintenance scheduler',
-      message_type: 'scheduled',
-      action_taken: action,
-      status,
-      error_message: errorMessage,
-      parsed_payload: details
-    });
+    if (typeof audit === 'function') {
+      audit({
+        source: 'scheduled_job',
+        sender_name: 'Maintenance scheduler',
+        message_type: 'scheduled',
+        action_taken: action,
+        status,
+        error_message: errorMessage,
+        parsed_payload: details
+      });
+    }
   }
 
   async function pruneBackups(keepCount) {
@@ -159,6 +163,80 @@ function createMaintenanceService({
         announcements: librus.announcements,
         language: subscription.language || 'en'
       });
+    } else if (subscription.type === 'evening_summary') {
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowIso = dateKey(tomorrow);
+      const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const tomorrowDayName = dayLabels[tomorrow.getDay()];
+      const fullDayLabels = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const tomorrowFullDayName = fullDayLabels[tomorrow.getDay()];
+
+      const scheduleObj = getSchedules().find(item => Number(item.profile_id) === Number(subscription.profile_id)) || getSchedules()[0];
+      const scheduleDays = scheduleObj && Array.isArray(scheduleObj.schedule) ? scheduleObj.schedule : [];
+      const dayEntry = scheduleDays.find(d => String(d.day).slice(0, 3).toLowerCase() === tomorrowDayName.toLowerCase());
+      let tomorrowLessons = [];
+      if (dayEntry) {
+        if (dayEntry.nextDate === tomorrowIso && Array.isArray(dayEntry.nextLessons)) {
+          tomorrowLessons = dayEntry.nextLessons;
+        } else if ((today.getDay() === 0 || today.getDay() === 6) && Array.isArray(dayEntry.nextLessons) && dayEntry.nextLessons.length > 0) {
+          tomorrowLessons = dayEntry.nextLessons;
+        } else if (Array.isArray(dayEntry.lessons)) {
+          tomorrowLessons = dayEntry.lessons;
+        }
+      }
+      const activeLessons = tomorrowLessons.filter(l => !l.cancelled);
+
+      let mealLines = [];
+      if (typeof getActiveMealMenu === 'function') {
+        const activeMenu = getActiveMealMenu();
+        const dishMap = new Map(
+          (typeof getDishes === 'function' ? getDishes() : []).map(d => [Number(d.id), d.name])
+        );
+        const dayPlan = (activeMenu && activeMenu.schedule)
+          ? (activeMenu.schedule[tomorrowFullDayName] || activeMenu.schedule[tomorrowDayName] || Object.entries(activeMenu.schedule).find(([k]) => k.slice(0, 3).toLowerCase() === tomorrowDayName.toLowerCase())?.[1])
+          : null;
+        if (dayPlan) {
+          for (const slot of activeMenu.meal_slots || ['Breakfast', 'Lunch', 'Dinner', 'Snack']) {
+            const rawEntries = dayPlan[slot];
+            const arr = Array.isArray(rawEntries) ? rawEntries : (rawEntries ? [rawEntries] : []);
+            const names = arr.map(entry => {
+              if (!entry) return null;
+              if (typeof entry === 'string') return entry;
+              if (entry.title || entry.custom_title || entry.custom_text || entry.name) {
+                return entry.title || entry.custom_title || entry.custom_text || entry.name;
+              }
+              if (entry.dish_id && dishMap.has(Number(entry.dish_id))) return dishMap.get(Number(entry.dish_id));
+              return null;
+            }).filter(Boolean);
+            if (names.length > 0) {
+              mealLines.push(`• ${slot}: ${names.join(', ')}`);
+            }
+          }
+        }
+      }
+
+      const lists = getLists();
+      const pendingTasks = lists
+        .filter(list => list.type === 'tasks')
+        .flatMap(list => list.items || [])
+        .filter(item => item.checked !== 1 && (!item.assignee_profile_id || Number(item.assignee_profile_id) === Number(subscription.profile_id)))
+        .filter(item => !item.due_date || item.due_date <= tomorrowIso)
+        .slice(0, 8);
+
+      const parts = [`🌙 Evening Prep Summary for ${profileName} (${tomorrowDayName} ${tomorrowIso}):`];
+      if (activeLessons.length > 0) {
+        parts.push(`\n🎒 Tomorrow's Classes (${activeLessons.length}):\n` + activeLessons.map(l => `• ${l.start || ''} ${l.name}${l.room && l.room !== '—' ? ` (rm ${l.room})` : ''}`).join('\n'));
+      } else {
+        parts.push('\n🎒 Tomorrow\'s Classes: No classes scheduled.');
+      }
+      if (mealLines.length > 0) {
+        parts.push(`\n🍽️ Tomorrow's Menu:\n` + mealLines.join('\n'));
+      }
+      if (pendingTasks.length > 0) {
+        parts.push(`\n✅ Unfinished Tasks & Chores:\n` + pendingTasks.map(t => `• ${t.content}${t.reward ? ` (+${t.reward} ⭐)` : ''}`).join('\n'));
+      }
+      text = parts.join('\n');
     } else if (subscription.type === 'librus_messages') {
       const messages = (librus.messages || [])
         .filter(message => !subscription.last_cursor || Number(message.id) > Number(subscription.last_cursor))
