@@ -234,6 +234,28 @@ db.exec(`
     FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS dishes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    photo_filename TEXT,
+    ingredients TEXT DEFAULT '[]',
+    recipe TEXT DEFAULT '',
+    tags TEXT DEFAULT '[]',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS meal_menus (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    is_template INTEGER DEFAULT 0,
+    week_start TEXT,
+    is_active INTEGER DEFAULT 0,
+    meal_slots TEXT DEFAULT '["Breakfast","Lunch","Dinner","Snack"]',
+    schedule TEXT DEFAULT '{}',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
 `);
 
@@ -279,8 +301,17 @@ try {
   if (!itemCols.includes('recurrence_interval')) db.exec('ALTER TABLE list_items ADD COLUMN recurrence_interval INTEGER DEFAULT 1');
   if (!itemCols.includes('recurrence_days')) db.exec('ALTER TABLE list_items ADD COLUMN recurrence_days TEXT');
   if (!itemCols.includes('last_completed_at')) db.exec('ALTER TABLE list_items ADD COLUMN last_completed_at TEXT');
+  if (!itemCols.includes('completed_by')) db.exec('ALTER TABLE list_items ADD COLUMN completed_by TEXT');
 } catch (e) {
   console.warn('Migration list_items columns check:', e.message);
+}
+
+try {
+  const taskCols = db.pragma('table_info(tasks)').map(c => c.name);
+  if (!taskCols.includes('completed_by')) db.exec('ALTER TABLE tasks ADD COLUMN completed_by TEXT');
+  if (!taskCols.includes('completed_at')) db.exec('ALTER TABLE tasks ADD COLUMN completed_at TEXT');
+} catch (e) {
+  console.warn('Migration tasks columns check:', e.message);
 }
 
 try {
@@ -365,18 +396,97 @@ if (existingEvents.count === 0) {
   insertEventStmt.run('Soccer Practice', 'Community field', `${tomorrowStr}T16:30:00`, `${tomorrowStr}T18:00:00`, 0, '#34d399', 'manual');
 }
 
+// Seed sample dishes and weekly meal menu if empty
+const existingDishes = db.prepare('SELECT COUNT(*) as count FROM dishes').get();
+if (existingDishes.count === 0) {
+  const insertDishStmt = db.prepare(`
+    INSERT INTO dishes (name, photo_filename, ingredients, recipe, tags)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  const d1 = insertDishStmt.run(
+    'Blueberry Pancakes',
+    null,
+    JSON.stringify(['Flour', 'Milk', 'Eggs', 'Blueberries', 'Maple syrup']),
+    '1. Whisk flour, milk, and eggs into a smooth batter.\n2. Fold in fresh blueberries.\n3. Cook on a buttered griddle until golden on both sides.',
+    JSON.stringify(['breakfast', 'sweet', 'kids'])
+  ).lastInsertRowid;
+  const d2 = insertDishStmt.run(
+    'Chicken Caesar Salad',
+    null,
+    JSON.stringify(['Chicken breast', 'Romaine lettuce', 'Parmesan cheese', 'Croutons', 'Caesar dressing']),
+    '1. Season and grill chicken breast until cooked through, then slice.\n2. Toss chopped romaine with dressing, parmesan, and croutons.\n3. Top with warm sliced chicken.',
+    JSON.stringify(['lunch', 'healthy', 'quick'])
+  ).lastInsertRowid;
+  const d3 = insertDishStmt.run(
+    'Spaghetti Bolognese',
+    null,
+    JSON.stringify(['Spaghetti pasta', 'Ground beef', 'Crushed tomatoes', 'Onion', 'Garlic', 'Basil']),
+    '1. Brown beef with diced onion and garlic.\n2. Simmer with crushed tomatoes and herbs for 25 minutes.\n3. Serve over al dente spaghetti with grated parmesan.',
+    JSON.stringify(['dinner', 'pasta', 'family'])
+  ).lastInsertRowid;
+  const d4 = insertDishStmt.run(
+    'Baked Salmon & Veggies',
+    null,
+    JSON.stringify(['Salmon fillets', 'Broccoli', 'Carrots', 'Olive oil', 'Lemon']),
+    '1. Preheat oven to 200°C.\n2. Arrange salmon and chopped vegetables on a sheet pan.\n3. Drizzle with olive oil and lemon juice; bake for 18 minutes.',
+    JSON.stringify(['dinner', 'healthy', 'fish'])
+  ).lastInsertRowid;
+
+  const existingMenus = db.prepare('SELECT COUNT(*) as count FROM meal_menus').get();
+  if (existingMenus.count === 0) {
+    const sampleSchedule = {
+      Monday: {
+        Breakfast: [{ dish_id: Number(d1), name: 'Blueberry Pancakes' }],
+        Lunch: [{ dish_id: Number(d2), name: 'Chicken Caesar Salad' }],
+        Dinner: [{ dish_id: Number(d3), name: 'Spaghetti Bolognese' }],
+        Snack: [{ dish_id: null, name: 'Apple slices & peanut butter' }]
+      },
+      Tuesday: {
+        Breakfast: [{ dish_id: null, name: 'Oatmeal with berries' }],
+        Lunch: [{ dish_id: Number(d2), name: 'Chicken Caesar Salad' }],
+        Dinner: [{ dish_id: Number(d4), name: 'Baked Salmon & Veggies' }],
+        Snack: [{ dish_id: null, name: 'Greek yogurt' }]
+      }
+    };
+    db.prepare(`
+      INSERT INTO meal_menus (name, is_template, week_start, is_active, meal_slots, schedule)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      'Family Weekly Menu',
+      0,
+      null,
+      1,
+      JSON.stringify(['Breakfast', 'Lunch', 'Dinner', 'Snack']),
+      JSON.stringify(sampleSchedule)
+    );
+  }
+}
+
 /* ==========================================================================
    Notes Methods (Backward Compatible)
    ========================================================================== */
 function insertNote(content) {
   const stmt = db.prepare('INSERT INTO notes (content, timestamp) VALUES (?, ?)');
   const ts = new Date().toISOString();
-  const info = stmt.run(content, ts);
-  return { id: info.lastInsertRowid, content, timestamp: ts };
+  const info = stmt.run(String(content || '').trim(), ts);
+  return { id: info.lastInsertRowid, content: String(content || '').trim(), timestamp: ts };
 }
 
 function getNotes(limit = 50) {
   return db.prepare('SELECT * FROM notes ORDER BY id DESC LIMIT ?').all(limit);
+}
+
+function getNoteById(id) {
+  return db.prepare('SELECT * FROM notes WHERE id = ?').get(id);
+}
+
+function updateNote(id, content) {
+  const current = getNoteById(id);
+  if (!current) return null;
+  const cleanContent = content !== undefined ? String(content).trim() : current.content;
+  if (!cleanContent) return current;
+  db.prepare('UPDATE notes SET content = ? WHERE id = ?').run(cleanContent, id);
+  return getNoteById(id);
 }
 
 function deleteNote(id) {
@@ -388,16 +498,42 @@ function deleteNote(id) {
    ========================================================================== */
 function insertTask({ assignee = null, title, reward = 0, status = 'pending' }) {
   const stmt = db.prepare('INSERT INTO tasks (assignee, title, reward, status) VALUES (?, ?, ?, ?)');
-  const info = stmt.run(assignee, title, Number(reward) || 0, status);
-  return { id: info.lastInsertRowid, assignee, title, reward: Number(reward) || 0, status };
+  const info = stmt.run(assignee, String(title || '').trim(), Number(reward) || 0, status);
+  return { id: info.lastInsertRowid, assignee, title: String(title || '').trim(), reward: Number(reward) || 0, status };
 }
 
 function getTasks() {
   return db.prepare('SELECT * FROM tasks ORDER BY id DESC').all();
 }
 
-function updateTaskStatus(id, status) {
-  return db.prepare('UPDATE tasks SET status = ? WHERE id = ?').run(status, id);
+function updateTaskStatus(id, status, completedBy = null) {
+  const isDone = status === 'done' || status === 'completed';
+  const nowIso = isDone ? new Date().toISOString() : null;
+  return db.prepare('UPDATE tasks SET status = ?, completed_at = ?, completed_by = ? WHERE id = ?')
+    .run(status, nowIso, isDone ? (completedBy || null) : null, id);
+}
+
+function updateTask(id, { title, assignee, reward, status, completed_by }) {
+  const current = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+  if (!current) return null;
+  const nextStatus = status !== undefined ? status : current.status;
+  const isDone = nextStatus === 'done' || nextStatus === 'completed';
+  const completedAt = isDone ? (current.completed_at || new Date().toISOString()) : null;
+  const completedByVal = completed_by !== undefined ? completed_by : (isDone ? current.completed_by : null);
+  db.prepare(`
+    UPDATE tasks
+    SET title = ?, assignee = ?, reward = ?, status = ?, completed_at = ?, completed_by = ?
+    WHERE id = ?
+  `).run(
+    title !== undefined ? String(title).trim() : current.title,
+    assignee !== undefined ? assignee : current.assignee,
+    reward !== undefined ? (Number(reward) || 0) : current.reward,
+    nextStatus,
+    completedAt,
+    completedByVal,
+    id
+  );
+  return db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
 }
 
 function deleteTask(id) {
@@ -465,27 +601,41 @@ function deleteProfile(id) {
   return db.prepare('DELETE FROM profiles WHERE id = ?').run(id);
 }
 
+function normalizeLessonItem(lesson, idx) {
+  return {
+    number: Number(lesson && lesson.number) || idx + 1,
+    start: lesson && lesson.start ? String(lesson.start) : '08:30',
+    end: lesson && lesson.end ? String(lesson.end) : '09:15',
+    name: lesson && lesson.name ? String(lesson.name) : 'Class',
+    room: lesson && lesson.room ? String(lesson.room) : '—',
+    teacher: lesson && lesson.teacher ? String(lesson.teacher) : null,
+    replacementTeacher: lesson && lesson.replacementTeacher ? String(lesson.replacementTeacher) : null,
+    replacement: Boolean(lesson && lesson.replacement),
+    moved: Boolean(lesson && lesson.moved),
+    cancelled: Boolean(lesson && lesson.cancelled),
+    flag: lesson && lesson.flag ? String(lesson.flag) : null,
+    original: lesson && lesson.original ? lesson.original : null,
+    date: lesson && lesson.date ? String(lesson.date) : null
+  };
+}
+
 function normalizeScheduleArray(schedule) {
   if (!Array.isArray(schedule)) return [];
   return schedule.map((dayEntry) => {
-    const lessons = Array.isArray(dayEntry && dayEntry.lessons) ? dayEntry.lessons.map((lesson, idx) => ({
-      number: Number(lesson && lesson.number) || idx + 1,
-      start: lesson && lesson.start ? String(lesson.start) : '08:30',
-      end: lesson && lesson.end ? String(lesson.end) : '09:15',
-      name: lesson && lesson.name ? String(lesson.name) : 'Class',
-      room: lesson && lesson.room ? String(lesson.room) : '—',
-      teacher: lesson && lesson.teacher ? String(lesson.teacher) : null,
-      replacementTeacher: lesson && lesson.replacementTeacher ? String(lesson.replacementTeacher) : null,
-      replacement: Boolean(lesson && lesson.replacement),
-      moved: Boolean(lesson && lesson.moved),
-      cancelled: Boolean(lesson && lesson.cancelled),
-      flag: lesson && lesson.flag ? String(lesson.flag) : null,
-      original: lesson && lesson.original ? lesson.original : null
-    })) : [];
-    return {
+    const lessons = Array.isArray(dayEntry && dayEntry.lessons)
+      ? dayEntry.lessons.map(normalizeLessonItem)
+      : [];
+    const nextLessons = Array.isArray(dayEntry && dayEntry.nextLessons)
+      ? dayEntry.nextLessons.map(normalizeLessonItem)
+      : null;
+    const normalized = {
       day: dayEntry && dayEntry.day ? String(dayEntry.day) : 'Mon',
       lessons
     };
+    if (dayEntry && dayEntry.date) normalized.date = String(dayEntry.date);
+    if (dayEntry && dayEntry.nextDate) normalized.nextDate = String(dayEntry.nextDate);
+    if (nextLessons) normalized.nextLessons = nextLessons;
+    return normalized;
   });
 }
 
@@ -747,6 +897,23 @@ function insertListItem({
   recurrence_interval = 1,
   recurrence_days = null
 }) {
+  const cleanContent = String(content || '').trim();
+  const listRow = db.prepare('SELECT id, type FROM lists WHERE id = ?').get(Number(list_id));
+  if (listRow && listRow.type === 'shopping' && cleanContent) {
+    const existing = db.prepare(`
+      SELECT * FROM list_items
+      WHERE list_id = ? AND LOWER(TRIM(content)) = LOWER(?)
+      ORDER BY checked ASC, id DESC
+      LIMIT 1
+    `).get(Number(list_id), cleanContent);
+    if (existing) {
+      if (existing.checked === 1) {
+        db.prepare('UPDATE list_items SET checked = 0, created_at = CURRENT_TIMESTAMP WHERE id = ?').run(existing.id);
+      }
+      return db.prepare('SELECT * FROM list_items WHERE id = ?').get(existing.id);
+    }
+  }
+
   const stmt = db.prepare(`
     INSERT INTO list_items (
       list_id, content, assignee_profile_id, reward, position,
@@ -756,7 +923,7 @@ function insertListItem({
   const recDaysStr = recurrence_days ? (typeof recurrence_days === 'string' ? recurrence_days : JSON.stringify(recurrence_days)) : null;
   const info = stmt.run(
     list_id, 
-    content.trim(), 
+    cleanContent, 
     assignee_profile_id || null, 
     Number(reward) || 0, 
     position,
@@ -769,25 +936,41 @@ function insertListItem({
   return db.prepare('SELECT * FROM list_items WHERE id = ?').get(info.lastInsertRowid);
 }
 
-function toggleListItemChecked(id, checked) {
-  const item = db.prepare('SELECT * FROM list_items WHERE id = ?').get(id);
+function toggleListItemChecked(id, checked, completedBy = null) {
+  const item = db.prepare(`
+    SELECT i.*, p.name as assignee_name
+    FROM list_items i
+    LEFT JOIN profiles p ON i.assignee_profile_id = p.id
+    WHERE i.id = ?
+  `).get(id);
   if (!item) return null;
+
+  const actor = completedBy || item.assignee_name || null;
 
   if (checked && item.recurrence && item.recurrence !== 'none') {
     const nextDate = calculateNextDueDate(item.due_date, item.recurrence, item.recurrence_interval, item.recurrence_days);
     const nowIso = new Date().toISOString();
     db.prepare(`
       UPDATE list_items 
-      SET checked = 0, due_date = ?, last_completed_at = ?
+      SET checked = 0, due_date = ?, last_completed_at = ?, completed_by = ?
       WHERE id = ?
-    `).run(nextDate, nowIso, id);
+    `).run(nextDate, nowIso, actor, id);
   } else {
     const nowIso = checked ? new Date().toISOString() : null;
-    db.prepare('UPDATE list_items SET checked = ?, last_completed_at = COALESCE(?, last_completed_at) WHERE id = ?')
-      .run(checked ? 1 : 0, nowIso, id);
+    if (checked) {
+      db.prepare('UPDATE list_items SET checked = 1, last_completed_at = ?, completed_by = COALESCE(?, completed_by) WHERE id = ?')
+        .run(nowIso, actor, id);
+    } else {
+      db.prepare('UPDATE list_items SET checked = 0 WHERE id = ?').run(id);
+    }
   }
 
-  return db.prepare('SELECT * FROM list_items WHERE id = ?').get(id);
+  return db.prepare(`
+    SELECT i.*, p.name as assignee_name, p.color as assignee_color, p.avatar_type as assignee_avatar_type, p.avatar_value as assignee_avatar_value
+    FROM list_items i
+    LEFT JOIN profiles p ON i.assignee_profile_id = p.id
+    WHERE i.id = ?
+  `).get(id);
 }
 
 function updateListItem(id, { 
@@ -799,22 +982,30 @@ function updateListItem(id, {
   due_time,
   recurrence,
   recurrence_interval,
-  recurrence_days
+  recurrence_days,
+  completed_by
 }) {
   const current = db.prepare('SELECT * FROM list_items WHERE id = ?').get(id);
   if (!current) return null;
+  const nextChecked = checked !== undefined ? (checked ? 1 : 0) : current.checked;
+  const lastCompletedAt = (checked !== undefined && checked && !current.checked)
+    ? new Date().toISOString()
+    : current.last_completed_at;
+  const completedByVal = completed_by !== undefined ? completed_by : current.completed_by;
+
   const stmt = db.prepare(`
     UPDATE list_items 
     SET content = ?, checked = ?, assignee_profile_id = ?, reward = ?,
-        due_date = ?, due_time = ?, recurrence = ?, recurrence_interval = ?, recurrence_days = ?
+        due_date = ?, due_time = ?, recurrence = ?, recurrence_interval = ?, recurrence_days = ?,
+        last_completed_at = ?, completed_by = ?
     WHERE id = ?
   `);
   const recDaysStr = recurrence_days !== undefined
     ? (recurrence_days ? (typeof recurrence_days === 'string' ? recurrence_days : JSON.stringify(recurrence_days)) : null)
     : current.recurrence_days;
   stmt.run(
-    content !== undefined ? content.trim() : current.content,
-    checked !== undefined ? (checked ? 1 : 0) : current.checked,
+    content !== undefined ? String(content).trim() : current.content,
+    nextChecked,
     assignee_profile_id !== undefined ? assignee_profile_id : current.assignee_profile_id,
     reward !== undefined ? Number(reward) || 0 : current.reward,
     due_date !== undefined ? due_date : current.due_date,
@@ -822,13 +1013,24 @@ function updateListItem(id, {
     recurrence !== undefined ? recurrence : current.recurrence,
     recurrence_interval !== undefined ? Number(recurrence_interval) || 1 : current.recurrence_interval,
     recDaysStr,
+    lastCompletedAt,
+    completedByVal,
     id
   );
-  return db.prepare('SELECT * FROM list_items WHERE id = ?').get(id);
+  return db.prepare(`
+    SELECT i.*, p.name as assignee_name, p.color as assignee_color, p.avatar_type as assignee_avatar_type, p.avatar_value as assignee_avatar_value
+    FROM list_items i
+    LEFT JOIN profiles p ON i.assignee_profile_id = p.id
+    WHERE i.id = ?
+  `).get(id);
 }
 
 function deleteListItem(id) {
   return db.prepare('DELETE FROM list_items WHERE id = ?').run(id);
+}
+
+function clearCompletedListItems(listId) {
+  return db.prepare('DELETE FROM list_items WHERE list_id = ? AND checked = 1').run(Number(listId));
 }
 
 /* ==========================================================================
@@ -964,6 +1166,7 @@ function getSettings() {
     librus_sync_messages: 'daily',
     librus_sync_time: '06:00',
     librus_sync_weekday: 1,
+    meal_default_slots: '["Breakfast","Lunch","Dinner","Snack"]',
     gemini_model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
     gemini_system_prompt: `You are the smart assistant for a family smart home tablet dashboard. Today is ${new Date().toISOString().slice(0, 10)}.\nAnalyze the user's natural language input and return ONLY raw JSON matching this schema:\n{\n  "notes": ["string of note content"],\n  "tasks": [\n    {\n      "title": "string",\n      "assignee": "string or null",\n      "reward": 0,\n      "due_date": "YYYY-MM-DD or null",\n      "due_time": "HH:MM or null",\n      "recurrence": "none|daily|weekly|weekdays|weekends|interval",\n      "recurrence_interval": 1,\n      "action": "add"\n    }\n  ],\n  "shopping_items": [\n    {\n      "content": "string (e.g. milk, eggs)",\n      "action": "add"\n    }\n  ],\n  "calendar_events": [\n    {\n      "title": "string",\n      "date": "YYYY-MM-DD",\n      "time": "HH:MM or null",\n      "all_day": false\n    }\n  ],\n  "timer": {\n    "action": "start",\n    "minutes": 5\n  },\n  "response_message": "Friendly 1-line confirmation of what was created or done"\n}\n\nRules:\n1. Shopping items: If the user mentions groceries, shopping, buy X, need X, put them in shopping_items.\n2. Calendar events: If user mentions an appointment, meeting, practice, schedule, event with a date or time, put them in calendar_events with accurate ISO date (e.g. tomorrow = calculate relative to today).\n3. Timer: If user says "set timer for 10 minutes", populate timer object (minutes as number).\n4. Tasks: Chores, to-dos, things to do. If reward is mentioned (e.g. "for 15 points"), set reward number. If the user mentions a date or time, fill due_date and due_time. If they say recurring, use recurrence and recurrence_interval.\n5. Notes: Generic info, reminders, thoughts.\n6. Only return non-empty arrays/objects when detected. If a field is not present, use empty array [] or null for timer. If the request is not clearly actionable, return notes with the user text as a reminder.`,
     gemini_text_prompt: 'Extract actionable family dashboard items from the message and return only the structured JSON schema described above.',
@@ -995,7 +1198,12 @@ function getSettings() {
   ];
   for (const r of rows) {
     if (numericKeys.includes(r.key)) {
-      settings[r.key] = Number(r.value);
+      if (r.value === 'true') settings[r.key] = 1;
+      else if (r.value === 'false') settings[r.key] = 0;
+      else {
+        const num = Number(r.value);
+        settings[r.key] = Number.isNaN(num) ? 0 : num;
+      }
     } else {
       settings[r.key] = r.value;
     }
@@ -1007,7 +1215,8 @@ function updateSettings(newSettings) {
   const insertOrReplace = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
   const tx = db.transaction((obj) => {
     for (const [k, v] of Object.entries(obj)) {
-      insertOrReplace.run(k, String(v));
+      const normalizedVal = typeof v === 'boolean' ? (v ? '1' : '0') : (typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v ?? ''));
+      insertOrReplace.run(k, normalizedVal);
     }
   });
   tx(newSettings);
@@ -1083,12 +1292,6 @@ function clearCalendarFeedProfileIfMissing(id) {
   `).run(Number(id));
 }
 
-/**
- * Clear orphaned profile_id values on existing calendar_events for a given feed.
- * Called after feed-level repair to fix rows already stored with a bad profile reference.
- * @param {number} feedId
- * @returns {import('better-sqlite3').RunResult}
- */
 function cleanOrphanedEventProfileIds(feedId) {
   return db.prepare(`
     UPDATE calendar_events
@@ -1113,7 +1316,6 @@ function deleteCalendarFeed(id) {
 }
 
 function getCalendarEvents({ profileId = null, limit = 100, fromDate = undefined } = {}) {
-  // Default: show events from yesterday onward (keep today's events that may have started)
   const defaultFrom = new Date();
   defaultFrom.setDate(defaultFrom.getDate() - 1);
   const effectiveFromDate = fromDate === null ? null : (fromDate || defaultFrom.toISOString().slice(0, 10));
@@ -1145,7 +1347,6 @@ function getCalendarEvents({ profileId = null, limit = 100, fromDate = undefined
 
 function insertCalendarEvent({ uid = null, feed_id = null, title, description = null, start_datetime, end_datetime = null, all_day = 0, profile_id = null, color = '#38bdf8', source = 'manual' }) {
   const trimmedTitle = title.trim();
-  // Prevent duplicate events on the same start datetime for the same profile
   const existing = db.prepare(`
     SELECT * FROM calendar_events 
     WHERE title = ? AND start_datetime = ? AND (profile_id = ? OR (profile_id IS NULL AND ? IS NULL))
@@ -1171,6 +1372,26 @@ function insertCalendarEvent({ uid = null, feed_id = null, title, description = 
     source
   );
   return db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(info.lastInsertRowid);
+}
+
+function updateCalendarEvent(id, { title, description, start_datetime, end_datetime, all_day, profile_id, color }) {
+  const current = db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(id);
+  if (!current) return null;
+  db.prepare(`
+    UPDATE calendar_events
+    SET title = ?, description = ?, start_datetime = ?, end_datetime = ?, all_day = ?, profile_id = ?, color = ?
+    WHERE id = ?
+  `).run(
+    title !== undefined ? String(title).trim() : current.title,
+    description !== undefined ? description : current.description,
+    start_datetime !== undefined ? start_datetime : current.start_datetime,
+    end_datetime !== undefined ? end_datetime : current.end_datetime,
+    all_day !== undefined ? (all_day ? 1 : 0) : current.all_day,
+    profile_id !== undefined ? (profile_id || null) : current.profile_id,
+    color !== undefined ? color : current.color,
+    id
+  );
+  return db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(id);
 }
 
 function upsertCalendarEventByUid({ uid, feed_id = null, title, description = null, start_datetime, end_datetime = null, all_day = 0, profile_id = null, color = '#38bdf8', source = 'google' }) {
@@ -1210,6 +1431,263 @@ function deleteOldCalendarEventsByFeed(feedId, beforeDateIso) {
 
 function deleteOldCalendarEvents(beforeDateIso) {
   return db.prepare("DELETE FROM calendar_events WHERE (feed_id IS NOT NULL OR source != 'manual') AND start_datetime < ?").run(beforeDateIso);
+}
+
+/* ==========================================================================
+   Dishes & Meal Menus (Menu of the Week) Methods
+   ========================================================================== */
+function parseJsonArray(val, fallback = []) {
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed) return fallback;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed;
+    } catch (e) {
+      return trimmed.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+    }
+  }
+  return fallback;
+}
+
+function normalizeDishRow(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    ingredients: parseJsonArray(row.ingredients, []),
+    tags: parseJsonArray(row.tags, []).map(t => String(t).trim().toLowerCase()).filter(Boolean)
+  };
+}
+
+function getDishes({ tag = null, search = null } = {}) {
+  const rows = db.prepare('SELECT * FROM dishes ORDER BY name ASC, id DESC').all();
+  let list = rows.map(normalizeDishRow);
+  if (tag) {
+    const cleanTag = String(tag).trim().toLowerCase();
+    list = list.filter(d => d.tags.includes(cleanTag));
+  }
+  if (search) {
+    const q = String(search).trim().toLowerCase();
+    list = list.filter(d =>
+      d.name.toLowerCase().includes(q) ||
+      d.tags.some(t => t.includes(q)) ||
+      d.ingredients.some(ing => String(ing).toLowerCase().includes(q))
+    );
+  }
+  return list;
+}
+
+function getDishById(id) {
+  const row = db.prepare('SELECT * FROM dishes WHERE id = ?').get(Number(id));
+  return normalizeDishRow(row);
+}
+
+function insertDish({ name, photo_filename = null, ingredients = [], recipe = '', tags = [] }) {
+  const cleanName = String(name || '').trim();
+  if (!cleanName) throw new Error('Dish name is required');
+  const ingArr = parseJsonArray(ingredients, []);
+  const tagArr = parseJsonArray(tags, []).map(t => String(t).trim().toLowerCase()).filter(Boolean);
+  const info = db.prepare(`
+    INSERT INTO dishes (name, photo_filename, ingredients, recipe, tags)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(
+    cleanName,
+    photo_filename || null,
+    JSON.stringify(ingArr),
+    String(recipe || ''),
+    JSON.stringify(tagArr)
+  );
+  return getDishById(info.lastInsertRowid);
+}
+
+function updateDish(id, { name, photo_filename, ingredients, recipe, tags }) {
+  const current = getDishById(id);
+  if (!current) return null;
+  const nextName = name !== undefined ? String(name).trim() : current.name;
+  const nextPhoto = photo_filename !== undefined ? (photo_filename || null) : current.photo_filename;
+  const nextIng = ingredients !== undefined ? parseJsonArray(ingredients, []) : current.ingredients;
+  const nextRecipe = recipe !== undefined ? String(recipe) : current.recipe;
+  const nextTags = tags !== undefined
+    ? parseJsonArray(tags, []).map(t => String(t).trim().toLowerCase()).filter(Boolean)
+    : current.tags;
+
+  db.prepare(`
+    UPDATE dishes
+    SET name = ?, photo_filename = ?, ingredients = ?, recipe = ?, tags = ?
+    WHERE id = ?
+  `).run(
+    nextName || current.name,
+    nextPhoto,
+    JSON.stringify(nextIng),
+    nextRecipe,
+    JSON.stringify(nextTags),
+    Number(id)
+  );
+  return getDishById(id);
+}
+
+function deleteDish(id) {
+  return db.prepare('DELETE FROM dishes WHERE id = ?').run(Number(id));
+}
+
+function getDefaultMealSlots() {
+  const settings = getSettings();
+  const slots = parseJsonArray(settings.meal_default_slots, ['Breakfast', 'Lunch', 'Dinner', 'Snack']);
+  return slots.length > 0 ? slots : ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
+}
+
+function normalizeMealMenuRow(row) {
+  if (!row) return null;
+  const defaultSlots = getDefaultMealSlots();
+  const mealSlots = parseJsonArray(row.meal_slots, defaultSlots);
+  let schedule = {};
+  if (row.schedule && typeof row.schedule === 'object') {
+    schedule = row.schedule;
+  } else if (typeof row.schedule === 'string') {
+    try {
+      schedule = JSON.parse(row.schedule || '{}');
+    } catch (e) {
+      schedule = {};
+    }
+  }
+  return {
+    ...row,
+    is_template: Boolean(row.is_template),
+    is_active: Boolean(row.is_active),
+    meal_slots: mealSlots.length > 0 ? mealSlots : defaultSlots,
+    schedule: schedule && typeof schedule === 'object' ? schedule : {}
+  };
+}
+
+function getMealMenus() {
+  const rows = db.prepare('SELECT * FROM meal_menus ORDER BY is_active DESC, is_template ASC, updated_at DESC, id DESC').all();
+  return rows.map(normalizeMealMenuRow);
+}
+
+function getMealMenuById(id) {
+  const row = db.prepare('SELECT * FROM meal_menus WHERE id = ?').get(Number(id));
+  return normalizeMealMenuRow(row);
+}
+
+function getActiveMealMenu(weekStart = null) {
+  if (weekStart) {
+    const byWeek = db.prepare('SELECT * FROM meal_menus WHERE week_start = ? AND is_template = 0 ORDER BY is_active DESC, updated_at DESC LIMIT 1').get(String(weekStart));
+    if (byWeek) return normalizeMealMenuRow(byWeek);
+  }
+  const active = db.prepare('SELECT * FROM meal_menus WHERE is_active = 1 AND is_template = 0 ORDER BY updated_at DESC, id DESC LIMIT 1').get();
+  if (active) return normalizeMealMenuRow(active);
+  const fallback = db.prepare('SELECT * FROM meal_menus WHERE is_template = 0 ORDER BY updated_at DESC, id DESC LIMIT 1').get();
+  return normalizeMealMenuRow(fallback);
+}
+
+function insertMealMenu({ name, is_template = 0, week_start = null, is_active = 0, meal_slots = null, schedule = {} }) {
+  const cleanName = String(name || 'Weekly Menu').trim() || 'Weekly Menu';
+  const slots = parseJsonArray(meal_slots, getDefaultMealSlots());
+  const schedObj = (typeof schedule === 'string') ? JSON.parse(schedule || '{}') : (schedule || {});
+
+  if (is_active && !is_template) {
+    db.prepare('UPDATE meal_menus SET is_active = 0 WHERE is_template = 0').run();
+  }
+
+  const info = db.prepare(`
+    INSERT INTO meal_menus (name, is_template, week_start, is_active, meal_slots, schedule, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  `).run(
+    cleanName,
+    is_template ? 1 : 0,
+    week_start ? String(week_start) : null,
+    is_active ? 1 : 0,
+    JSON.stringify(slots),
+    JSON.stringify(schedObj)
+  );
+  return getMealMenuById(info.lastInsertRowid);
+}
+
+function updateMealMenu(id, { name, is_template, week_start, is_active, meal_slots, schedule }) {
+  const current = getMealMenuById(id);
+  if (!current) return null;
+
+  const nextIsTemplate = is_template !== undefined ? (is_template ? 1 : 0) : (current.is_template ? 1 : 0);
+  const nextIsActive = is_active !== undefined ? (is_active ? 1 : 0) : (current.is_active ? 1 : 0);
+
+  if (nextIsActive && !nextIsTemplate) {
+    db.prepare('UPDATE meal_menus SET is_active = 0 WHERE is_template = 0 AND id != ?').run(Number(id));
+  }
+
+  const nextName = name !== undefined ? (String(name).trim() || current.name) : current.name;
+  const nextWeekStart = week_start !== undefined ? (week_start ? String(week_start) : null) : current.week_start;
+  const nextSlots = meal_slots !== undefined ? parseJsonArray(meal_slots, current.meal_slots) : current.meal_slots;
+  const nextSchedule = schedule !== undefined
+    ? (typeof schedule === 'string' ? JSON.parse(schedule || '{}') : (schedule || {}))
+    : current.schedule;
+
+  db.prepare(`
+    UPDATE meal_menus
+    SET name = ?, is_template = ?, week_start = ?, is_active = ?, meal_slots = ?, schedule = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(
+    nextName,
+    nextIsTemplate,
+    nextWeekStart,
+    nextIsActive,
+    JSON.stringify(nextSlots),
+    JSON.stringify(nextSchedule),
+    Number(id)
+  );
+  return getMealMenuById(id);
+}
+
+function deleteMealMenu(id) {
+  return db.prepare('DELETE FROM meal_menus WHERE id = ?').run(Number(id));
+}
+
+function applyMealMenuTemplate(templateId, { week_start = null, name = null, set_active = true } = {}) {
+  const tpl = getMealMenuById(templateId);
+  if (!tpl) return null;
+  const existingForWeek = week_start
+    ? db.prepare('SELECT * FROM meal_menus WHERE week_start = ? AND is_template = 0 LIMIT 1').get(String(week_start))
+    : null;
+  if (existingForWeek) {
+    return updateMealMenu(existingForWeek.id, {
+      name: name || existingForWeek.name,
+      is_active: set_active ? 1 : existingForWeek.is_active,
+      meal_slots: tpl.meal_slots,
+      schedule: tpl.schedule
+    });
+  }
+  return insertMealMenu({
+    name: name || (week_start ? `Menu for ${week_start}` : `${tpl.name} (Active)`),
+    is_template: 0,
+    week_start: week_start || null,
+    is_active: set_active ? 1 : 0,
+    meal_slots: tpl.meal_slots,
+    schedule: tpl.schedule
+  });
+}
+
+function setMealSlotEntry({ menu_id = null, week_start = null, day, slot, entries }) {
+  let menu = menu_id ? getMealMenuById(menu_id) : getActiveMealMenu(week_start);
+  if (!menu) {
+    menu = insertMealMenu({
+      name: week_start ? `Menu for ${week_start}` : 'Family Weekly Menu',
+      is_template: 0,
+      week_start: week_start || null,
+      is_active: 1,
+      meal_slots: getDefaultMealSlots(),
+      schedule: {}
+    });
+  }
+  const schedule = { ...(menu.schedule || {}) };
+  if (!schedule[day] || typeof schedule[day] !== 'object') {
+    schedule[day] = {};
+  }
+  schedule[day][slot] = Array.isArray(entries) ? entries : (entries ? [entries] : []);
+  const slots = Array.isArray(menu.meal_slots) ? [...menu.meal_slots] : getDefaultMealSlots();
+  if (slot && !slots.includes(slot)) {
+    slots.push(slot);
+  }
+  return updateMealMenu(menu.id, { meal_slots: slots, schedule });
 }
 
 function getLibrusData(profileId = null) {
@@ -1334,6 +1812,8 @@ function getDashboardData({ includePrivateSettings = false } = {}) {
     photos: getPhotos({ screensaverOnly: true }),
     events: getCalendarEvents({ limit: 250 }),
     feeds: getCalendarFeeds(),
+    dishes: getDishes(),
+    meal_menus: getMealMenus(),
     settings,
     librus: getLibrusData(),
     librus_by_profile: getAllLibrusProfileData()
@@ -1435,11 +1915,14 @@ function pruneData({ auditDays = 90, notesDays = 365, completedTaskDays = 180 } 
 module.exports = {
   db,
   insertNote,
-  insertTask,
+  getNoteById,
+  updateNote,
   deleteNote,
-  updateTaskStatus,
-  deleteTask,
   getNotes,
+  insertTask,
+  updateTaskStatus,
+  updateTask,
+  deleteTask,
   getTasks,
   getProfiles,
   getProfileById,
@@ -1463,6 +1946,7 @@ module.exports = {
   toggleListItemChecked,
   updateListItem,
   deleteListItem,
+  clearCompletedListItems,
   calculateNextDueDate,
   getWidgetLayouts,
   getAllProfileLayouts,
@@ -1486,10 +1970,25 @@ module.exports = {
   deleteCalendarFeed,
   getCalendarEvents,
   insertCalendarEvent,
+  updateCalendarEvent,
   upsertCalendarEventByUid,
   deleteCalendarEvent,
   deleteOldCalendarEventsByFeed,
   deleteOldCalendarEvents,
+  getDishes,
+  getDishById,
+  insertDish,
+  updateDish,
+  deleteDish,
+  getDefaultMealSlots,
+  getMealMenus,
+  getMealMenuById,
+  getActiveMealMenu,
+  insertMealMenu,
+  updateMealMenu,
+  deleteMealMenu,
+  applyMealMenuTemplate,
+  setMealSlotEntry,
   saveLibrusData,
   getLibrusData,
   getAllLibrusProfileData,

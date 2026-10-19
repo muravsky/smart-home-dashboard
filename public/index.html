@@ -79,7 +79,8 @@
       font-size: clamp(4rem, 15vw, 11rem);
       line-height: 0.95;
     }
-    .night-glow {
+    .night-glow,
+    .night-mode-glow {
       color: #f97316 !important;
       text-shadow: 0 0 35px rgba(249, 115, 22, 0.45);
     }
@@ -94,8 +95,36 @@
     .theme-white header {
       border-color: #e2e8f0 !important;
     }
-    .theme-white .bg-black {
+    .theme-white .bg-black:not(.screensaver-overlay):not(.screensaver-bg) {
       background-color: #f8fafc !important;
+    }
+    .screensaver-overlay,
+    .screensaver-overlay .screensaver-bg,
+    .theme-white .screensaver-overlay,
+    .theme-white .screensaver-overlay .bg-black,
+    html.theme-white .screensaver-overlay,
+    html.theme-white .screensaver-overlay .bg-black,
+    html.theme-white-contrast .screensaver-overlay,
+    html.theme-white-contrast .screensaver-overlay .bg-black {
+      background-color: #000000 !important;
+      color: #ffffff !important;
+    }
+    .theme-white .screensaver-overlay .text-white,
+    html.theme-white .screensaver-overlay .text-white,
+    html.theme-white-contrast .screensaver-overlay .text-white {
+      color: #ffffff !important;
+    }
+    .theme-white .screensaver-overlay .text-neutral-200,
+    html.theme-white .screensaver-overlay .text-neutral-200 {
+      color: #e5e5e5 !important;
+    }
+    .theme-white .screensaver-overlay .text-neutral-300,
+    html.theme-white .screensaver-overlay .text-neutral-300 {
+      color: #d4d4d4 !important;
+    }
+    .theme-white .screensaver-overlay .text-neutral-400,
+    html.theme-white .screensaver-overlay .text-neutral-400 {
+      color: #a3a3a3 !important;
     }
     .theme-white .bg-neutral-950 {
       background-color: #ffffff !important;
@@ -400,7 +429,7 @@
     html.theme-white body { background-color: #f1f5f9 !important; color: #0f172a !important; }
     html.theme-white #app { background-color: #f1f5f9 !important; color: #0f172a !important; }
     html.theme-white header { border-color: #e2e8f0 !important; }
-    html.theme-white .bg-black { background-color: #f8fafc !important; }
+    html.theme-white .bg-black:not(.screensaver-overlay):not(.screensaver-bg) { background-color: #f8fafc !important; }
     html.theme-white .bg-neutral-950 { background-color: #ffffff !important; border-color: #e2e8f0 !important; color: #0f172a !important; }
     html.theme-white .bg-neutral-900 { background-color: #f8fafc !important; border-color: #e2e8f0 !important; color: #0f172a !important; }
     html.theme-white .bg-neutral-800 { background-color: #e2e8f0 !important; color: #0f172a !important; }
@@ -590,7 +619,7 @@
     <transition name="fade-sleep">
       <div 
         v-if="isSleeping" 
-        class="fixed inset-0 z-50 bg-black flex flex-col justify-between p-6 md:p-12 cursor-pointer select-none overflow-hidden"
+        class="screensaver-overlay fixed inset-0 z-50 bg-black flex flex-col justify-between p-6 md:p-12 cursor-pointer select-none overflow-hidden"
         @pointerdown.stop="wakeUp"
         @touchstart.stop="wakeUp"
         @click.stop="wakeUp"
@@ -609,7 +638,7 @@
         </div>
 
         <!-- Ambient OLED Black Fallback or Pure Black Mode -->
-        <div v-else class="absolute inset-0 bg-black pointer-events-none"></div>
+        <div v-else class="screensaver-bg absolute inset-0 bg-black pointer-events-none"></div>
 
         <!-- Top Header in Screensaver (Hidden in Pure Picture Slideshow) -->
         <div v-if="!isPurePhotoSlideshow && activeScreensaverMode !== 'black'" class="relative z-10 flex items-center justify-between text-xs font-mono text-white/80 pointer-events-none">
@@ -975,6 +1004,21 @@
                 {{ getWidgetItemLimit(w, w.widget_type === 'school_notifications' ? (Number(settings.notification_items_limit) || 5) : (Number(settings.announcement_items_limit) || 5)) }}i
               </button>
 
+              <!-- Select Custom / Target List for List & Tasks Widgets -->
+              <select
+                v-if="w.widget_type === 'list' || w.widget_type === 'tasks'"
+                :value="getWidgetListId(w)"
+                @change.stop="setWidgetListId(w, $event.target.value)"
+                @click.stop
+                title="Choose which list to display in this widget"
+                class="px-1.5 py-1 rounded text-[10px] font-mono bg-neutral-800 hover:bg-neutral-700 text-amber-300 font-semibold max-w-[120px]"
+              >
+                <option value="">{{ w.widget_type === 'tasks' ? 'Default Tasks' : 'Default Shopping' }}</option>
+                <option v-for="lst in lists" :key="lst.id" :value="String(lst.id)">
+                  {{ lst.icon || '📋' }} {{ lst.name }}
+                </option>
+              </select>
+
               <!-- Cycle Task Filter Button -->
               <button 
                 v-if="w.widget_type === 'tasks'"
@@ -1154,115 +1198,301 @@
 
             <!-- ================= WIDGET TYPE 3: TASKS ================= -->
             <div v-else-if="w.widget_type === 'tasks'" class="h-full flex flex-col justify-between">
-              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2 gap-1.5 flex-wrap">
                 <div class="flex items-center gap-2">
                   <span class="font-mono text-xs uppercase tracking-widest text-emerald-400 font-semibold">
-                    {{ selectedProfile ? selectedProfile.name + "'s Chores" : "Family Chores" }}
+                    {{ getTaskListObjectForWidget(w)?.name || (selectedProfile ? selectedProfile.name + "'s Chores" : "Family Chores") }}
                   </span>
-                  <span class="text-[10px] font-mono text-neutral-500">({{ getFilteredTasksForWidget(w).length }})</span>
-                </div>
-                <button type="button" @click.stop="toggleWidgetTimeSort(w)" class="text-xs font-mono px-2 py-1 rounded border border-neutral-800 bg-neutral-900 text-neutral-300" :aria-pressed="isWidgetTimeSortEnabled(w)">
-                  {{ isWidgetTimeSortEnabled(w) ? 'Time ↑' : 'Sort by time' }}
-                </button>
-              </div>
-              
-              <div v-if="getFilteredTasksForWidget(w).length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
-                {{ t('noTasks') }}
-              </div>
-              <ul v-else class="space-y-1 overflow-y-auto pr-1 flex-1 task-list-widget">
-                <li 
-                  v-for="item in getSortedItemsForWidget(getFilteredTasksForWidget(w), w)"
-                  :key="item.id"
-                  @click="toggleTaskItem(item)"
-                  class="task-list-row text-neutral-300 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-2 px-2 rounded-lg hover:bg-neutral-900/60"
-                  :class="{ 'is-checked': item.checked === 1, 'border border-red-800/60 bg-red-950/30': item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10) }"
-                >
-                  <div class="flex items-center gap-2.5 flex-1 min-w-0">
-                    <span 
-                      class="w-4 h-4 rounded-full border transition-all duration-300 flex items-center justify-center text-[10px] shrink-0"
-                      :class="item.checked === 1 ? 'bg-emerald-500 border-emerald-500 text-black font-bold' : 'border-neutral-600'"
+                  <div class="flex items-center bg-neutral-900 rounded-lg p-0.5 border border-neutral-800 text-[10px] font-mono">
+                    <button
+                      type="button"
+                      @click.stop="setWidgetResolvedTab(w, 'active')"
+                      class="px-2 py-0.5 rounded transition"
+                      :class="getWidgetResolvedTab(w) !== 'resolved' ? 'bg-emerald-600 text-white font-bold' : 'text-neutral-400 hover:text-white'"
                     >
-                      <span v-if="item.checked === 1">✓</span>
-                    </span>
-                    <span class="task-list-content" :class="{ 'line-through text-neutral-600': item.checked === 1 }">{{ item.content }}</span>
-                    <span v-if="item.assignee_name && !selectedProfileId" class="text-[9px] font-mono px-1 rounded bg-neutral-900 text-neutral-400 border border-neutral-800">
-                      @{{ item.assignee_name }}
-                    </span>
-                    <span v-if="item.recurrence && item.recurrence !== 'none'" class="text-[9px] font-mono px-1 rounded bg-sky-950/40 text-sky-400 border border-sky-900/40 shrink-0">↻</span>
+                      Active ({{ getActiveTasksForWidget(w).length }})
+                    </button>
+                    <button
+                      type="button"
+                      @click.stop="setWidgetResolvedTab(w, 'resolved')"
+                      class="px-2 py-0.5 rounded transition"
+                      :class="getWidgetResolvedTab(w) === 'resolved' ? 'bg-emerald-600 text-white font-bold' : 'text-neutral-400 hover:text-white'"
+                    >
+                      Resolved ({{ getResolvedTasksForWidget(w).length }})
+                    </button>
                   </div>
-                  <div class="flex items-center gap-1 shrink-0">
-                    <span v-if="item.due_time && item.checked !== 1" class="task-list-meta font-mono text-neutral-500">{{ item.due_time }}</span>
-                    <span v-if="item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10)" class="text-[9px] font-mono text-red-400 font-bold">{{ t('overdue') }}</span>
-                    <span v-else-if="item.due_date && item.checked !== 1" class="text-[9px] font-mono text-neutral-500">{{ item.due_date }}</span>
-                    <span v-if="item.reward" class="font-mono text-xs text-amber-400 font-bold">+{{ item.reward }} pts</span>
-                  </div>
-                </li>
-              </ul>
+                </div>
+                <div class="flex items-center gap-1">
+                  <button
+                    v-if="getWidgetResolvedTab(w) === 'resolved'"
+                    type="button"
+                    @click.stop="cycleResolvedPeriodFilter(w)"
+                    class="text-[10px] font-mono px-2 py-0.5 rounded border border-neutral-800 bg-neutral-900 text-amber-300"
+                  >
+                    {{ getResolvedPeriodFilterLabel(w) }}
+                  </button>
+                  <button
+                    v-if="getWidgetResolvedTab(w) === 'resolved' && getResolvedTasksForWidget(w).length > 0"
+                    type="button"
+                    @click.stop="clearCompletedForList(getTaskListObjectForWidget(w))"
+                    class="text-[10px] font-mono px-2 py-0.5 rounded border border-red-900/60 bg-red-950/40 text-red-300 hover:bg-red-900/50"
+                  >
+                    🧹 Clear
+                  </button>
+                  <button
+                    type="button"
+                    @click.stop="openQuickAdd(getTaskListObjectForWidget(w))"
+                    class="text-xs font-mono bg-neutral-900 hover:bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded border border-neutral-800"
+                  >
+                    + Add
+                  </button>
+                  <button type="button" @click.stop="toggleWidgetTimeSort(w)" class="text-xs font-mono px-2 py-0.5 rounded border border-neutral-800 bg-neutral-900 text-neutral-300" :aria-pressed="isWidgetTimeSortEnabled(w)">
+                    {{ isWidgetTimeSortEnabled(w) ? 'Time ↑' : 'Sort' }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Active Tasks View -->
+              <template v-if="getWidgetResolvedTab(w) !== 'resolved'">
+                <div v-if="getActiveTasksForWidget(w).length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
+                  {{ t('noTasks') }}
+                </div>
+                <ul v-else class="space-y-1 overflow-y-auto pr-1 flex-1 task-list-widget">
+                  <li 
+                    v-for="item in getSortedItemsForWidget(getActiveTasksForWidget(w), w)"
+                    :key="item.id"
+                    @click="toggleTaskItem(item)"
+                    class="task-list-row text-neutral-300 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-2 px-2 rounded-lg hover:bg-neutral-900/60"
+                    :class="{ 'is-checked': item.checked === 1, 'border border-red-800/60 bg-red-950/30': item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10) }"
+                  >
+                    <div class="flex items-center gap-2.5 flex-1 min-w-0">
+                      <input
+                        type="checkbox"
+                        :checked="item.checked === 1"
+                        @change.stop="toggleTaskItem(item)"
+                        @click.stop
+                        class="w-4 h-4 rounded accent-emerald-500 cursor-pointer shrink-0"
+                      />
+                      <span class="task-list-content" :class="{ 'line-through text-neutral-600': item.checked === 1 }">{{ item.content }}</span>
+                      <span v-if="item.assignee_name && !selectedProfileId" class="text-[9px] font-mono px-1 rounded bg-neutral-900 text-neutral-400 border border-neutral-800">
+                        @{{ item.assignee_name }}
+                      </span>
+                      <span v-if="item.recurrence && item.recurrence !== 'none'" class="text-[9px] font-mono px-1 rounded bg-sky-950/40 text-sky-400 border border-sky-900/40 shrink-0">↻</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                      <span v-if="item.due_time && item.checked !== 1" class="task-list-meta font-mono text-neutral-500">{{ item.due_time }}</span>
+                      <span v-if="item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10)" class="text-[9px] font-mono text-red-400 font-bold">{{ t('overdue') }}</span>
+                      <span v-else-if="item.due_date && item.checked !== 1" class="text-[9px] font-mono text-neutral-500">{{ item.due_date }}</span>
+                      <span v-if="item.reward" class="font-mono text-xs text-amber-400 font-bold">+{{ item.reward }} pts</span>
+                      <button type="button" @click.stop="openEditItemModal(item)" class="text-[11px] text-neutral-500 hover:text-sky-400 px-1" title="Edit task">✏️</button>
+                      <button type="button" @click.stop="deleteListItemFromKiosk(item)" class="text-[11px] text-neutral-500 hover:text-red-400 px-1" title="Delete task">🗑️</button>
+                    </div>
+                  </li>
+                </ul>
+              </template>
+
+              <!-- Resolved / History Tasks View -->
+              <template v-else>
+                <div v-if="getResolvedTasksForWidget(w).length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
+                  No resolved tasks for this period.
+                </div>
+                <ul v-else class="space-y-1 overflow-y-auto pr-1 flex-1 task-list-widget">
+                  <li
+                    v-for="item in getResolvedTasksForWidget(w)"
+                    :key="item.id"
+                    @click="toggleTaskItem(item)"
+                    class="task-list-row is-checked text-neutral-400 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-2 px-2 rounded-lg bg-neutral-900/40"
+                  >
+                    <div class="flex items-center gap-2.5 flex-1 min-w-0">
+                      <input
+                        type="checkbox"
+                        :checked="true"
+                        @change.stop="toggleTaskItem(item)"
+                        @click.stop
+                        class="w-4 h-4 rounded accent-emerald-500 cursor-pointer shrink-0"
+                      />
+                      <div class="min-w-0">
+                        <span class="task-list-content line-through text-neutral-500">{{ item.content }}</span>
+                        <div class="text-[10px] font-mono text-emerald-400/90 mt-0.5">
+                          ✓ Done<span v-if="item.completed_by || item.assignee_name"> by {{ item.completed_by || item.assignee_name }}</span><span v-if="item.last_completed_at"> • {{ formatResolvedTime(item.last_completed_at) }}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0">
+                      <span v-if="item.reward" class="font-mono text-xs text-amber-400/80 font-bold">+{{ item.reward }} pts</span>
+                      <button type="button" @click.stop="deleteListItemFromKiosk(item)" class="text-[11px] text-neutral-500 hover:text-red-400 px-1" title="Delete">🗑️</button>
+                    </div>
+                  </li>
+                </ul>
+              </template>
             </div>
 
             <!-- ================= WIDGET TYPE 4: LIST (CUSTOM/SHOPPING) ================= -->
             <div v-else-if="w.widget_type === 'list'" class="h-full flex flex-col justify-between">
-              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
-                <div class="flex items-center gap-2">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2 gap-1.5 flex-wrap">
+                <div class="flex items-center gap-2 min-w-0">
                   <span>{{ targetList(w)?.icon || '📋' }}</span>
-                  <span class="font-mono text-xs uppercase tracking-widest text-white font-semibold">
+                  <select
+                    v-if="lists.length > 1"
+                    :value="targetList(w)?.id"
+                    @change.stop="setWidgetListId(w, $event.target.value)"
+                    @click.stop
+                    class="bg-transparent font-mono text-xs uppercase tracking-widest text-white font-semibold border border-transparent hover:border-neutral-700 rounded px-1 py-0.5 cursor-pointer outline-none"
+                    title="Switch displayed list"
+                  >
+                    <option v-for="lst in lists" :key="lst.id" :value="lst.id" class="bg-neutral-900 text-white">
+                      {{ lst.name }}
+                    </option>
+                  </select>
+                  <span v-else class="font-mono text-xs uppercase tracking-widest text-white font-semibold">
                     {{ targetList(w)?.name || 'Shopping List' }}
                   </span>
+
+                  <!-- Active vs Resolved Tabs -->
+                  <div class="flex items-center bg-neutral-900 rounded-lg p-0.5 border border-neutral-800 text-[10px] font-mono">
+                    <button
+                      type="button"
+                      @click.stop="setWidgetResolvedTab(w, 'active')"
+                      class="px-2 py-0.5 rounded transition"
+                      :class="getWidgetResolvedTab(w) !== 'resolved' ? 'bg-sky-600 text-white font-bold' : 'text-neutral-400 hover:text-white'"
+                    >
+                      Active ({{ getActiveListItems(targetList(w)).length }})
+                    </button>
+                    <button
+                      type="button"
+                      @click.stop="setWidgetResolvedTab(w, 'resolved')"
+                      class="px-2 py-0.5 rounded transition"
+                      :class="getWidgetResolvedTab(w) === 'resolved' ? 'bg-sky-600 text-white font-bold' : 'text-neutral-400 hover:text-white'"
+                    >
+                      History ({{ getResolvedItemsForList(targetList(w), w).length }})
+                    </button>
+                  </div>
                 </div>
-                <button 
-                  @click.stop="openQuickAdd(targetList(w))" 
-                  class="text-xs font-mono bg-neutral-900 hover:bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded border border-neutral-800"
-                >
-                  + Add
-                </button>
-                <button type="button" @click.stop="toggleWidgetTimeSort(w)" class="text-xs font-mono px-2 py-1 rounded border border-neutral-800 bg-neutral-900 text-neutral-300" :aria-pressed="isWidgetTimeSortEnabled(w)">
-                  {{ isWidgetTimeSortEnabled(w) ? 'Time ↑' : 'Sort by time' }}
-                </button>
+                <div class="flex items-center gap-1">
+                  <button
+                    v-if="getWidgetResolvedTab(w) === 'resolved'"
+                    type="button"
+                    @click.stop="cycleResolvedPeriodFilter(w)"
+                    class="text-[10px] font-mono px-2 py-0.5 rounded border border-neutral-800 bg-neutral-900 text-amber-300"
+                  >
+                    {{ getResolvedPeriodFilterLabel(w) }}
+                  </button>
+                  <button
+                    v-if="getWidgetResolvedTab(w) === 'resolved' && getResolvedItemsForList(targetList(w), w).length > 0"
+                    type="button"
+                    @click.stop="clearCompletedForList(targetList(w))"
+                    class="text-[10px] font-mono px-2 py-0.5 rounded border border-red-900/60 bg-red-950/40 text-red-300 hover:bg-red-900/50"
+                  >
+                    🧹 Clear Done
+                  </button>
+                  <button 
+                    @click.stop="openQuickAdd(targetList(w))" 
+                    class="text-xs font-mono bg-neutral-900 hover:bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded border border-neutral-800"
+                  >
+                    + Add
+                  </button>
+                  <button type="button" @click.stop="toggleWidgetTimeSort(w)" class="text-xs font-mono px-2 py-0.5 rounded border border-neutral-800 bg-neutral-900 text-neutral-300" :aria-pressed="isWidgetTimeSortEnabled(w)">
+                    {{ isWidgetTimeSortEnabled(w) ? 'Time ↑' : 'Sort' }}
+                  </button>
+                </div>
               </div>
 
-              <div v-if="!targetList(w) || !targetList(w).items || targetList(w).items.length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
-                List is empty.
-              </div>
-              <ul v-else class="space-y-1 overflow-y-auto pr-1 flex-1 task-list-widget">
-                <li 
-                  v-for="item in getSortedItemsForWidget(targetList(w).items, w)"
-                  :key="item.id"
-                  @click="toggleListItem(item)"
-                  class="task-list-row text-neutral-300 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-2 px-2 rounded-lg hover:bg-neutral-900/60"
-                  :class="{ 'is-checked': item.checked === 1, 'border border-red-800/60 bg-red-950/30': item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10) }"
-                >
-                  <div class="flex items-center gap-2.5 flex-1 min-w-0">
-                    <span 
-                      class="w-4 h-4 rounded-full border transition-all duration-300 flex items-center justify-center text-[10px] shrink-0"
-                      :class="item.checked === 1 ? 'bg-white border-white text-black font-bold' : 'border-neutral-600'"
-                    >
-                      <span v-if="item.checked === 1">✓</span>
-                    </span>
-                    <span class="task-list-content" :class="{ 'line-through text-neutral-600': item.checked === 1 }">{{ item.content }}</span>
-                    <span v-if="item.recurrence && item.recurrence !== 'none'" class="text-[9px] font-mono px-1 rounded bg-sky-950/40 text-sky-400 border border-sky-900/40 shrink-0">↻</span>
-                  </div>
-                  <div class="flex items-center gap-1 shrink-0">
-                    <span v-if="item.due_time && item.checked !== 1" class="task-list-meta font-mono text-neutral-500">{{ item.due_time }}</span>
-                    <span v-if="item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10)" class="text-[9px] font-mono text-red-400 font-bold">{{ t('overdue') }}</span>
-                    <span v-else-if="item.due_date && item.checked !== 1" class="text-[9px] font-mono text-neutral-500">{{ item.due_date }}</span>
-                  </div>
-                </li>
-              </ul>
+              <!-- Active List Items (Unchecked Only) -->
+              <template v-if="getWidgetResolvedTab(w) !== 'resolved'">
+                <div v-if="getActiveListItems(targetList(w)).length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
+                  List is empty. Tap + Add to add items.
+                </div>
+                <ul v-else class="space-y-1 overflow-y-auto pr-1 flex-1 task-list-widget">
+                  <li 
+                    v-for="item in getSortedItemsForWidget(getActiveListItems(targetList(w)), w)"
+                    :key="item.id"
+                    @click="toggleListItem(item)"
+                    class="task-list-row text-neutral-300 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-2 px-2 rounded-lg hover:bg-neutral-900/60"
+                    :class="{ 'is-checked': item.checked === 1, 'border border-red-800/60 bg-red-950/30': item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10) }"
+                  >
+                    <div class="flex items-center gap-2.5 flex-1 min-w-0">
+                      <input
+                        type="checkbox"
+                        :checked="item.checked === 1"
+                        @change.stop="toggleListItem(item)"
+                        @click.stop
+                        class="w-4 h-4 rounded accent-sky-500 cursor-pointer shrink-0"
+                      />
+                      <span class="task-list-content" :class="{ 'line-through text-neutral-600': item.checked === 1 }">{{ item.content }}</span>
+                      <span v-if="item.recurrence && item.recurrence !== 'none'" class="text-[9px] font-mono px-1 rounded bg-sky-950/40 text-sky-400 border border-sky-900/40 shrink-0">↻</span>
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0">
+                      <span v-if="item.due_time && item.checked !== 1" class="task-list-meta font-mono text-neutral-500">{{ item.due_time }}</span>
+                      <span v-if="item.checked !== 1 && item.due_date && item.due_date < new Date().toISOString().slice(0,10)" class="text-[9px] font-mono text-red-400 font-bold">{{ t('overdue') }}</span>
+                      <span v-else-if="item.due_date && item.checked !== 1" class="text-[9px] font-mono text-neutral-500">{{ item.due_date }}</span>
+                      <button type="button" @click.stop="openEditItemModal(item)" class="text-[11px] text-neutral-500 hover:text-sky-400 px-1" title="Edit item">✏️</button>
+                      <button type="button" @click.stop="deleteListItemFromKiosk(item)" class="text-[11px] text-neutral-500 hover:text-red-400 px-1" title="Delete item">🗑️</button>
+                    </div>
+                  </li>
+                </ul>
+              </template>
+
+              <!-- Resolved / Completed History Tab -->
+              <template v-else>
+                <div v-if="getResolvedItemsForList(targetList(w), w).length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
+                  No completed items in this period.
+                </div>
+                <ul v-else class="space-y-1 overflow-y-auto pr-1 flex-1 task-list-widget">
+                  <li
+                    v-for="item in getResolvedItemsForList(targetList(w), w)"
+                    :key="item.id"
+                    @click="toggleListItem(item)"
+                    class="task-list-row is-checked text-neutral-400 text-xs font-sans flex items-center justify-between cursor-pointer hover:text-white transition py-2 px-2 rounded-lg bg-neutral-900/40"
+                  >
+                    <div class="flex items-center gap-2.5 flex-1 min-w-0">
+                      <input
+                        type="checkbox"
+                        :checked="true"
+                        @change.stop="toggleListItem(item)"
+                        @click.stop
+                        class="w-4 h-4 rounded accent-sky-500 cursor-pointer shrink-0"
+                      />
+                      <div class="min-w-0">
+                        <span class="task-list-content line-through text-neutral-500">{{ item.content }}</span>
+                        <div class="text-[10px] font-mono text-sky-400/90 mt-0.5">
+                          ✓ Checked<span v-if="item.completed_by"> by {{ item.completed_by }}</span><span v-if="item.last_completed_at"> • {{ formatResolvedTime(item.last_completed_at) }}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0">
+                      <button type="button" @click.stop="deleteListItemFromKiosk(item)" class="text-[11px] text-neutral-500 hover:text-red-400 px-1" title="Delete">🗑️</button>
+                    </div>
+                  </li>
+                </ul>
+              </template>
             </div>
 
             <!-- ================= WIDGET TYPE 5: NOTES ================= -->
             <div v-else-if="w.widget_type === 'notes'" class="h-full flex flex-col justify-between">
               <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2">
-                <span class="font-mono text-xs uppercase tracking-widest text-neutral-400 font-semibold">RECENT NOTES</span>
-                <span class="text-[10px] font-mono text-neutral-600">{{ notes.length }} ITEMS</span>
+                <div class="flex items-center gap-2">
+                  <span class="font-mono text-xs uppercase tracking-widest text-neutral-400 font-semibold">RECENT NOTES</span>
+                  <span class="text-[10px] font-mono text-neutral-600">({{ notes.length }})</span>
+                </div>
+                <button
+                  type="button"
+                  @click.stop="openNoteModal()"
+                  class="text-xs font-mono bg-neutral-900 hover:bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded border border-neutral-800"
+                >
+                  + Add Note
+                </button>
               </div>
               <div v-if="notes.length === 0" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
-                No notes yet. Send notes from Telegram or voice dictation.
+                No notes yet. Tap + Add Note or send from Telegram.
               </div>
               <ul v-else class="space-y-1.5 overflow-y-auto pr-1 flex-1">
-                <li v-for="note in notes" :key="note.id" class="text-neutral-300 text-xs font-sans flex items-start justify-between py-1 border-b border-neutral-900/50">
-                  <span>• {{ note.content }}</span>
-                  <span class="text-[10px] font-mono text-neutral-600 ml-2 whitespace-nowrap">{{ formatTime(note.timestamp) }}</span>
+                <li v-for="note in notes" :key="note.id" class="text-neutral-300 text-xs font-sans flex items-start justify-between gap-2 py-1.5 border-b border-neutral-900/50">
+                  <span class="flex-1 break-words">• {{ note.content }}</span>
+                  <div class="flex items-center gap-1 shrink-0">
+                    <span class="text-[10px] font-mono text-neutral-600 whitespace-nowrap">{{ formatTime(note.timestamp) }}</span>
+                    <button type="button" @click.stop="openNoteModal(note)" class="text-[11px] text-neutral-500 hover:text-sky-400 px-1" title="Edit note">✏️</button>
+                    <button type="button" @click.stop="deleteNoteFromKiosk(note.id)" class="text-[11px] text-neutral-500 hover:text-red-400 px-1" title="Delete note">🗑️</button>
+                  </div>
                 </li>
               </ul>
             </div>
@@ -1344,7 +1574,7 @@
             <!-- ================= WIDGET TYPE 8: SCHOOL SCHEDULE ================= -->
             <div v-else-if="w.widget_type === 'schedule'" class="h-full flex flex-col justify-between overflow-hidden">
               <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2 gap-2 flex-wrap">
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 flex-wrap">
                   <span class="font-mono text-xs uppercase tracking-widest text-violet-400 font-semibold">{{ getLocalizedWidgetLabel('schedule', 'SCHOOL SCHEDULE') }}</span>
                   <!-- View Mode Toggle: Today / Tomorrow / Week -->
                   <div class="flex items-center bg-neutral-900/80 rounded-lg p-0.5 border border-neutral-800">
@@ -1373,6 +1603,25 @@
                       Week
                     </button>
                   </div>
+                  <!-- Week Offset Toggle (This Week vs Next Week) when in Week mode -->
+                  <div v-if="getScheduleViewMode(w) === 'week'" class="flex items-center bg-neutral-900/80 rounded-lg p-0.5 border border-neutral-800">
+                    <button
+                      type="button"
+                      @click.stop="setScheduleWeekOffset(w, 0)"
+                      class="px-2 py-0.5 rounded text-[10px] font-mono transition"
+                      :class="getScheduleWeekOffset(w) === 0 ? 'bg-sky-600 text-white font-bold' : 'text-neutral-400 hover:text-white'"
+                    >
+                      This Week
+                    </button>
+                    <button
+                      type="button"
+                      @click.stop="setScheduleWeekOffset(w, 1)"
+                      class="px-2 py-0.5 rounded text-[10px] font-mono transition"
+                      :class="getScheduleWeekOffset(w) === 1 ? 'bg-sky-600 text-white font-bold' : 'text-neutral-400 hover:text-white'"
+                    >
+                      Next Week
+                    </button>
+                  </div>
                 </div>
                 <div class="flex items-center gap-2">
                   <button @click.stop="refreshDashboardData" class="text-[9px] font-mono uppercase tracking-widest text-violet-200 hover:text-white border border-violet-800/70 rounded px-1.5 py-0.5">Refresh</button>
@@ -1391,8 +1640,9 @@
               <div v-else-if="getScheduleViewMode(w) !== 'week'" class="overflow-y-auto space-y-2 flex-1 pr-1">
                 <div v-for="dayRow in getDisplayedScheduleRows(w)" :key="dayRow.day" class="space-y-1.5">
                   <div class="flex items-center justify-between text-xs font-mono font-bold text-violet-300 border-b border-neutral-800/80 pb-1">
-                    <span>{{ dayRow.day }}</span>
+                    <span>{{ dayRow.day }} <span v-if="dayRow.displayDate" class="text-[10px] font-normal text-neutral-400">({{ dayRow.displayDate }})</span></span>
                     <span v-if="dayRow.isToday" class="text-[9px] px-1.5 py-0.5 rounded bg-violet-600 text-white uppercase tracking-wider">Today</span>
+                    <span v-else-if="getScheduleViewMode(w) === 'tomorrow'" class="text-[9px] px-1.5 py-0.5 rounded bg-sky-600 text-white uppercase tracking-wider">Tomorrow</span>
                   </div>
                   <div v-if="!dayRow.lessons || dayRow.lessons.length === 0" class="text-neutral-500 text-xs italic py-2">
                     No classes scheduled.
@@ -1439,7 +1689,10 @@
                   </thead>
                   <tbody>
                     <tr v-for="dayRow in getSchoolScheduleRows(w)" :key="dayRow.day" :class="dayRow.isToday ? 'bg-violet-500/10' : 'bg-transparent'">
-                      <td class="px-2 py-2 border-t border-neutral-800 font-semibold text-white whitespace-nowrap">{{ dayRow.day }}</td>
+                      <td class="px-2 py-2 border-t border-neutral-800 font-semibold text-white whitespace-nowrap">
+                        <div>{{ dayRow.day }}</div>
+                        <div v-if="dayRow.displayDate" class="text-[8px] font-mono text-neutral-400">{{ dayRow.displayDate }}</div>
+                      </td>
                       <td v-for="slot in getSchoolScheduleColumns(w)" :key="slot.key + '-' + dayRow.day" class="px-1.5 py-2 border-t border-l border-neutral-800 align-top text-center min-w-[90px]">
                         <div v-if="getLessonForSlot(dayRow.lessons, slot.key)" class="space-y-1 text-left rounded-md p-1.5 border" :class="getLessonForSlot(dayRow.lessons, slot.key).cancelled ? 'border-red-500/80 bg-red-950/40' : (getLessonForSlot(dayRow.lessons, slot.key).moved || getLessonForSlot(dayRow.lessons, slot.key).replacement || getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher || getLessonForSlot(dayRow.lessons, slot.key).flag) ? 'border-amber-400/70 bg-amber-950/40' : 'border-neutral-800 bg-neutral-900/60'">
                           <div v-if="getLessonForSlot(dayRow.lessons, slot.key).cancelled || getLessonForSlot(dayRow.lessons, slot.key).moved || getLessonForSlot(dayRow.lessons, slot.key).replacement || getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher" class="flex flex-wrap gap-1 text-[8px] font-mono">
@@ -1891,6 +2144,157 @@
               </div>
             </div>
 
+            <!-- ================= WIDGET TYPE 15: MENU OF THE WEEK (MEAL PLANNER) ================= -->
+            <div v-else-if="w.widget_type === 'meal_menu'" class="h-full flex flex-col justify-between overflow-hidden">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2 gap-2 flex-wrap">
+                <div class="flex items-center gap-2">
+                  <span class="font-mono text-xs uppercase tracking-widest text-orange-400 font-semibold">🍽️ {{ activeMealMenu?.name || 'MENU OF THE WEEK' }}</span>
+                  <div class="flex items-center bg-neutral-900/80 rounded-lg p-0.5 border border-neutral-800">
+                    <button
+                      type="button"
+                      @click.stop="setMealViewMode(w, 'today')"
+                      class="px-2 py-0.5 rounded text-[10px] font-mono transition"
+                      :class="getMealViewMode(w) === 'today' ? 'bg-orange-600 text-white font-bold' : 'text-neutral-400 hover:text-white'"
+                    >
+                      Today
+                    </button>
+                    <button
+                      type="button"
+                      @click.stop="setMealViewMode(w, 'tomorrow')"
+                      class="px-2 py-0.5 rounded text-[10px] font-mono transition"
+                      :class="getMealViewMode(w) === 'tomorrow' ? 'bg-orange-600 text-white font-bold' : 'text-neutral-400 hover:text-white'"
+                    >
+                      Tomorrow
+                    </button>
+                    <button
+                      type="button"
+                      @click.stop="setMealViewMode(w, 'week')"
+                      class="px-2 py-0.5 rounded text-[10px] font-mono transition"
+                      :class="getMealViewMode(w) === 'week' ? 'bg-orange-600 text-white font-bold' : 'text-neutral-400 hover:text-white'"
+                    >
+                      Week
+                    </button>
+                  </div>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <button
+                    v-if="activeMealMenu"
+                    type="button"
+                    @click.stop="pushMenuIngredientsToShopping(activeMealMenu.id)"
+                    class="text-[10px] font-mono px-2 py-0.5 rounded border border-orange-800/70 bg-orange-950/30 text-orange-300 hover:bg-orange-900/50"
+                    title="Add all weekly menu ingredients to Shopping List"
+                  >
+                    🛒 +Shop Week
+                  </button>
+                </div>
+              </div>
+
+              <div v-if="!activeMealMenu" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
+                No active weekly menu yet. Configure in Admin → Meal Planner.
+              </div>
+
+              <!-- Day View (Today or Tomorrow) -->
+              <div v-else-if="getMealViewMode(w) !== 'week'" class="overflow-y-auto space-y-2 flex-1 pr-1">
+                <div v-for="dayBlock in getDisplayedMealDays(w)" :key="dayBlock.day" class="space-y-2">
+                  <div class="text-xs font-mono font-bold text-orange-300 border-b border-neutral-800/80 pb-1 flex items-center justify-between">
+                    <span>{{ dayBlock.day }}</span>
+                    <span class="text-[9px] px-1.5 py-0.5 rounded bg-orange-600/30 text-orange-300 uppercase">{{ dayBlock.badge }}</span>
+                  </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div
+                      v-for="slot in dayBlock.slots"
+                      :key="slot.slotName"
+                      class="rounded-xl border border-neutral-800 bg-neutral-900/60 p-2.5 flex flex-col justify-between gap-1.5"
+                    >
+                      <div class="flex items-center justify-between">
+                        <span class="text-[10px] font-mono uppercase tracking-wider text-orange-400 font-bold">{{ slot.slotName }}</span>
+                        <button
+                          type="button"
+                          @click.stop="openMealSlotPicker(dayBlock.day, slot.slotName)"
+                          class="text-[10px] font-mono text-neutral-500 hover:text-white px-1"
+                          title="Assign or change dish"
+                        >
+                          ✏️
+                        </button>
+                      </div>
+                      <div v-if="slot.dishes.length === 0" class="text-xs text-neutral-500 italic py-1 cursor-pointer" @click.stop="openMealSlotPicker(dayBlock.day, slot.slotName)">
+                        + Tap to assign dish
+                      </div>
+                      <div v-else class="space-y-1.5">
+                        <div
+                          v-for="(dish, dIdx) in slot.dishes"
+                          :key="dIdx"
+                          @click.stop="openDishDetailModal(dish, dayBlock.day, slot.slotName)"
+                          class="flex items-center gap-2.5 p-1.5 rounded-lg bg-neutral-950/70 border border-neutral-800/80 hover:border-orange-500/60 cursor-pointer transition"
+                        >
+                          <img
+                            v-if="dish.photo_filename"
+                            :src="'/uploads/photos/' + dish.photo_filename"
+                            class="w-10 h-10 rounded-lg object-cover shrink-0 border border-neutral-700"
+                          />
+                          <div v-else class="w-10 h-10 rounded-lg bg-orange-950/50 border border-orange-800/50 flex items-center justify-center text-lg shrink-0">
+                            🍲
+                          </div>
+                          <div class="min-w-0 flex-1">
+                            <div class="text-xs font-bold text-white truncate">{{ dish.name }}</div>
+                            <div v-if="dish.tags && dish.tags.length" class="flex flex-wrap gap-1 mt-0.5">
+                              <span v-for="tag in dish.tags.slice(0, 3)" :key="tag" class="text-[9px] font-mono px-1 rounded bg-neutral-800 text-neutral-400">#{{ tag }}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Full Week Meal Grid View -->
+              <div v-else class="overflow-auto rounded-xl border border-neutral-800 bg-neutral-950/60 flex-1">
+                <table class="w-full border-collapse text-[10px] text-neutral-200">
+                  <thead>
+                    <tr class="bg-neutral-900/80 text-neutral-400">
+                      <th class="px-2 py-1.5 text-left font-mono uppercase">Day</th>
+                      <th v-for="slotName in getActiveMealSlots()" :key="slotName" class="px-2 py-1.5 text-left font-mono uppercase min-w-[100px]">
+                        {{ slotName }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="dayBlock in getDisplayedMealDays(w)" :key="dayBlock.day" :class="dayBlock.isToday ? 'bg-orange-500/10' : ''">
+                      <td class="px-2 py-2 border-t border-neutral-800 font-bold text-white whitespace-nowrap">
+                        {{ dayBlock.day.slice(0, 3) }}
+                      </td>
+                      <td
+                        v-for="slot in dayBlock.slots"
+                        :key="dayBlock.day + '-' + slot.slotName"
+                        class="px-2 py-1.5 border-t border-l border-neutral-800 align-top"
+                      >
+                        <div v-if="slot.dishes.length" class="space-y-1">
+                          <div
+                            v-for="(dish, dIdx) in slot.dishes"
+                            :key="dIdx"
+                            @click.stop="openDishDetailModal(dish, dayBlock.day, slot.slotName)"
+                            class="font-semibold text-white hover:text-orange-300 cursor-pointer flex items-center gap-1"
+                          >
+                            <span>🍲</span>
+                            <span class="truncate">{{ dish.name }}</span>
+                          </div>
+                        </div>
+                        <button
+                          v-else
+                          type="button"
+                          @click.stop="openMealSlotPicker(dayBlock.day, slot.slotName)"
+                          class="text-[9px] text-neutral-500 hover:text-orange-300 font-mono"
+                        >
+                          + Set
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
           </div>
 
         </div>
@@ -2086,7 +2490,7 @@
       @click.self="showQuickAddModal = false"
     >
       <div class="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl">
-        <h3 class="text-sm font-mono font-bold text-white mb-3">Add Item</h3>
+        <h3 class="text-sm font-mono font-bold text-white mb-3">Add Item to {{ quickAddTargetList?.name || 'List' }}</h3>
         <form @submit.prevent="submitQuickAdd" class="space-y-3">
           <input 
             v-model="quickAddContent" 
@@ -2146,6 +2550,167 @@
       </div>
     </div>
 
+    <!-- EDIT LIST / TASK ITEM MODAL -->
+    <div
+      v-if="showEditItemModal"
+      class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+      @click.self="showEditItemModal = false"
+    >
+      <div class="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl">
+        <h3 class="text-sm font-mono font-bold text-white mb-3">Edit Item</h3>
+        <form @submit.prevent="submitEditItemModal" class="space-y-3">
+          <input
+            v-model="editItemForm.content"
+            type="text"
+            placeholder="Item content..."
+            class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-lg p-2.5 text-xs text-white outline-none"
+            required
+          />
+          <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+            <div>
+              <label class="block text-[10px] text-neutral-400 mb-1">Due Date</label>
+              <input v-model="editItemForm.due_date" type="date" class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-1.5 text-xs text-neutral-200 outline-none" />
+            </div>
+            <div>
+              <label class="block text-[10px] text-neutral-400 mb-1">Due Time</label>
+              <input v-model="editItemForm.due_time" type="time" class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-1.5 text-xs text-neutral-200 outline-none" />
+            </div>
+          </div>
+          <div class="flex items-center gap-2 pt-1">
+            <button type="submit" class="flex-1 bg-sky-600 hover:bg-sky-500 text-white font-mono text-xs font-bold py-2 rounded-lg transition">Save Changes</button>
+            <button type="button" @click="showEditItemModal = false" class="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-mono text-xs py-2 px-3 rounded-lg transition">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- NOTE ADD / EDIT MODAL -->
+    <div
+      v-if="showNoteModal"
+      class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+      @click.self="showNoteModal = false"
+    >
+      <div class="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl">
+        <h3 class="text-sm font-mono font-bold text-white mb-3">{{ editingNoteId ? 'Edit Note' : 'New Note' }}</h3>
+        <form @submit.prevent="submitNoteModal" class="space-y-3">
+          <textarea
+            v-model="noteModalContent"
+            rows="3"
+            placeholder="Write a note..."
+            class="w-full bg-neutral-950 border border-neutral-800 focus:border-sky-500 rounded-lg p-2.5 text-xs text-white outline-none"
+            required
+          ></textarea>
+          <div class="flex items-center gap-2 pt-1">
+            <button type="submit" class="flex-1 bg-sky-600 hover:bg-sky-500 text-white font-mono text-xs font-bold py-2 rounded-lg transition">Save Note</button>
+            <button type="button" @click="showNoteModal = false" class="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-mono text-xs py-2 px-3 rounded-lg transition">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- DISH DETAIL & MEAL SLOT PICKER MODAL -->
+    <div
+      v-if="selectedDishModal || mealSlotPicker"
+      class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+      @click.self="selectedDishModal = null; mealSlotPicker = null"
+    >
+      <div class="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 max-w-md w-full shadow-2xl max-h-[85vh] overflow-y-auto space-y-4">
+        <template v-if="selectedDishModal">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <div v-if="selectedDishModal.slotContext" class="text-[10px] font-mono uppercase text-orange-400">{{ selectedDishModal.slotContext }}</div>
+              <h3 class="text-base font-bold text-white">{{ selectedDishModal.dish.name }}</h3>
+            </div>
+            <button @click="selectedDishModal = null" class="text-neutral-400 hover:text-white text-sm">✕</button>
+          </div>
+          <img
+            v-if="selectedDishModal.dish.photo_filename"
+            :src="'/uploads/photos/' + selectedDishModal.dish.photo_filename"
+            class="w-full h-44 object-cover rounded-xl border border-neutral-800"
+          />
+          <div v-if="selectedDishModal.dish.tags && selectedDishModal.dish.tags.length" class="flex flex-wrap gap-1.5">
+            <span v-for="t in selectedDishModal.dish.tags" :key="t" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-orange-950/60 border border-orange-800/60 text-orange-300">#{{ t }}</span>
+          </div>
+          <div v-if="selectedDishModal.dish.ingredients && selectedDishModal.dish.ingredients.length">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-xs font-mono uppercase text-neutral-400 font-bold">🥕 Ingredients</span>
+              <button
+                type="button"
+                @click="pushDishIngredientsToShopping(selectedDishModal.dish)"
+                class="text-[10px] font-mono px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition"
+              >
+                🛒 Add All to Shopping List
+              </button>
+            </div>
+            <ul class="space-y-1 text-xs text-neutral-200 bg-neutral-950 p-3 rounded-xl border border-neutral-800">
+              <li v-for="(ing, idx) in selectedDishModal.dish.ingredients" :key="idx">• {{ ing }}</li>
+            </ul>
+          </div>
+          <div v-if="selectedDishModal.dish.recipe">
+            <div class="text-xs font-mono uppercase text-neutral-400 font-bold mb-1">👩‍🍳 Recipe / Preparation</div>
+            <div class="text-xs text-neutral-200 whitespace-pre-line bg-neutral-950 p-3 rounded-xl border border-neutral-800 leading-relaxed">{{ selectedDishModal.dish.recipe }}</div>
+          </div>
+          <div class="flex items-center justify-between pt-2">
+            <button
+              v-if="selectedDishModal.day && selectedDishModal.slot"
+              type="button"
+              @click="openMealSlotPicker(selectedDishModal.day, selectedDishModal.slot); selectedDishModal = null"
+              class="text-xs font-mono px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-orange-300"
+            >
+              ✏️ Change Dish for Slot
+            </button>
+            <button type="button" @click="selectedDishModal = null" class="ml-auto text-xs font-mono px-4 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200">Close</button>
+          </div>
+        </template>
+
+        <template v-else-if="mealSlotPicker">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-mono font-bold text-white">Assign Dish: {{ mealSlotPicker.day }} — {{ mealSlotPicker.slot }}</h3>
+            <button @click="mealSlotPicker = null" class="text-neutral-400 hover:text-white">✕</button>
+          </div>
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              @click="mealSlotTagFilter = ''"
+              class="text-[10px] font-mono px-2 py-0.5 rounded-full border"
+              :class="!mealSlotTagFilter ? 'bg-orange-600 text-white border-orange-500' : 'border-neutral-700 text-neutral-400'"
+            >
+              All
+            </button>
+            <button
+              v-for="tag in allDishTags"
+              :key="tag"
+              type="button"
+              @click="mealSlotTagFilter = tag"
+              class="text-[10px] font-mono px-2 py-0.5 rounded-full border"
+              :class="mealSlotTagFilter === tag ? 'bg-orange-600 text-white border-orange-500' : 'border-neutral-700 text-neutral-400'"
+            >
+              #{{ tag }}
+            </button>
+          </div>
+          <div class="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+            <button
+              v-for="d in filteredCatalogDishes"
+              :key="d.id"
+              type="button"
+              @click="assignDishToMealSlot(d)"
+              class="w-full p-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-left flex items-center justify-between transition"
+            >
+              <div>
+                <div class="text-xs font-bold text-white">{{ d.name }}</div>
+                <div v-if="d.tags && d.tags.length" class="text-[10px] font-mono text-neutral-500">{{ d.tags.map(t => '#' + t).join(' ') }}</div>
+              </div>
+              <span class="text-xs font-mono text-orange-400">Select →</span>
+            </button>
+          </div>
+          <div class="flex items-center justify-between pt-2 border-t border-neutral-800">
+            <button type="button" @click="clearMealSlot()" class="text-xs font-mono text-red-400 hover:text-red-300">Clear Slot</button>
+            <button type="button" @click="mealSlotPicker = null" class="text-xs font-mono px-3 py-1.5 rounded-lg bg-neutral-800 text-neutral-300">Cancel</button>
+          </div>
+        </template>
+      </div>
+    </div>
+
   </div>
 
   <script>
@@ -2164,6 +2729,8 @@
         const profiles = ref([]);
         const schedules = ref([]);
         const lists = ref([]);
+        const dishes = ref([]);
+        const mealMenus = ref([]);
         const layouts = ref([]);
         const profileLayouts = ref({});
         const photos = ref([]);
@@ -2176,6 +2743,21 @@
         const gradeViewModes = ref({});
         const gradeDayFilters = ref({});
         const schoolDataProfileIds = ref({});
+        const widgetResolvedTabs = ref({});
+        const widgetResolvedFilters = ref({});
+        const scheduleWeekOffsets = ref({});
+        const mealViewModes = ref({});
+        const pendingToggles = new Map();
+
+        // Item / Note / Meal Modals State
+        const showEditItemModal = ref(false);
+        const editItemForm = ref({ id: null, content: '', due_date: '', due_time: '' });
+        const showNoteModal = ref(false);
+        const editingNoteId = ref(null);
+        const noteModalContent = ref('');
+        const selectedDishModal = ref(null);
+        const mealSlotPicker = ref(null);
+        const mealSlotTagFilter = ref('');
         const librusData = ref({
           grades: [],
           notifications: [],
@@ -2415,7 +2997,12 @@
           return shuffledScreensaverPhotos.value[currentPhotoIndex.value % shuffledScreensaverPhotos.value.length];
         });
         const displayedPhotoId = ref(null);
-        const displayedScreensaverPhoto = computed(() => screensaverPhotos.value.find(photo => photo.id === displayedPhotoId.value) || null);
+        const displayedScreensaverPhoto = computed(() => {
+          return screensaverPhotos.value.find(photo => photo.id === displayedPhotoId.value)
+            || currentScreensaverPhoto.value
+            || screensaverPhotos.value[0]
+            || null;
+        });
         let imagePreloadVersion = 0;
 
         watch(currentScreensaverPhoto, async (photo) => {
@@ -2461,7 +3048,8 @@
         const manualNightMode = ref(false);
         const isNightModeActive = computed(() => {
           if (manualNightMode.value) return true;
-          if (!settings.value.night_mode_enabled) return false;
+          const nmEnabled = settings.value.night_mode_enabled;
+          if (!nmEnabled || nmEnabled === '0' || nmEnabled === 'false') return false;
           const currentHour = now.value.getHours();
           const currentMin = now.value.getMinutes();
           const curMinutes = currentHour * 60 + currentMin;
@@ -2808,6 +3396,7 @@
           { type: 'tasks', name: 'Chores & Tasks', icon: '✅', desc: 'Filtered checklist & rewards' },
           { type: 'list', name: 'Shopping / Custom', icon: '🛒', desc: 'Interactive shopping list' },
           { type: 'notes', name: 'Family Notes', icon: '📝', desc: 'Stream of notes & reminders' },
+          { type: 'meal_menu', name: 'Menu of the Week', icon: '🍽️', desc: 'Weekly family meal planner & recipes' },
           { type: 'timer', name: 'Kitchen Timer', icon: '⏳', desc: 'Countdown with audio chime' },
           { type: 'photo', name: 'Photo Frame', icon: '🖼️', desc: 'Rotating family photos' },
           { type: 'schedule', name: 'School Schedule', icon: '📚', desc: 'Day-by-day school timetable' },
@@ -2860,6 +3449,33 @@
           return profiles.value.find(p => p.id === selectedProfileId.value) || null;
         });
 
+        function applyIncomingLists(incomingLists) {
+          if (!Array.isArray(incomingLists)) return;
+          const nowMs = Date.now();
+          for (const [id, entry] of pendingToggles.entries()) {
+            if (entry.expiresAt <= nowMs) pendingToggles.delete(id);
+          }
+          lists.value = incomingLists.map(l => ({
+            ...l,
+            items: Array.isArray(l.items) ? l.items.map(item => {
+              const pending = pendingToggles.get(item.id);
+              if (pending && pending.expiresAt > nowMs) {
+                if (item.checked === pending.checked) {
+                  pendingToggles.delete(item.id);
+                  return item;
+                }
+                return {
+                  ...item,
+                  checked: pending.checked,
+                  completed_by: pending.completedBy || item.completed_by,
+                  last_completed_at: pending.lastCompletedAt || item.last_completed_at
+                };
+              }
+              return item;
+            }) : []
+          }));
+        }
+
         async function refreshDashboardData() {
           try {
             const res = await fetch('/api/admin/data');
@@ -2869,7 +3485,9 @@
             if (data.tasks) tasks.value = data.tasks;
             if (data.profiles) profiles.value = data.profiles;
             if (data.schedules) schedules.value = data.schedules;
-            if (data.lists) lists.value = data.lists;
+            if (data.lists) applyIncomingLists(data.lists);
+            if (data.dishes) dishes.value = data.dishes;
+            if (data.meal_menus) mealMenus.value = data.meal_menus;
             if (data.page_configs) pageConfigs.value = data.page_configs;
             if (data.settings) settings.value = { ...settings.value, ...data.settings };
             applyLibrusProfileData(data);
@@ -2883,9 +3501,12 @@
 
         // ==========================================================================
         // Theme & Font Size Resolution System
-        // Resolution: Widget override -> Page override -> Profile default -> Global default
+        // Resolution: Night Mode -> Page override -> Profile default -> Global default
         // ==========================================================================
         const activeTheme = computed(() => {
+          if (isNightModeActive.value) {
+            return 'dark';
+          }
           const profKey = selectedProfileId.value !== null ? String(selectedProfileId.value) : 'family';
           const pageKey = `${profKey}_${activePage.value}`;
           const pageCfg = pageConfigs.value && pageConfigs.value[pageKey];
@@ -3408,6 +4029,14 @@
           messageIndexes.value = { ...messageIndexes.value, [key]: nextIndex };
         }
 
+        function getTaskListObjectForWidget(widget) {
+          const cfg = getWidgetConfig(widget);
+          if (cfg && cfg.listId) {
+            return lists.value.find(l => Number(l.id) === Number(cfg.listId)) || lists.value.find(l => l.type === 'tasks') || lists.value[0] || null;
+          }
+          return lists.value.find(l => l.type === 'tasks') || lists.value[0] || null;
+        }
+
         function getFilteredTasksForWidget(widget) {
           const today = new Date();
           const todayStr = today.toISOString().slice(0, 10);
@@ -3435,10 +4064,117 @@
         }
 
         function targetList(widget) {
-          if (widget.config && widget.config.listId) {
-            return lists.value.find(l => l.id === widget.config.listId) || lists.value[0];
+          const cfg = getWidgetConfig(widget);
+          if (cfg && cfg.listId) {
+            return lists.value.find(l => Number(l.id) === Number(cfg.listId)) || lists.value[0];
           }
           return lists.value.find(l => l.type === 'shopping') || lists.value[0];
+        }
+
+        function getWidgetListId(widget) {
+          const cfg = getWidgetConfig(widget);
+          if (cfg && cfg.listId) return Number(cfg.listId);
+          const list = targetList(widget);
+          return list ? list.id : '';
+        }
+
+        function setWidgetListId(widget, listIdVal) {
+          triggerHaptic('tap');
+          if (!widget.config || typeof widget.config !== 'object') {
+            widget.config = { ...getWidgetConfig(widget) };
+          }
+          widget.config.listId = listIdVal ? Number(listIdVal) : null;
+          saveCurrentLayout();
+        }
+
+        function getWidgetResolvedTab(widget) {
+          const key = widget ? String(widget.id) : 'default';
+          return widgetResolvedTabs.value[key] || 'active';
+        }
+
+        function setWidgetResolvedTab(widget, tab) {
+          triggerHaptic('tap');
+          const key = widget ? String(widget.id) : 'default';
+          widgetResolvedTabs.value = { ...widgetResolvedTabs.value, [key]: tab };
+        }
+
+        function getResolvedPeriodFilter(widget) {
+          const key = widget ? String(widget.id) : 'default';
+          return widgetResolvedFilters.value[key] || 'week';
+        }
+
+        function cycleResolvedPeriodFilter(widget) {
+          triggerHaptic('tap');
+          const key = widget ? String(widget.id) : 'default';
+          const order = ['today', 'week', 'all'];
+          const cur = getResolvedPeriodFilter(widget);
+          const next = order[(order.indexOf(cur) + 1) % order.length];
+          widgetResolvedFilters.value = { ...widgetResolvedFilters.value, [key]: next };
+        }
+
+        function getResolvedPeriodFilterLabel(widget) {
+          const cur = getResolvedPeriodFilter(widget);
+          return cur === 'today' ? 'Today' : cur === 'week' ? 'This Week' : 'All Time';
+        }
+
+        function matchesResolvedPeriod(item, period) {
+          if (!item || item.checked !== 1) return false;
+          if (period === 'all') return true;
+          const rawTs = item.last_completed_at || item.completed_at;
+          if (!rawTs) return true;
+          const completedDate = new Date(String(rawTs).replace(' ', 'T'));
+          if (isNaN(completedDate.getTime())) return true;
+          const today = now.value;
+          const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+          if (period === 'today') {
+            return completedDate >= startOfToday;
+          }
+          if (period === 'week') {
+            const startOfWeek = new Date(startOfToday);
+            startOfWeek.setDate(startOfWeek.getDate() - 7);
+            return completedDate >= startOfWeek;
+          }
+          return true;
+        }
+
+        function getActiveTasksForWidget(widget) {
+          return getFilteredTasksForWidget(widget).filter(i => i.checked !== 1);
+        }
+
+        function getResolvedTasksForWidget(widget) {
+          const period = getResolvedPeriodFilter(widget);
+          let items = getTaskListForWidget(widget);
+          if (selectedProfileId.value) {
+            items = items.filter(i => !i.assignee_profile_id || i.assignee_profile_id === selectedProfileId.value);
+          }
+          return items
+            .filter(i => i.checked === 1 && matchesResolvedPeriod(i, period))
+            .sort((a, b) => String(b.last_completed_at || '').localeCompare(String(a.last_completed_at || '')));
+        }
+
+        function getActiveListItems(list) {
+          if (!list || !Array.isArray(list.items)) return [];
+          return list.items.filter(i => i.checked !== 1);
+        }
+
+        function getResolvedItemsForList(list, widget) {
+          if (!list || !Array.isArray(list.items)) return [];
+          const period = getResolvedPeriodFilter(widget);
+          return list.items
+            .filter(i => i.checked === 1 && matchesResolvedPeriod(i, period))
+            .sort((a, b) => String(b.last_completed_at || '').localeCompare(String(a.last_completed_at || '')));
+        }
+
+        function formatResolvedTime(ts) {
+          if (!ts) return '';
+          try {
+            const d = new Date(String(ts).replace(' ', 'T'));
+            if (isNaN(d.getTime())) return String(ts).slice(0, 16);
+            const locale = localeMap[effectiveLanguage.value] || 'en-US';
+            return d.toLocaleDateString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+          } catch (e) {
+            return '';
+          }
         }
 
         function timeToMinutes(value) {
@@ -3458,13 +4194,13 @@
         }
 
         function getSchoolLessonNumbers(widget) {
-          const schedule = getSchoolScheduleRows(widget);
+          const schedule = getDisplayedScheduleRows(widget);
           const maxLessons = Math.max(...schedule.map(day => day.lessons.length), 1);
           return Array.from({ length: maxLessons }, (_, idx) => idx + 1);
         }
 
         function getSchoolScheduleColumns(widget) {
-          const rows = getSchoolScheduleRows(widget);
+          const rows = getDisplayedScheduleRows(widget);
           if (!rows.length) return [];
           const slotMap = new Map();
           rows.forEach((dayRow) => {
@@ -3670,6 +4406,32 @@
           return shared[0] || null;
         });
 
+        function formatScheduleLessonList(rawLessons, stripSubstitutions = false) {
+          if (!Array.isArray(rawLessons)) return [];
+          return rawLessons
+            .filter(isMeaningfulSchoolLesson)
+            .map((lesson, idx) => {
+              const formatted = {
+                ...lesson,
+                number: lesson.number || idx + 1,
+                name: lesson.name || 'Free',
+                room: lesson.room || '—'
+              };
+              if (stripSubstitutions) {
+                formatted.cancelled = false;
+                formatted.moved = false;
+                formatted.replacement = null;
+                formatted.replacementTeacher = null;
+                formatted.flag = null;
+                if (formatted.original) {
+                  formatted.name = formatted.original;
+                  formatted.original = null;
+                }
+              }
+              return formatted;
+            });
+        }
+
         function getSchoolScheduleRows(widget) {
           let cfg = widget && widget.config;
           if (typeof cfg === 'string') {
@@ -3690,16 +4452,8 @@
             .map(dayRow => ({
               ...dayRow,
               isToday: normalizeSchoolDayLabel(dayRow.day) === todayKey,
-              lessons: Array.isArray(dayRow.lessons)
-                ? dayRow.lessons
-                    .filter(isMeaningfulSchoolLesson)
-                    .map((lesson, idx) => ({
-                      ...lesson,
-                      number: lesson.number || idx + 1,
-                      name: lesson.name || 'Free',
-                      room: lesson.room || '—'
-                    }))
-                : []
+              lessons: formatScheduleLessonList(dayRow.lessons, false),
+              nextLessons: Array.isArray(dayRow.nextLessons) ? formatScheduleLessonList(dayRow.nextLessons, false) : null
             }));
         }
 
@@ -3718,24 +4472,94 @@
           scheduleViewModes.value = { ...scheduleViewModes.value, [wId]: mode };
         }
 
+        function getScheduleWeekOffset(widget) {
+          const wId = widget ? String(widget.id) : 'default';
+          if (Object.prototype.hasOwnProperty.call(scheduleWeekOffsets.value, wId)) {
+            return scheduleWeekOffsets.value[wId];
+          }
+          // On Sunday, default Week view to Next Week (1) so users see upcoming Monday-Friday
+          return now.value.getDay() === 0 ? 1 : 0;
+        }
+
+        function setScheduleWeekOffset(widget, offset) {
+          triggerHaptic('tap');
+          const wId = widget ? String(widget.id) : 'default';
+          scheduleWeekOffsets.value = { ...scheduleWeekOffsets.value, [wId]: Number(offset) };
+        }
+
+        function resolveDayRowForTarget(dayRow, useNextWeek, targetIsoDate = null) {
+          if (!dayRow) return dayRow;
+          if (useNextWeek) {
+            if (Array.isArray(dayRow.nextLessons) && dayRow.nextLessons.length > 0) {
+              return {
+                ...dayRow,
+                isToday: false,
+                displayDate: dayRow.nextDate || targetIsoDate || null,
+                lessons: dayRow.nextLessons
+              };
+            }
+            // No nextLessons synced yet: strip one-off substitutions from current week so old changes don't bleed into next week
+            return {
+              ...dayRow,
+              isToday: false,
+              displayDate: dayRow.nextDate || targetIsoDate || null,
+              lessons: formatScheduleLessonList(dayRow.lessons, true)
+            };
+          }
+          // Current week view, but check if row.date is older than targetIsoDate
+          if (targetIsoDate && dayRow.date && dayRow.date < targetIsoDate) {
+            if (Array.isArray(dayRow.nextLessons) && dayRow.nextLessons.length > 0 && (!dayRow.nextDate || dayRow.nextDate === targetIsoDate)) {
+              return {
+                ...dayRow,
+                displayDate: dayRow.nextDate || targetIsoDate,
+                lessons: dayRow.nextLessons
+              };
+            }
+            return {
+              ...dayRow,
+              displayDate: targetIsoDate,
+              lessons: formatScheduleLessonList(dayRow.lessons, true)
+            };
+          }
+          return {
+            ...dayRow,
+            displayDate: dayRow.date || targetIsoDate || null
+          };
+        }
+
         function getDisplayedScheduleRows(widget) {
           const allRows = getSchoolScheduleRows(widget);
           if (!allRows.length) return [];
           const mode = getScheduleViewMode(widget);
-          if (mode === 'week') return allRows;
-
           const today = now.value;
+
+          if (mode === 'week') {
+            const weekOffset = getScheduleWeekOffset(widget);
+            const useNextWeek = weekOffset === 1;
+            return allRows.map(r => resolveDayRowForTarget(r, useNextWeek, null));
+          }
+
           const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-          const targetDayIdx = mode === 'tomorrow' ? (today.getDay() + 1) % 7 : today.getDay();
+          const targetDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + (mode === 'tomorrow' ? 1 : 0));
+          const targetIsoDate = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')}`;
+          const targetDayIdx = targetDate.getDay();
           const targetKey = dayNames[targetDayIdx];
 
-          const match = allRows.filter(r => normalizeSchoolDayLabel(r.day) === targetKey);
-          if (match.length) return match;
+          // When checking Tomorrow on Sunday (target = Monday), use next week's schedule!
+          const isSundayTomorrow = mode === 'tomorrow' && today.getDay() === 0;
 
-          const targetDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + (mode === 'tomorrow' ? 1 : 0));
+          const match = allRows.filter(r => normalizeSchoolDayLabel(r.day) === targetKey);
+          if (match.length) {
+            return match.map(r => ({
+              ...resolveDayRowForTarget(r, isSundayTomorrow, targetIsoDate),
+              isToday: mode !== 'tomorrow'
+            }));
+          }
+
           const locale = localeMap[effectiveLanguage.value] || 'en-US';
           return [{
             day: targetDate.toLocaleDateString(locale, { weekday: 'long' }),
+            displayDate: targetIsoDate,
             isToday: mode !== 'tomorrow',
             lessons: []
           }];
@@ -3878,18 +4702,339 @@
           nextTick(reinitSortable);
         }
 
-        // Interactive List Item Toggles
+        // Interactive List Item Toggles (Optimistic + Debounced Pending Map)
         function toggleListItem(item) {
+          if (!item || !item.id) return;
           triggerHaptic('success');
           const nextChecked = item.checked === 1 ? 0 : 1;
+          const completedBy = nextChecked === 1
+            ? (selectedProfile.value ? selectedProfile.value.name : 'Family')
+            : null;
+          const nowIso = nextChecked === 1 ? new Date().toISOString() : item.last_completed_at;
           item.checked = nextChecked;
+          item.completed_by = completedBy;
+          if (nextChecked === 1) item.last_completed_at = nowIso;
+
+          pendingToggles.set(item.id, {
+            checked: nextChecked,
+            completedBy,
+            lastCompletedAt: nowIso,
+            expiresAt: Date.now() + 4000
+          });
+
           if (socket && socket.connected) {
-            socket.emit('list:item:toggle', { id: item.id, checked: nextChecked === 1 });
+            socket.emit('list:item:toggle', {
+              id: item.id,
+              checked: nextChecked === 1,
+              completedBy
+            });
+          } else {
+            fetch(`/api/admin/list-items/${item.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ checked: nextChecked === 1, completed_by: completedBy })
+            }).catch(() => {});
           }
         }
 
         function toggleTaskItem(item) {
           toggleListItem(item);
+        }
+
+        function clearCompletedForList(list) {
+          if (!list || !list.id) return;
+          triggerHaptic('tap');
+          if (Array.isArray(list.items)) {
+            list.items = list.items.filter(i => i.checked !== 1);
+          }
+          if (socket && socket.connected) {
+            socket.emit('list:clear_completed', { listId: list.id });
+          } else {
+            fetch(`/api/admin/lists/${list.id}/clear-completed`, { method: 'POST' }).catch(() => {});
+          }
+        }
+
+        function openEditItemModal(item) {
+          if (!item) return;
+          triggerHaptic('tap');
+          editItemForm.value = {
+            id: item.id,
+            content: item.content || '',
+            due_date: item.due_date || '',
+            due_time: item.due_time || ''
+          };
+          showEditItemModal.value = true;
+        }
+
+        function submitEditItemModal() {
+          const form = editItemForm.value;
+          if (!form.id || !String(form.content || '').trim()) return;
+          triggerHaptic('success');
+          const trimmed = String(form.content).trim();
+          lists.value.forEach(l => {
+            if (Array.isArray(l.items)) {
+              const found = l.items.find(i => i.id === form.id);
+              if (found) {
+                found.content = trimmed;
+                found.due_date = form.due_date || null;
+                found.due_time = form.due_time || null;
+              }
+            }
+          });
+          if (socket && socket.connected) {
+            socket.emit('list:item:update', {
+              id: form.id,
+              content: trimmed,
+              due_date: form.due_date || null,
+              due_time: form.due_time || null
+            });
+          } else {
+            fetch(`/api/admin/list-items/${form.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                content: trimmed,
+                due_date: form.due_date || null,
+                due_time: form.due_time || null
+              })
+            }).catch(() => {});
+          }
+          showEditItemModal.value = false;
+        }
+
+        function deleteListItemFromKiosk(item) {
+          if (!item || !item.id) return;
+          triggerHaptic('tap');
+          lists.value.forEach(l => {
+            if (Array.isArray(l.items)) {
+              l.items = l.items.filter(i => i.id !== item.id);
+            }
+          });
+          if (socket && socket.connected) {
+            socket.emit('list:item:delete', { id: item.id });
+          } else {
+            fetch(`/api/admin/list-items/${item.id}`, { method: 'DELETE' }).catch(() => {});
+          }
+        }
+
+        // Notes CRUD from Kiosk
+        function openNoteModal(note = null) {
+          triggerHaptic('tap');
+          if (note && note.id) {
+            editingNoteId.value = note.id;
+            noteModalContent.value = note.content || '';
+          } else {
+            editingNoteId.value = null;
+            noteModalContent.value = '';
+          }
+          showNoteModal.value = true;
+        }
+
+        function submitNoteModal() {
+          const text = String(noteModalContent.value || '').trim();
+          if (!text) return;
+          triggerHaptic('success');
+          if (editingNoteId.value) {
+            const existing = notes.value.find(n => n.id === editingNoteId.value);
+            if (existing) existing.content = text;
+            if (socket && socket.connected) {
+              socket.emit('note:update', { id: editingNoteId.value, content: text });
+            } else {
+              fetch(`/api/admin/notes/${editingNoteId.value}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: text })
+              }).catch(() => {});
+            }
+          } else {
+            const author = selectedProfile.value ? selectedProfile.value.name : 'Family';
+            if (socket && socket.connected) {
+              socket.emit('note:add', { content: text, author });
+            } else {
+              fetch('/api/admin/notes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: text, author })
+              }).then(() => refreshDashboardData()).catch(() => {});
+            }
+          }
+          showNoteModal.value = false;
+          editingNoteId.value = null;
+          noteModalContent.value = '';
+        }
+
+        function deleteNoteFromKiosk(noteId) {
+          if (!noteId) return;
+          triggerHaptic('tap');
+          notes.value = notes.value.filter(n => n.id !== noteId);
+          if (socket && socket.connected) {
+            socket.emit('note:delete', { id: noteId });
+          } else {
+            fetch(`/api/admin/notes/${noteId}`, { method: 'DELETE' }).catch(() => {});
+          }
+        }
+
+        // ==========================================================================
+        // Menu of the Week (Meal Planner) Helpers
+        // ==========================================================================
+        const activeMealMenu = computed(() => {
+          if (!Array.isArray(mealMenus.value) || mealMenus.value.length === 0) return null;
+          return mealMenus.value.find(m => m.is_active === 1) || mealMenus.value[0];
+        });
+
+        function getActiveMealSlots() {
+          try {
+            const raw = settings.value.meal_slots;
+            if (Array.isArray(raw) && raw.length) return raw;
+            if (typeof raw === 'string' && raw.trim()) {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed) && parsed.length) return parsed;
+            }
+          } catch (e) {}
+          return ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
+        }
+
+        function getMealViewMode(widget) {
+          const key = widget ? String(widget.id) : 'default';
+          if (mealViewModes.value[key]) return mealViewModes.value[key];
+          const cfg = getWidgetConfig(widget);
+          return (cfg && cfg.meal_view_mode) || 'today';
+        }
+
+        function setMealViewMode(widget, mode) {
+          triggerHaptic('tap');
+          const key = widget ? String(widget.id) : 'default';
+          mealViewModes.value = { ...mealViewModes.value, [key]: mode };
+        }
+
+        function getDisplayedMealDays(widget) {
+          const orderedDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+          const jsDayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+          const todayName = jsDayMap[now.value.getDay()];
+          const tomorrowName = jsDayMap[(now.value.getDay() + 1) % 7];
+          const mode = getMealViewMode(widget);
+          const menu = activeMealMenu.value;
+          const plan = (menu && menu.plan && typeof menu.plan === 'object') ? menu.plan : {};
+          const dishById = new Map((dishes.value || []).map(d => [Number(d.id), d]));
+          const slots = getActiveMealSlots();
+
+          let targetDays = orderedDays;
+          if (mode === 'today') targetDays = [todayName];
+          else if (mode === 'tomorrow') targetDays = [tomorrowName];
+
+          return targetDays.map(dayName => {
+            const dayPlan = (plan[dayName] && typeof plan[dayName] === 'object') ? plan[dayName] : {};
+            const resolvedSlots = {};
+            slots.forEach(slot => {
+              const entry = dayPlan[slot];
+              if (entry && typeof entry === 'object') {
+                const dishId = entry.dish_id ? Number(entry.dish_id) : null;
+                resolvedSlots[slot] = {
+                  dishId,
+                  dish: entry.dish || (dishId ? dishById.get(dishId) || null : null),
+                  customText: entry.custom_text || ''
+                };
+              } else {
+                resolvedSlots[slot] = null;
+              }
+            });
+            return {
+              day: dayName,
+              isToday: dayName === todayName,
+              slots: resolvedSlots
+            };
+          });
+        }
+
+        const allDishTags = computed(() => {
+          const set = new Set();
+          (dishes.value || []).forEach(d => {
+            if (Array.isArray(d.tags)) {
+              d.tags.forEach(t => { if (t) set.add(String(t)); });
+            }
+          });
+          return [...set].sort();
+        });
+
+        const filteredCatalogDishes = computed(() => {
+          const tag = mealSlotTagFilter.value;
+          if (!tag) return dishes.value || [];
+          return (dishes.value || []).filter(d => Array.isArray(d.tags) && d.tags.includes(tag));
+        });
+
+        function openDishDetailModal(dish, day, slot) {
+          if (!dish) return;
+          triggerHaptic('tap');
+          selectedDishModal.value = { dish, day, slot };
+        }
+
+        function openMealSlotPicker(day, slot) {
+          triggerHaptic('tap');
+          mealSlotTagFilter.value = '';
+          mealSlotPicker.value = { day, slot };
+        }
+
+        function assignDishToMealSlot(dish) {
+          if (!mealSlotPicker.value || !dish) return;
+          triggerHaptic('success');
+          const { day, slot } = mealSlotPicker.value;
+          const menuId = activeMealMenu.value ? activeMealMenu.value.id : null;
+          if (socket && socket.connected) {
+            socket.emit('meal:slot:set', { menuId, day, slot, dishId: dish.id });
+          } else if (menuId) {
+            fetch(`/api/admin/meal-menus/${menuId}/slot`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ day, slot, dish_id: dish.id })
+            }).then(() => refreshDashboardData()).catch(() => {});
+          }
+          mealSlotPicker.value = null;
+        }
+
+        function clearMealSlot() {
+          if (!mealSlotPicker.value) return;
+          triggerHaptic('tap');
+          const { day, slot } = mealSlotPicker.value;
+          const menuId = activeMealMenu.value ? activeMealMenu.value.id : null;
+          if (socket && socket.connected) {
+            socket.emit('meal:slot:set', { menuId, day, slot, dishId: null, customText: null });
+          } else if (menuId) {
+            fetch(`/api/admin/meal-menus/${menuId}/slot`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ day, slot, dish_id: null, custom_text: null })
+            }).then(() => refreshDashboardData()).catch(() => {});
+          }
+          mealSlotPicker.value = null;
+        }
+
+        function pushDishIngredientsToShopping(dish) {
+          if (!dish || !dish.id) return;
+          triggerHaptic('success');
+          if (socket && socket.connected) {
+            socket.emit('meal:ingredients:to_shopping', { dishId: dish.id });
+          } else {
+            fetch('/api/admin/meal-menus/push-ingredients', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ dish_id: dish.id })
+            }).then(() => refreshDashboardData()).catch(() => {});
+          }
+          selectedDishModal.value = null;
+        }
+
+        function pushMenuIngredientsToShopping(menuId) {
+          if (!menuId) return;
+          triggerHaptic('success');
+          if (socket && socket.connected) {
+            socket.emit('meal:ingredients:to_shopping', { menuId });
+          } else {
+            fetch('/api/admin/meal-menus/push-ingredients', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ menu_id: menuId })
+            }).then(() => refreshDashboardData()).catch(() => {});
+          }
         }
 
         function openQuickAdd(list) {
@@ -4145,7 +5290,7 @@
             widget_type: type,
             x: 0,
             y: 0,
-            w: type === 'clock' || type === 'notes' || type === 'schedule' ? 12 : 6,
+            w: type === 'clock' || type === 'notes' || type === 'schedule' || type === 'meal_menu' ? 12 : 6,
             h: type === 'schedule' ? 3 : 2,
             config: baseConfig,
             position: activePageWidgets.value.length,
@@ -4346,7 +5491,9 @@
             if (data.tasks) tasks.value = data.tasks;
             if (data.profiles) profiles.value = data.profiles;
             if (data.schedules) schedules.value = data.schedules;
-            if (data.lists) lists.value = data.lists;
+            if (data.lists) applyIncomingLists(data.lists);
+            if (data.dishes) dishes.value = data.dishes;
+            if (data.meal_menus) mealMenus.value = data.meal_menus;
             if (data.profile_layouts) profileLayouts.value = data.profile_layouts;
             if (data.photos && Array.isArray(data.photos)) photos.value = data.photos;
             if (data.events && Array.isArray(data.events)) events.value = data.events;
@@ -4431,10 +5578,14 @@
           schedules,
           selectedProfileSchedule,
           lists,
+          dishes,
+          mealMenus,
+          activeMealMenu,
           layouts,
           photos,
           screensaverPhotos,
           currentScreensaverPhoto,
+          displayedScreensaverPhoto,
           events,
           calendarMonthLabel,
           filteredEvents,
@@ -4463,6 +5614,46 @@
           activePageWidgets,
           displayedTasks,
           targetList,
+          getWidgetListId,
+          setWidgetListId,
+          getTaskListObjectForWidget,
+          getWidgetResolvedTab,
+          setWidgetResolvedTab,
+          getResolvedPeriodFilter,
+          cycleResolvedPeriodFilter,
+          getResolvedPeriodFilterLabel,
+          getActiveTasksForWidget,
+          getResolvedTasksForWidget,
+          getActiveListItems,
+          getResolvedItemsForList,
+          formatResolvedTime,
+          clearCompletedForList,
+          showEditItemModal,
+          editItemForm,
+          openEditItemModal,
+          submitEditItemModal,
+          deleteListItemFromKiosk,
+          showNoteModal,
+          editingNoteId,
+          noteModalContent,
+          openNoteModal,
+          submitNoteModal,
+          deleteNoteFromKiosk,
+          getActiveMealSlots,
+          getMealViewMode,
+          setMealViewMode,
+          getDisplayedMealDays,
+          selectedDishModal,
+          mealSlotPicker,
+          mealSlotTagFilter,
+          allDishTags,
+          filteredCatalogDishes,
+          openDishDetailModal,
+          openMealSlotPicker,
+          assignDishToMealSlot,
+          clearMealSlot,
+          pushDishIngredientsToShopping,
+          pushMenuIngredientsToShopping,
           isEditMode,
           isAdminUnlocked,
           showPasswordModal,
@@ -4491,6 +5682,8 @@
           getSchoolScheduleRows,
           getScheduleViewMode,
           setScheduleViewMode,
+          getScheduleWeekOffset,
+          setScheduleWeekOffset,
           getDisplayedScheduleRows,
           getSchoolScheduleColumns,
           getLessonForSlot,

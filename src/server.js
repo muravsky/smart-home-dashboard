@@ -1,5 +1,6 @@
 require('dotenv').config();
 const path = require('path');
+const fs = require('fs');
 const http = require('http');
 const express = require('express');
 const { Server } = require('socket.io');
@@ -8,13 +9,16 @@ const basicAuth = require('express-basic-auth');
 const {
   db,
   insertNote,
-  insertTask,
+  getNoteById,
+  updateNote,
   deleteNote,
-  updateTaskStatus,
-  deleteTask,
-  getDashboardData,
   getNotes,
+  insertTask,
+  updateTaskStatus,
+  updateTask,
+  deleteTask,
   getTasks,
+  getDashboardData,
   getProfiles,
   getProfileById,
   getProfileByTelegramId,
@@ -37,6 +41,7 @@ const {
   toggleListItemChecked,
   updateListItem,
   deleteListItem,
+  clearCompletedListItems,
   getWidgetLayouts,
   getAllProfileLayouts,
   saveWidgetLayouts,
@@ -54,8 +59,23 @@ const {
   deleteCalendarFeed,
   getCalendarEvents,
   insertCalendarEvent,
+  updateCalendarEvent,
   deleteCalendarEvent,
   deleteOldCalendarEvents,
+  getDishes,
+  getDishById,
+  insertDish,
+  updateDish,
+  deleteDish,
+  getDefaultMealSlots,
+  getMealMenus,
+  getMealMenuById,
+  getActiveMealMenu,
+  insertMealMenu,
+  updateMealMenu,
+  deleteMealMenu,
+  applyMealMenuTemplate,
+  setMealSlotEntry,
   saveLibrusData,
   getLibrusData,
   insertAuditLog,
@@ -76,20 +96,62 @@ const { normalizeCalendarUrl, syncFeed, syncAllFeeds, startCalendarSyncCron } = 
 
 const app = express();
 const liveSettings = getSettings();
-const configuredCertPath = process.env.HTTPS_CERT_PATH || liveSettings.https_cert_path || null;
-const configuredKeyPath = process.env.HTTPS_KEY_PATH || liveSettings.https_key_path || null;
-const enableHttps = Boolean(Number(liveSettings.https_enabled || 0) === 1 || (process.env.HTTPS_CERT_PATH && process.env.HTTPS_KEY_PATH)) && Boolean(configuredCertPath && configuredKeyPath);
+const configuredCertPath = process.env.HTTPS_CERT_PATH || process.env.SSL_CERT_PATH || liveSettings.https_cert_path || null;
+const configuredKeyPath = process.env.HTTPS_KEY_PATH || process.env.SSL_KEY_PATH || liveSettings.https_key_path || null;
+const httpsRequested = Boolean(
+  Number(liveSettings.https_enabled || 0) === 1 ||
+  (process.env.HTTPS_CERT_PATH && process.env.HTTPS_KEY_PATH) ||
+  (process.env.SSL_CERT_PATH && process.env.SSL_KEY_PATH)
+);
 const sslCertPath = configuredCertPath || null;
 const sslKeyPath = configuredKeyPath || null;
+const certsExist = Boolean(sslCertPath && sslKeyPath && fs.existsSync(sslCertPath) && fs.existsSync(sslKeyPath));
+if (httpsRequested && !certsExist) {
+  console.warn(`[HTTPS] HTTPS was requested, but certificate files were not found at cert="${sslCertPath}" key="${sslKeyPath}". Falling back to HTTP so the server stays reachable.`);
+}
+const enableHttps = httpsRequested && certsExist;
 const httpsPort = Number(process.env.HTTPS_PORT || liveSettings.https_port || 443) || 443;
 const httpPort = Number(process.env.PORT) || 3000;
 
-const server = enableHttps
-  ? require('https').createServer({
-      key: require('fs').readFileSync(sslKeyPath),
-      cert: require('fs').readFileSync(sslCertPath)
-    }, app)
-  : http.createServer(app);
+let server;
+let activeHttps = enableHttps;
+if (enableHttps) {
+  try {
+    server = require('https').createServer({
+      key: fs.readFileSync(sslKeyPath),
+      cert: fs.readFileSync(sslCertPath)
+    }, app);
+  } catch (err) {
+    console.warn(`[HTTPS] Failed to load SSL certificate (${err.message}). Falling back to HTTP.`);
+    activeHttps = false;
+    server = http.createServer(app);
+  }
+} else {
+  server = http.createServer(app);
+}
+
+function addIngredientsToShoppingList(rawIngredients = [], assigneeProfileId = null) {
+  const cleanItems = (Array.isArray(rawIngredients) ? rawIngredients : [])
+    .map(i => String(i || '').trim())
+    .filter(Boolean);
+  if (!cleanItems.length) return [];
+
+  let shopList = getLists().find(l => l.type === 'shopping');
+  if (!shopList) {
+    shopList = insertList({ name: 'Shopping List', type: 'shopping', color: '#34d399', icon: '🛒' });
+  }
+  const added = [];
+  for (const ing of cleanItems) {
+    const item = insertListItem({
+      list_id: shopList.id,
+      content: ing,
+      assignee_profile_id: assigneeProfileId || null,
+      reward: 0
+    });
+    if (item) added.push(item);
+  }
+  return added;
+}
 
 // Initialize Socket.IO
 const io = new Server(server, {
@@ -126,31 +188,109 @@ io.on('connection', (socket) => {
   socket.emit('dashboard_update', getDashboardData());
 
   // Interactive task completion from tablet (legacy task)
-  socket.on('task:toggle', ({ id, status }) => {
-    updateTaskStatus(id, status);
+  socket.on('task:toggle', ({ id, status, completed_by }) => {
+    updateTaskStatus(id, status, completed_by || null);
     io.emit('dashboard_update', getDashboardData());
   });
 
   // Interactive list item toggle from tablet
-  socket.on('list:item:toggle', ({ id, checked }) => {
-    toggleListItemChecked(id, checked);
+  socket.on('list:item:toggle', ({ id, checked, completed_by }) => {
+    toggleListItemChecked(id, checked, completed_by || null);
     io.emit('dashboard_update', getDashboardData());
   });
 
   // Interactive list item addition from tablet
   socket.on('list:item:add', (data) => {
+    if (!data || !data.content) return;
     insertListItem({
-      list_id: data.listId,
+      list_id: data.listId || data.list_id,
       content: data.content,
-      assignee_profile_id: data.assigneeProfileId,
+      assignee_profile_id: data.assigneeProfileId ?? data.assignee_profile_id ?? null,
       reward: data.reward,
-      due_date: data.dueDate || data.due_date,
-      due_time: data.dueTime || data.due_time,
+      due_date: data.dueDate || data.due_date || null,
+      due_time: data.dueTime || data.due_time || null,
       recurrence: data.recurrence || 'none',
-      recurrence_interval: data.recurrenceInterval || data.recurrence_interval,
-      recurrence_days: data.recurrenceDays || data.recurrence_days
+      recurrence_interval: data.recurrenceInterval || data.recurrence_interval || 1,
+      recurrence_days: data.recurrenceDays || data.recurrence_days || null
     });
     io.emit('dashboard_update', getDashboardData());
+  });
+
+  // Interactive list item update from tablet
+  socket.on('list:item:update', (data) => {
+    if (!data || !data.id) return;
+    updateListItem(data.id, {
+      content: data.content,
+      checked: data.checked,
+      assignee_profile_id: data.assigneeProfileId !== undefined ? data.assigneeProfileId : data.assignee_profile_id,
+      reward: data.reward,
+      due_date: data.dueDate !== undefined ? data.dueDate : data.due_date,
+      due_time: data.dueTime !== undefined ? data.dueTime : data.due_time,
+      recurrence: data.recurrence,
+      recurrence_interval: data.recurrenceInterval !== undefined ? data.recurrenceInterval : data.recurrence_interval,
+      recurrence_days: data.recurrenceDays !== undefined ? data.recurrenceDays : data.recurrence_days
+    });
+    io.emit('dashboard_update', getDashboardData());
+  });
+
+  // Interactive list item delete from tablet
+  socket.on('list:item:delete', ({ id }) => {
+    if (!id) return;
+    deleteListItem(id);
+    io.emit('dashboard_update', getDashboardData());
+  });
+
+  // Clear completed items in a list from tablet
+  socket.on('list:clear_completed', ({ listId, list_id }) => {
+    const targetId = listId || list_id;
+    if (!targetId) return;
+    clearCompletedListItems(targetId);
+    io.emit('dashboard_update', getDashboardData());
+  });
+
+  // Notes CRUD from tablet
+  socket.on('note:add', ({ content }) => {
+    if (!content || !String(content).trim()) return;
+    insertNote(String(content).trim());
+    io.emit('dashboard_update', getDashboardData());
+  });
+
+  socket.on('note:update', ({ id, content }) => {
+    if (!id || !content || !String(content).trim()) return;
+    updateNote(id, String(content).trim());
+    io.emit('dashboard_update', getDashboardData());
+  });
+
+  socket.on('note:delete', ({ id }) => {
+    if (!id) return;
+    deleteNote(id);
+    io.emit('dashboard_update', getDashboardData());
+  });
+
+  // Meal Menu interactive updates from tablet
+  socket.on('meal:slot:set', (payload) => {
+    if (!payload || !payload.day || !payload.slot) return;
+    setMealSlotEntry({
+      menu_id: payload.menu_id || null,
+      week_start: payload.week_start || null,
+      day: payload.day,
+      slot: payload.slot,
+      entries: payload.entries || []
+    });
+    io.emit('dashboard_update', getDashboardData());
+  });
+
+  socket.on('meal:ingredients:to_shopping', (payload) => {
+    if (!payload) return;
+    let ingredients = Array.isArray(payload.ingredients) ? payload.ingredients : [];
+    if (!ingredients.length && payload.dish_id) {
+      const dish = getDishById(payload.dish_id);
+      if (dish && Array.isArray(dish.ingredients)) ingredients = dish.ingredients;
+    }
+    if (ingredients.length) {
+      addIngredientsToShoppingList(ingredients, payload.assignee_profile_id || null);
+      io.emit('dashboard_update', getDashboardData());
+    }
   });
 
   // Save widget layouts from kiosk (with optional profileId)
@@ -265,6 +405,15 @@ app.post('/api/admin/notes', (req, res) => {
   res.json({ ok: true, note });
 });
 
+app.patch('/api/admin/notes/:id', (req, res) => {
+  const { content } = req.body;
+  if (!content || !String(content).trim()) return res.status(400).json({ error: 'content is required' });
+  const note = updateNote(req.params.id, content);
+  if (!note) return res.status(404).json({ error: 'Note not found' });
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, note });
+});
+
 app.delete('/api/admin/notes/:id', (req, res) => {
   deleteNote(req.params.id);
   io.emit('dashboard_update', getDashboardData());
@@ -280,8 +429,14 @@ app.post('/api/admin/tasks', (req, res) => {
 });
 
 app.patch('/api/admin/tasks/:id', (req, res) => {
-  const { status } = req.body;
-  updateTaskStatus(req.params.id, status || 'completed');
+  const { title, assignee, reward, status, completed_by } = req.body;
+  if (title !== undefined || assignee !== undefined || reward !== undefined) {
+    const task = updateTask(req.params.id, { title, assignee, reward, status, completed_by });
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    io.emit('dashboard_update', getDashboardData());
+    return res.json({ ok: true, task });
+  }
+  updateTaskStatus(req.params.id, status || 'completed', completed_by || 'Admin');
   io.emit('dashboard_update', getDashboardData());
   res.json({ ok: true });
 });
@@ -533,9 +688,15 @@ app.patch('/api/admin/lists/:listId/items/:itemId', (req, res) => {
 });
 
 app.patch('/api/admin/lists/:listId/items/:itemId/toggle', (req, res) => {
-  const item = toggleListItemChecked(req.params.itemId, req.body.checked);
+  const item = toggleListItemChecked(req.params.itemId, req.body.checked, req.body.completed_by || 'Admin');
   io.emit('dashboard_update', getDashboardData());
   res.json({ ok: true, item });
+});
+
+app.post('/api/admin/lists/:listId/clear-completed', (req, res) => {
+  const info = clearCompletedListItems(req.params.listId);
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, deleted: info.changes });
 });
 
 app.delete('/api/admin/lists/:listId/items/:itemId', (req, res) => {
@@ -567,6 +728,59 @@ app.post('/api/admin/settings', (req, res) => {
   }
   io.emit('dashboard_update', getDashboardData());
   res.json({ ok: true, settings: updated });
+});
+
+// HTTPS Status & Self-Signed Certificate Generator API (admin)
+app.get('/api/admin/https/status', (req, res) => {
+  const currentSettings = getSettings();
+  const certP = currentSettings.https_cert_path || '';
+  const keyP = currentSettings.https_key_path || '';
+  res.json({
+    activeHttps,
+    https_enabled: Boolean(Number(currentSettings.https_enabled || 0)),
+    https_port: Number(currentSettings.https_port || 443),
+    cert_path: certP,
+    key_path: keyP,
+    cert_exists: Boolean(certP && fs.existsSync(certP)),
+    key_exists: Boolean(keyP && fs.existsSync(keyP))
+  });
+});
+
+app.post('/api/admin/https/generate-self-signed', (req, res) => {
+  try {
+    const { execFileSync } = require('child_process');
+    const domain = String(req.body?.domain || 'localhost').trim().replace(/[^a-zA-Z0-9.-]/g, '') || 'localhost';
+    const certsDir = path.join(__dirname, '../certs');
+    if (!fs.existsSync(certsDir)) fs.mkdirSync(certsDir, { recursive: true });
+    const certFile = path.join(certsDir, 'fullchain.pem');
+    const keyFile = path.join(certsDir, 'privkey.pem');
+
+    execFileSync('openssl', [
+      'req', '-x509', '-nodes', '-newkey', 'rsa:2048',
+      '-days', '365',
+      '-keyout', keyFile,
+      '-out', certFile,
+      '-subj', `/CN=${domain}`,
+      '-addext', `subjectAltName=DNS:${domain},DNS:localhost,IP:127.0.0.1`
+    ], { stdio: 'pipe' });
+
+    try { fs.chmodSync(keyFile, 0o600); } catch (e) {}
+
+    const updated = updateSettings({
+      https_cert_path: certFile,
+      https_key_path: keyFile
+    });
+    io.emit('dashboard_update', getDashboardData());
+    res.json({
+      ok: true,
+      domain,
+      cert_path: certFile,
+      key_path: keyFile,
+      settings: updated
+    });
+  } catch (err) {
+    res.status(500).json({ error: `Failed to generate certificate: ${err.message}` });
+  }
 });
 
 app.get('/api/admin/scheduled-subscriptions', (req, res) => {
@@ -661,8 +875,6 @@ app.patch('/api/admin/photos/:id', (req, res) => {
 });
 
 app.delete('/api/admin/photos/:id', (req, res) => {
-  const fs = require('fs');
-  const path = require('path');
   const photo = require('./db').getPhotoById(req.params.id);
   if (photo) {
     const filePath = path.join(__dirname, '../public/uploads/photos', photo.filename);
@@ -742,7 +954,6 @@ app.post('/api/admin/calendar/clean-past', (req, res) => {
 });
 
 app.get('/api/admin/calendar/events', (req, res) => {
-  // Admin can optionally pass ?from=YYYY-MM-DD; defaults to showing all events (no date filter for admin)
   const fromDate = req.query.from || null;
   res.json(getCalendarEvents({ fromDate, limit: 500 }));
 });
@@ -764,10 +975,139 @@ app.post('/api/admin/calendar/events', (req, res) => {
   res.json({ ok: true, event });
 });
 
+app.patch('/api/admin/calendar/events/:id', (req, res) => {
+  const event = updateCalendarEvent(req.params.id, req.body);
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, event });
+});
+
 app.delete('/api/admin/calendar/events/:id', (req, res) => {
   deleteCalendarEvent(req.params.id);
   io.emit('dashboard_update', getDashboardData());
   res.json({ ok: true });
+});
+
+// Dishes & Meal Menus (Menu of the Week) API (admin)
+app.get('/api/admin/dishes', (req, res) => {
+  const { tag, search } = req.query;
+  res.json(getDishes({ tag: tag || null, search: search || null }));
+});
+
+app.post('/api/admin/upload/dish-photo', uploadPhoto.single('photo'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
+  try {
+    const derivative = await createScreensaverDerivative(req.file.path, req.file.filename);
+    if (derivative.optimized) await fs.promises.unlink(req.file.path).catch(() => {});
+    res.json({ ok: true, filename: derivative.filename, url: `/uploads/photos/${derivative.filename}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/dishes', (req, res) => {
+  try {
+    const { name, photo_filename, ingredients, recipe, tags } = req.body || {};
+    if (!name || !String(name).trim()) return res.status(400).json({ error: 'Dish name is required' });
+    const dish = insertDish({ name, photo_filename, ingredients, recipe, tags });
+    io.emit('dashboard_update', getDashboardData());
+    res.json({ ok: true, dish });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.patch('/api/admin/dishes/:id', (req, res) => {
+  try {
+    const dish = updateDish(req.params.id, req.body || {});
+    if (!dish) return res.status(404).json({ error: 'Dish not found' });
+    io.emit('dashboard_update', getDashboardData());
+    res.json({ ok: true, dish });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/dishes/:id', (req, res) => {
+  deleteDish(req.params.id);
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/meal-menus', (req, res) => {
+  res.json(getMealMenus());
+});
+
+app.post('/api/admin/meal-menus', (req, res) => {
+  try {
+    const menu = insertMealMenu(req.body || {});
+    io.emit('dashboard_update', getDashboardData());
+    res.json({ ok: true, menu });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.patch('/api/admin/meal-menus/:id', (req, res) => {
+  try {
+    const menu = updateMealMenu(req.params.id, req.body || {});
+    if (!menu) return res.status(404).json({ error: 'Meal menu not found' });
+    io.emit('dashboard_update', getDashboardData());
+    res.json({ ok: true, menu });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/meal-menus/:id', (req, res) => {
+  deleteMealMenu(req.params.id);
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/meal-menus/:id/apply-template', (req, res) => {
+  const menu = applyMealMenuTemplate(req.params.id, req.body || {});
+  if (!menu) return res.status(404).json({ error: 'Template not found' });
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, menu });
+});
+
+app.post('/api/admin/meal-menus/slot', (req, res) => {
+  const { menu_id, week_start, day, slot, entries } = req.body || {};
+  if (!day || !slot) return res.status(400).json({ error: 'day and slot are required' });
+  const menu = setMealSlotEntry({ menu_id, week_start, day, slot, entries });
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, menu });
+});
+
+app.post('/api/admin/meal-menus/add-to-shopping', (req, res) => {
+  const { dish_id, menu_id, day, ingredients } = req.body || {};
+  let toAdd = Array.isArray(ingredients) ? [...ingredients] : [];
+  if (dish_id) {
+    const dish = getDishById(dish_id);
+    if (dish && Array.isArray(dish.ingredients)) toAdd.push(...dish.ingredients);
+  }
+  if (menu_id) {
+    const menu = getMealMenuById(menu_id);
+    if (menu && menu.schedule) {
+      const allDishesById = Object.fromEntries(getDishes().map(d => [String(d.id), d]));
+      const daysToScan = day ? [day] : Object.keys(menu.schedule);
+      for (const dKey of daysToScan) {
+        const daySlots = menu.schedule[dKey] || {};
+        for (const entries of Object.values(daySlots)) {
+          for (const entry of (Array.isArray(entries) ? entries : [])) {
+            if (entry && entry.dish_id && allDishesById[String(entry.dish_id)]) {
+              toAdd.push(...(allDishesById[String(entry.dish_id)].ingredients || []));
+            }
+          }
+        }
+      }
+    }
+  }
+  const uniqueIngredients = [...new Set(toAdd.map(i => String(i || '').trim()).filter(Boolean))];
+  const added = addIngredientsToShoppingList(uniqueIngredients);
+  io.emit('dashboard_update', getDashboardData());
+  res.json({ ok: true, count: added.length, items: added });
 });
 
 // Public calendar events endpoint (token-guarded for kiosk)

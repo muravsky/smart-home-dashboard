@@ -129,7 +129,7 @@ async function runTests() {
     calendar_events: [
       {
         title: 'Dentist appointment',
-        date: '2026-10-15',
+        date: 'tomorrow',
         time: '14:30',
         all_day: false
       }

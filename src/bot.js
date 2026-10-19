@@ -1,4 +1,4 @@
-const { Telegraf } = require('telegraf');
+const { Telegraf, Markup } = require('telegraf');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
@@ -8,22 +8,39 @@ const { parseTextWithGemini, parseAudioWithGemini } = require('./services/gemini
 const { fetchLibrusData, normalizeTimetableData, buildMorningSummary } = require('./services/librus');
 const {
   insertNote,
-  insertTask,
-  getDashboardData,
+  updateNote,
+  deleteNote,
   getNotes,
+  insertTask,
   getTasks,
   updateTaskStatus,
+  updateTask,
+  deleteTask,
+  getDashboardData,
   insertPhoto,
   getPhotos,
   getCalendarEvents,
   insertCalendarEvent,
+  updateCalendarEvent,
+  deleteCalendarEvent,
   getProfileByTelegramId,
   getProfiles,
   getLists,
+  getListById,
   insertList,
   insertListItem,
   updateList,
+  updateListItem,
+  deleteListItem,
+  clearCompletedListItems,
   toggleListItemChecked,
+  getDishes,
+  getDishById,
+  insertDish,
+  getDefaultMealSlots,
+  getMealMenus,
+  getActiveMealMenu,
+  setMealSlotEntry,
   insertAuditLog,
   getCalendarFeeds
 } = require('./db');
@@ -97,6 +114,32 @@ function getOrCreateDashboardList(type, name, icon = '📋') {
   return insertList({ name, type, icon });
 }
 
+function findOrCreateTargetList(rawListName, defaultType = 'shopping') {
+  const allLists = getLists();
+  if (!rawListName || !String(rawListName).trim()) {
+    return defaultType === 'tasks'
+      ? getOrCreateDashboardList('tasks', 'Family Tasks', '✅')
+      : getOrCreateDashboardList('shopping', 'Shopping List', '🛒');
+  }
+  const cleanName = String(rawListName).trim();
+  const lower = cleanName.toLowerCase();
+  if (lower === 'shopping' || lower === 'shopping list' || lower === 'groceries') {
+    return getOrCreateDashboardList('shopping', 'Shopping List', '🛒');
+  }
+  if (lower === 'tasks' || lower === 'family tasks' || lower === 'chores') {
+    return getOrCreateDashboardList('tasks', 'Family Tasks', '✅');
+  }
+  // Match ANY existing list (including custom lists!) by exact or partial name
+  const exact = allLists.find(l => (l.name || '').toLowerCase() === lower);
+  if (exact) return exact;
+  const partial = allLists.find(l => (l.name || '').toLowerCase().includes(lower) || lower.includes((l.name || '').toLowerCase()));
+  if (partial) return partial;
+  // Create a custom list (or shopping if explicitly named)
+  const inferredType = /shop|grocer|market|store/i.test(cleanName) ? 'shopping' : 'custom';
+  const inferredIcon = inferredType === 'shopping' ? '🛒' : '📋';
+  return insertList({ name: cleanName, type: inferredType, icon: inferredIcon });
+}
+
 function resolveProfileIdFromName(rawName, senderProfile) {
   if (!rawName) return senderProfile ? senderProfile.id : null;
   const normalized = String(rawName).trim().toLowerCase();
@@ -109,8 +152,6 @@ function resolveProfileIdFromName(rawName, senderProfile) {
   if (exactMatch) return exactMatch.id;
 
   const partialMatch = profiles.find((profile) => (profile.name || '').toLowerCase().includes(normalized));
-  // If no profile matches by name, treat as a family/unassigned item (null) rather than silently
-  // assigning to the sender — an explicit name that can't be resolved should not become personal.
   return partialMatch ? partialMatch.id : null;
 }
 
@@ -124,6 +165,32 @@ function normalizeDateString(value) {
     return date.toISOString().slice(0, 10);
   }
   return null;
+}
+
+function normalizeDayOfWeek(dayStr) {
+  if (!dayStr) {
+    const names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return names[new Date().getDay()];
+  }
+  const s = String(dayStr).trim().toLowerCase();
+  if (s === 'today') {
+    const names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return names[new Date().getDay()];
+  }
+  if (s === 'tomorrow') {
+    const names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return names[(new Date().getDay() + 1) % 7];
+  }
+  const map = {
+    mon: 'Monday', monday: 'Monday',
+    tue: 'Tuesday', tuesday: 'Tuesday',
+    wed: 'Wednesday', wednesday: 'Wednesday',
+    thu: 'Thursday', thursday: 'Thursday',
+    fri: 'Friday', friday: 'Friday',
+    sat: 'Saturday', saturday: 'Saturday',
+    sun: 'Sunday', sunday: 'Sunday'
+  };
+  return map[s] || (s.charAt(0).toUpperCase() + s.slice(1));
 }
 
 function generateFutureCalendarDates(startDateStr, recurrence, interval = 1, maxCount = 8) {
@@ -161,74 +228,179 @@ function generateFutureCalendarDates(startDateStr, recurrence, interval = 1, max
 
 // Helper: execute all actions returned by Gemini
 async function applyParsedGeminiActions(parsedData, senderProfile, ioInstance = null) {
-  const { notes, tasks, shopping_items, calendar_events, timer } = parsedData || {};
+  const { notes, tasks, shopping_items, calendar_events, meal_actions, timer } = parsedData || {};
   const senderName = senderProfile ? senderProfile.name : null;
   const actionsSummary = [];
 
   if (Array.isArray(notes) && notes.length > 0) {
+    let addedCount = 0;
+    let updatedCount = 0;
+    let deletedCount = 0;
+    const allNotes = getNotes(100);
     for (const note of notes) {
-      const content = senderName ? `[${senderName}]: ${note}` : note;
-      insertNote(content);
+      if (typeof note === 'string') {
+        const content = senderName ? `[${senderName}]: ${note}` : note;
+        insertNote(content);
+        addedCount++;
+      } else if (note && typeof note === 'object') {
+        const action = String(note.action || 'add').toLowerCase();
+        const target = note.id
+          ? allNotes.find(n => n.id === Number(note.id))
+          : (note.match ? allNotes.find(n => (n.content || '').toLowerCase().includes(note.match.toLowerCase())) : null);
+        if (action === 'delete' && target) {
+          deleteNote(target.id);
+          deletedCount++;
+        } else if (action === 'edit' && target && note.content) {
+          const content = senderName ? `[${senderName}]: ${note.content}` : note.content;
+          updateNote(target.id, content);
+          updatedCount++;
+        } else if (note.content) {
+          const content = senderName ? `[${senderName}]: ${note.content}` : note.content;
+          insertNote(content);
+          addedCount++;
+        }
+      }
     }
-    actionsSummary.push(`Added ${notes.length} note(s)`);
+    if (addedCount) actionsSummary.push(`Added ${addedCount} note(s)`);
+    if (updatedCount) actionsSummary.push(`Updated ${updatedCount} note(s)`);
+    if (deletedCount) actionsSummary.push(`Deleted ${deletedCount} note(s)`);
   }
 
   if (Array.isArray(tasks) && tasks.length > 0) {
     const tasksList = getOrCreateDashboardList('tasks', 'Family Tasks', '✅');
+    let added = 0;
+    let completed = 0;
+    let edited = 0;
+    let deleted = 0;
     for (const task of tasks) {
-      const isFamily = !task.assignee || ['family', 'all', 'everyone', 'entire family', 'whole family'].includes(String(task.assignee).toLowerCase());
-      const assigneeProfileId = isFamily ? null : resolveProfileIdFromName(task.assignee, senderProfile);
+      const action = String(task.action || 'add').toLowerCase();
+      const currentItems = getListById(tasksList.id)?.items || [];
+      const searchStr = String(task.match || task.title || '').toLowerCase();
+      const matchedItem = task.id
+        ? currentItems.find(i => i.id === Number(task.id))
+        : (searchStr ? currentItems.find(i => (i.content || '').toLowerCase().includes(searchStr)) : null);
 
-      insertListItem({
-        list_id: tasksList.id,
-        content: task.title,
-        assignee_profile_id: assigneeProfileId,
-        reward: Number(task.reward) || 0,
-        due_date: normalizeDateString(task.due_date) || task.due_date || null,
-        due_time: task.due_time || null,
-        recurrence: task.recurrence || 'none',
-        recurrence_interval: Number(task.recurrence_interval) || 1,
-        recurrence_days: task.recurrence_days || null
-      });
-      insertTask({
-        title: task.title,
-        assignee: isFamily ? 'Family' : (task.assignee || senderName),
-        reward: Number(task.reward) || 0
-      });
+      if ((action === 'complete' || action === 'done' || action === 'check') && matchedItem) {
+        toggleListItemChecked(matchedItem.id, true, senderName || 'Telegram');
+        completed++;
+      } else if (action === 'delete' && matchedItem) {
+        deleteListItem(matchedItem.id);
+        deleted++;
+      } else if (action === 'edit' && matchedItem) {
+        updateListItem(matchedItem.id, {
+          content: task.new_title || task.title || matchedItem.content,
+          reward: task.reward !== undefined ? task.reward : matchedItem.reward,
+          due_date: task.due_date ? (normalizeDateString(task.due_date) || task.due_date) : matchedItem.due_date,
+          due_time: task.due_time !== undefined ? task.due_time : matchedItem.due_time
+        });
+        edited++;
+      } else {
+        const isFamily = !task.assignee || ['family', 'all', 'everyone', 'entire family', 'whole family'].includes(String(task.assignee).toLowerCase());
+        const assigneeProfileId = isFamily ? null : resolveProfileIdFromName(task.assignee, senderProfile);
+
+        insertListItem({
+          list_id: tasksList.id,
+          content: task.title,
+          assignee_profile_id: assigneeProfileId,
+          reward: Number(task.reward) || 0,
+          due_date: normalizeDateString(task.due_date) || task.due_date || null,
+          due_time: task.due_time || null,
+          recurrence: task.recurrence || 'none',
+          recurrence_interval: Number(task.recurrence_interval) || 1,
+          recurrence_days: task.recurrence_days || null
+        });
+        insertTask({
+          title: task.title,
+          assignee: isFamily ? 'Family' : (task.assignee || senderName),
+          reward: Number(task.reward) || 0
+        });
+        added++;
+      }
     }
-    actionsSummary.push(`Created ${tasks.length} task(s)`);
+    if (added) actionsSummary.push(`Created ${added} task(s)`);
+    if (completed) actionsSummary.push(`Completed ${completed} task(s)`);
+    if (edited) actionsSummary.push(`Updated ${edited} task(s)`);
+    if (deleted) actionsSummary.push(`Deleted ${deleted} task(s)`);
   }
 
   if (Array.isArray(shopping_items) && shopping_items.length > 0) {
+    let added = 0;
+    let checked = 0;
+    let edited = 0;
+    let deleted = 0;
     for (const item of shopping_items) {
-      const targetListName = item.list_name || 'Shopping List';
-      let shopList = getLists().find(l => l.type === 'shopping' && l.name.toLowerCase() === targetListName.toLowerCase());
-      if (!shopList) {
-        shopList = targetListName === 'Shopping List'
-          ? getOrCreateDashboardList('shopping', 'Shopping List', '🛒')
-          : insertList({ name: targetListName, type: 'shopping', icon: '🛒' });
+      const targetList = findOrCreateTargetList(item.list_name, 'shopping');
+      const action = String(item.action || 'add').toLowerCase();
+      const listItems = getListById(targetList.id)?.items || [];
+      const searchStr = String(item.content || '').toLowerCase();
+      const matched = item.id
+        ? listItems.find(i => i.id === Number(item.id))
+        : (searchStr ? listItems.find(i => (i.content || '').toLowerCase() === searchStr || (i.content || '').toLowerCase().includes(searchStr)) : null);
+
+      if ((action === 'check' || action === 'done' || action === 'complete') && matched) {
+        toggleListItemChecked(matched.id, true, senderName || 'Telegram');
+        checked++;
+      } else if (action === 'uncheck' && matched) {
+        toggleListItemChecked(matched.id, false, senderName || 'Telegram');
+        edited++;
+      } else if ((action === 'delete' || action === 'remove') && matched) {
+        deleteListItem(matched.id);
+        deleted++;
+      } else if (action === 'edit' && matched) {
+        updateListItem(matched.id, {
+          content: item.new_content || item.content || matched.content
+        });
+        edited++;
+      } else {
+        const isFamily = !item.assignee || ['family', 'all', 'everyone', 'entire family', 'whole family'].includes(String(item.assignee).toLowerCase());
+        const assigneeProfileId = isFamily ? null : resolveProfileIdFromName(item.assignee, senderProfile);
+
+        insertListItem({
+          list_id: targetList.id,
+          content: item.content,
+          assignee_profile_id: assigneeProfileId,
+          reward: 0,
+          recurrence: item.recurrence || 'none',
+          recurrence_interval: Number(item.recurrence_interval) || 1
+        });
+        added++;
       }
-
-      const isFamily = !item.assignee || ['family', 'all', 'everyone', 'entire family', 'whole family'].includes(String(item.assignee).toLowerCase());
-      const assigneeProfileId = isFamily ? null : resolveProfileIdFromName(item.assignee, senderProfile);
-
-      insertListItem({
-        list_id: shopList.id,
-        content: item.content,
-        assignee_profile_id: assigneeProfileId,
-        reward: 0,
-        recurrence: item.recurrence || 'none',
-        recurrence_interval: Number(item.recurrence_interval) || 1
-      });
     }
-    actionsSummary.push(`Added ${shopping_items.length} shopping item(s)`);
+    if (added) actionsSummary.push(`Added ${added} shopping item(s)`);
+    if (checked) actionsSummary.push(`Checked ${checked} list item(s)`);
+    if (edited) actionsSummary.push(`Updated ${edited} list item(s)`);
+    if (deleted) actionsSummary.push(`Removed ${deleted} list item(s)`);
   }
 
   if (Array.isArray(calendar_events) && calendar_events.length > 0) {
     let createdCount = 0;
+    let deletedCount = 0;
+    let updatedCount = 0;
+    const existingEvents = getCalendarEvents({ limit: 250 });
     for (const ev of calendar_events) {
+      const action = String(ev.action || 'add').toLowerCase();
+      const matchedEv = ev.id
+        ? existingEvents.find(e => e.id === Number(ev.id))
+        : existingEvents.find(e => (e.title || '').toLowerCase().includes(String(ev.title || '').toLowerCase()));
+
+      if ((action === 'delete' || action === 'remove') && matchedEv) {
+        deleteCalendarEvent(matchedEv.id);
+        deletedCount++;
+        continue;
+      }
+      if (action === 'edit' && matchedEv) {
+        const baseDate = normalizeDateString(ev.date) || ev.date || matchedEv.start_datetime.slice(0, 10);
+        const startIso = ev.time ? `${baseDate}T${ev.time}:00` : matchedEv.start_datetime;
+        updateCalendarEvent(matchedEv.id, {
+          title: ev.new_title || ev.title || matchedEv.title,
+          start_datetime: startIso,
+          all_day: ev.all_day !== undefined ? ev.all_day : matchedEv.all_day
+        });
+        updatedCount++;
+        continue;
+      }
+
       const isFamily = !ev.person || ['family', 'all', 'everyone', 'entire family', 'whole family'].includes(String(ev.person).toLowerCase());
-      // If ev.person is specified, resolve to profile. If not specified and not explicitly family, use senderProfile if available.
       let eventProfileId = isFamily ? null : resolveProfileIdFromName(ev.person, senderProfile);
       if (!isFamily && !eventProfileId && senderProfile) {
         eventProfileId = senderProfile.id;
@@ -237,7 +409,6 @@ async function applyParsedGeminiActions(parsedData, senderProfile, ioInstance = 
       let eventColor = '#38bdf8';
 
       const feeds = getCalendarFeeds();
-      // Check if person matches a calendar feed name
       if (ev.person) {
         const matchedFeed = feeds.find(f => (f.name || '').toLowerCase() === String(ev.person).toLowerCase())
           || feeds.find(f => (f.name || '').toLowerCase().includes(String(ev.person).toLowerCase()));
@@ -248,7 +419,6 @@ async function applyParsedGeminiActions(parsedData, senderProfile, ioInstance = 
         }
       }
 
-      // If feed not matched by name, check if the resolved profile has an associated feed
       if (!feedId && eventProfileId) {
         const profileFeed = feeds.find(f => f.profile_id === eventProfileId);
         if (profileFeed) {
@@ -272,7 +442,6 @@ async function applyParsedGeminiActions(parsedData, senderProfile, ioInstance = 
       });
       createdCount++;
 
-      // If recurring calendar event, schedule upcoming occurrences
       if (ev.recurrence && ev.recurrence !== 'none') {
         const futureDates = generateFutureCalendarDates(baseDate, ev.recurrence, ev.recurrence_interval, 8);
         for (const fDate of futureDates) {
@@ -291,7 +460,53 @@ async function applyParsedGeminiActions(parsedData, senderProfile, ioInstance = 
         }
       }
     }
-    actionsSummary.push(`Scheduled ${createdCount} event(s)`);
+    if (createdCount) actionsSummary.push(`Scheduled ${createdCount} event(s)`);
+    if (updatedCount) actionsSummary.push(`Updated ${updatedCount} event(s)`);
+    if (deletedCount) actionsSummary.push(`Deleted ${deletedCount} event(s)`);
+  }
+
+  if (Array.isArray(meal_actions) && meal_actions.length > 0) {
+    let mealCount = 0;
+    const allDishes = getDishes();
+    for (const ma of meal_actions) {
+      let matchedDish = ma.dish_name
+        ? allDishes.find(d => d.name.toLowerCase() === ma.dish_name.toLowerCase())
+        : null;
+      if (!matchedDish && ma.dish_name && (ma.action === 'add_dish' || (ma.ingredients && ma.ingredients.length > 0) || ma.recipe)) {
+        matchedDish = insertDish({
+          name: ma.dish_name,
+          ingredients: ma.ingredients || [],
+          recipe: ma.recipe || '',
+          tags: ma.tags || []
+        });
+        allDishes.push(matchedDish);
+      }
+      if ((ma.action === 'set_meal' || ma.action === 'set_slot') && ma.dish_name) {
+        const day = normalizeDayOfWeek(ma.day);
+        const slot = ma.slot || 'Dinner';
+        setMealSlotEntry({
+          day,
+          slot,
+          entries: [{
+            dish_id: matchedDish ? matchedDish.id : null,
+            name: matchedDish ? matchedDish.name : ma.dish_name
+          }]
+        });
+        mealCount++;
+      } else if (ma.action === 'ingredients_to_shopping') {
+        const shopList = getOrCreateDashboardList('shopping', 'Shopping List', '🛒');
+        const ings = (matchedDish && matchedDish.ingredients && matchedDish.ingredients.length)
+          ? matchedDish.ingredients
+          : (ma.ingredients || []);
+        for (const ing of ings) {
+          insertListItem({ list_id: shopList.id, content: ing });
+        }
+        mealCount++;
+      } else if (ma.action === 'add_dish' && matchedDish) {
+        mealCount++;
+      }
+    }
+    if (mealCount) actionsSummary.push(`Processed ${mealCount} meal action(s)`);
   }
 
   if (timer && timer.minutes) {
@@ -312,7 +527,7 @@ async function applyParsedGeminiActions(parsedData, senderProfile, ioInstance = 
 }
 
 function buildConfirmationMessage(parsedData, senderProfile) {
-  const { notes, tasks, shopping_items, calendar_events, timer, response_message } = parsedData || {};
+  const { notes, tasks, shopping_items, calendar_events, meal_actions, timer, response_message } = parsedData || {};
   const greeting = senderProfile ? `👋 *Hi ${senderProfile.name}!*` : `✅ *Smart Home Dashboard Updated!*`;
   let msg = `${greeting}\n`;
 
@@ -321,44 +536,193 @@ function buildConfirmationMessage(parsedData, senderProfile) {
   }
 
   if (tasks && tasks.length > 0) {
-    msg += `📋 *Tasks created:*\n` + tasks.map(t => {
+    msg += `📋 *Tasks:*\n` + tasks.map(t => {
+      const act = t.action && t.action !== 'add' ? `[${t.action.toUpperCase()}] ` : '';
       const who = t.assignee ? `(@${t.assignee}) ` : '(Family) ';
       const rew = t.reward ? ` [+${t.reward}]` : '';
       const rec = t.recurrence && t.recurrence !== 'none' ? ` [🔁 ${t.recurrence}]` : '';
-      return `• ${t.title} ${who}${rew}${rec}`;
+      return `• ${act}${t.new_title || t.title} ${who}${rew}${rec}`;
     }).join('\n') + '\n';
   }
 
   if (shopping_items && shopping_items.length > 0) {
-    msg += `🛒 *Shopping list updated:*\n` + shopping_items.map(s => {
+    msg += `🛒 *Lists updated:*\n` + shopping_items.map(s => {
+      const act = s.action && s.action !== 'add' ? `[${s.action.toUpperCase()}] ` : '';
       const listTag = s.list_name ? `[${s.list_name}] ` : '';
       const who = s.assignee ? `(@${s.assignee}) ` : '';
       const rec = s.recurrence && s.recurrence !== 'none' ? ` [🔁 ${s.recurrence}]` : '';
-      return `• ${listTag}${s.content} ${who}${rec}`.trim();
+      return `• ${act}${listTag}${s.new_content || s.content} ${who}${rec}`.trim();
     }).join('\n') + '\n';
   }
 
   if (calendar_events && calendar_events.length > 0) {
-    msg += `📅 *Calendar events scheduled:*\n` + calendar_events.map(e => {
+    msg += `📅 *Calendar events:*\n` + calendar_events.map(e => {
+      const act = e.action && e.action !== 'add' ? `[${e.action.toUpperCase()}] ` : '';
       const who = e.person ? `(@${e.person}) ` : '(Family) ';
       const rec = e.recurrence && e.recurrence !== 'none' ? ` [🔁 ${e.recurrence}]` : '';
-      return `• ${e.title} ${who}(${e.date || 'today'} ${e.time || ''})${rec}`;
+      return `• ${act}${e.new_title || e.title} ${who}(${e.date || 'today'} ${e.time || ''})${rec}`;
+    }).join('\n') + '\n';
+  }
+
+  if (meal_actions && meal_actions.length > 0) {
+    msg += `🍽️ *Menu of the Week:*\n` + meal_actions.map(m => {
+      if (m.action === 'set_meal') return `• ${m.day || 'Today'} ${m.slot || 'Meal'}: *${m.dish_name}*`;
+      if (m.action === 'add_dish') return `• Added dish: *${m.dish_name}*`;
+      return `• Added ingredients for *${m.dish_name || 'menu'}* to Shopping List`;
     }).join('\n') + '\n';
   }
 
   if (notes && notes.length > 0) {
-    msg += `📝 *Notes saved:*\n` + notes.map(n => `• ${n}`).join('\n') + '\n';
+    msg += `📝 *Notes:*\n` + notes.map(n => {
+      if (typeof n === 'string') return `• ${n}`;
+      return `• [${(n.action || 'add').toUpperCase()}] ${n.content || n.match || `#${n.id}`}`;
+    }).join('\n') + '\n';
   }
 
   if (timer && timer.minutes) {
     msg += `⏳ *Kitchen Timer:* Set for ${timer.minutes} minutes!\n`;
   }
 
-  if (!tasks?.length && !shopping_items?.length && !calendar_events?.length && !notes?.length && !timer) {
+  if (!tasks?.length && !shopping_items?.length && !calendar_events?.length && !notes?.length && !meal_actions?.length && !timer) {
     msg += `_(No specific actions detected)_`;
   }
 
   return msg.trim();
+}
+
+function buildMainMenuKeyboard() {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('🛒 Shopping List', 'menu:list_type:shopping'),
+      Markup.button.callback('✅ Tasks', 'menu:list_type:tasks')
+    ],
+    [
+      Markup.button.callback('📋 Custom Lists', 'menu:custom_lists'),
+      Markup.button.callback('🍽️ Meal Menu', 'menu:meals:today')
+    ],
+    [
+      Markup.button.callback('📝 Notes', 'menu:notes'),
+      Markup.button.callback('📅 Today & Events', 'menu:today')
+    ],
+    [
+      Markup.button.callback('🍲 Dish Catalog', 'menu:dishes'),
+      Markup.button.callback('📊 Status', 'menu:status')
+    ]
+  ]);
+}
+
+function buildListKeyboardAndText(list, showHistory = false) {
+  const allItems = Array.isArray(list.items) ? list.items : [];
+  const activeItems = allItems.filter(i => i.checked !== 1);
+  const completedItems = allItems.filter(i => i.checked === 1);
+
+  let text = `${list.icon || '📋'} *${list.name}*\n`;
+  const buttons = [];
+
+  if (!showHistory) {
+    text += `_Active items: ${activeItems.length} • Resolved: ${completedItems.length}_\n\n`;
+    if (activeItems.length === 0) {
+      text += `🎉 No active items in this list!\n`;
+    } else {
+      for (const item of activeItems.slice(0, 15)) {
+        const who = item.assignee_name ? ` (@${item.assignee_name})` : '';
+        const due = item.due_date ? ` [${item.due_date}]` : '';
+        const pts = item.reward ? ` [+${item.reward}pts]` : '';
+        text += `⬜ *#${item.id}* ${item.content}${who}${due}${pts}\n`;
+        buttons.push([
+          Markup.button.callback(`✅ Check: ${item.content.slice(0, 22)}`, `item:toggle:${item.id}:1`),
+          Markup.button.callback('🗑️', `item:del:${item.id}:${list.id}`)
+        ]);
+      }
+    }
+    const navRow = [
+      Markup.button.callback(`📜 History (${completedItems.length})`, `menu:list_hist:${list.id}`)
+    ];
+    if (completedItems.length > 0) {
+      navRow.push(Markup.button.callback('🧹 Clear Done', `list:clear:${list.id}`));
+    }
+    buttons.push(navRow);
+  } else {
+    text += `📜 *Resolved / Completed History (${completedItems.length}):*\n\n`;
+    if (completedItems.length === 0) {
+      text += `_No completed items yet._\n`;
+    } else {
+      for (const item of completedItems.slice(0, 15)) {
+        const when = item.last_completed_at ? item.last_completed_at.slice(0, 16).replace('T', ' ') : '';
+        const by = item.completed_by ? ` by *${item.completed_by}*` : '';
+        text += `✅ *#${item.id}* ~${item.content}~${by}${when ? ` _(${when})_` : ''}\n`;
+        buttons.push([
+          Markup.button.callback(`↩️ Restore: ${item.content.slice(0, 20)}`, `item:toggle:${item.id}:0`),
+          Markup.button.callback('🗑️', `item:del:${item.id}:${list.id}`)
+        ]);
+      }
+    }
+    buttons.push([
+      Markup.button.callback(`⬅️ Back to Active (${activeItems.length})`, `menu:list_id:${list.id}`),
+      ...(completedItems.length > 0 ? [Markup.button.callback('🧹 Clear All Done', `list:clear:${list.id}`)] : [])
+    ]);
+  }
+
+  buttons.push([Markup.button.callback('🏠 Main Menu', 'menu:home')]);
+  return { text, keyboard: Markup.inlineKeyboard(buttons) };
+}
+
+function buildMealMenuMessage(mode = 'today') {
+  const menu = getActiveMealMenu();
+  const dishesById = Object.fromEntries(getDishes().map(d => [String(d.id), d]));
+  if (!menu) {
+    return {
+      text: `🍽️ *Menu of the Week*\n\n_No active weekly menu configured yet._`,
+      keyboard: Markup.inlineKeyboard([[Markup.button.callback('🏠 Main Menu', 'menu:home')]])
+    };
+  }
+
+  const slots = Array.isArray(menu.meal_slots) && menu.meal_slots.length ? menu.meal_slots : getDefaultMealSlots();
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const weekOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const now = new Date();
+  const todayName = dayNames[now.getDay()];
+  const tomorrowName = dayNames[(now.getDay() + 1) % 7];
+
+  let text = `🍽️ *${menu.name}*\n`;
+  const daysToShow = mode === 'week' ? weekOrder : (mode === 'tomorrow' ? [tomorrowName] : [todayName]);
+
+  for (const day of daysToShow) {
+    text += `\n📅 *${day}${day === todayName ? ' (Today)' : (day === tomorrowName ? ' (Tomorrow)' : '')}:*\n`;
+    const dayObj = (menu.schedule && menu.schedule[day]) || {};
+    let hasAny = false;
+    for (const slot of slots) {
+      const entries = Array.isArray(dayObj[slot]) ? dayObj[slot] : [];
+      if (entries.length > 0) {
+        hasAny = true;
+        const names = entries.map(e => {
+          const d = e.dish_id ? dishesById[String(e.dish_id)] : null;
+          return d ? d.name : (e.name || 'Dish');
+        }).join(', ');
+        text += `  • *${slot}:* ${names}\n`;
+      } else if (mode !== 'week') {
+        text += `  • *${slot}:* _—_\n`;
+      }
+    }
+    if (!hasAny && mode === 'week') {
+      text += `  _No meals planned_\n`;
+    }
+  }
+
+  const keyboard = Markup.inlineKeyboard([
+    [
+      Markup.button.callback(mode === 'today' ? '🔘 Today' : 'Today', 'menu:meals:today'),
+      Markup.button.callback(mode === 'tomorrow' ? '🔘 Tomorrow' : 'Tomorrow', 'menu:meals:tomorrow'),
+      Markup.button.callback(mode === 'week' ? '🔘 Full Week' : 'Full Week', 'menu:meals:week')
+    ],
+    [
+      Markup.button.callback('🛒 Add Week Ingredients to Shopping', `meals:shop:${menu.id}`),
+      Markup.button.callback('🍲 Dishes', 'menu:dishes')
+    ],
+    [Markup.button.callback('🏠 Main Menu', 'menu:home')]
+  ]);
+
+  return { text, keyboard };
 }
 
 /**
@@ -374,6 +738,20 @@ function initBot(io) {
   }
 
   const bot = new Telegraf(token);
+
+  // Register Telegram Bot Command Menu
+  bot.telegram.setMyCommands([
+    { command: 'menu', description: '🏠 Open interactive dashboard menu' },
+    { command: 'shopping', description: '🛒 View & check off shopping list' },
+    { command: 'tasks', description: '✅ View & complete family tasks' },
+    { command: 'lists', description: '📋 View all custom lists' },
+    { command: 'mealmenu', description: '🍽️ View Menu of the Week (meals)' },
+    { command: 'dishes', description: '🍲 Browse dish catalog & recipes' },
+    { command: 'notes', description: '📝 View, edit, or delete notes' },
+    { command: 'today', description: '📅 Today’s events & tasks' },
+    { command: 'status', description: '📊 Dashboard snapshot' },
+    { command: 'help', description: '❓ Show all commands & examples' }
+  ]).catch((err) => console.warn('[Telegram] setMyCommands warning:', err.message));
 
   // Parse whitelist IDs from environment
   const getWhitelist = () => {
@@ -406,34 +784,37 @@ function initBot(io) {
     return next();
   });
 
-  // Command: /start or /help
-  bot.command(['start', 'help'], async (ctx) => {
+  // Command: /start, /help, /menu
+  bot.command(['start', 'help', 'menu'], async (ctx) => {
     const msg =
       `👋 *Welcome to your Smart Home Dashboard Bot!*\n\n` +
-      `You can send natural-language messages and Gemini will turn them into tasks, notes, shopping items, events, or timers.\n\n` +
-      `*Commands:*\n` +
-      `• /tasks — View chores and task list\n` +
-      `• /shopping — View shopping list\n` +
-      `• /notes — View recent notes\n` +
-      `• /today — Today's events and tasks\n` +
-      `• /addtask <title> [reward] [assignee] — Add a task\n` +
-      `• /addnote <text> — Save a note\n` +
-      `• /addshopping <item> — Add shopping item\n` +
-      `• /event <YYYY-MM-DD> <HH:MM> <title> — Add event\n` +
-      `• /timer <minutes> — Start kitchen timer\n` +
-      `• /done <id> — Mark a task item complete\n` +
-      `• /photos — List screensaver photos\n` +
-      `• /help — Show this message`;
+      `Use the interactive buttons below, or send any natural-language message (text or voice) and Gemini AI will manage your lists, tasks, notes, calendar, or weekly meal menu.\n\n` +
+      `*Quick Commands:*\n` +
+      `• /menu — Interactive dashboard menu\n` +
+      `• /shopping — Interactive shopping list\n` +
+      `• /tasks — Interactive tasks & chores\n` +
+      `• /lists — View all custom lists\n` +
+      `• /list <name> — Open a specific custom list\n` +
+      `• /addlist <List> | <Item> — Add item to custom list\n` +
+      `• /mealmenu — View Menu of the Week\n` +
+      `• /dishes — Browse dish catalog & tags\n` +
+      `• /setmeal <Day> <Slot> <Dish> — Set a meal\n` +
+      `• /notes — View & manage notes\n` +
+      `• /addnote <text> | /editnote <id> <text> | /delnote <id>\n` +
+      `• /check <id> | /uncheck <id> | /edititem <id> <text> | /delitem <id>\n` +
+      `• /today — Today's schedule & tasks\n` +
+      `• /event <YYYY-MM-DD> <HH:MM> <title> | /delevent <id>\n` +
+      `• /timer <minutes> — Start kitchen timer`;
     insertAuditLog({
       source: 'telegram_command',
       sender_id: String(ctx.from?.id),
       sender_name: ctx.from?.first_name || ctx.from?.username || 'User',
       message_type: 'command',
-      raw_input: ctx.message?.text || '/help',
-      action_taken: 'Displayed help menu',
+      raw_input: ctx.message?.text || '/menu',
+      action_taken: 'Displayed interactive main menu',
       status: 'success'
     });
-    await ctx.replyWithMarkdown(msg);
+    await ctx.replyWithMarkdown(msg, buildMainMenuKeyboard());
   });
 
   bot.command('status', async (ctx) => {
@@ -467,28 +848,7 @@ function initBot(io) {
   bot.command('tasks', async (ctx) => {
     const taskList = getOrCreateDashboardList('tasks', 'Family Tasks', '✅');
     const items = Array.isArray(taskList.items) ? taskList.items : [];
-    if (items.length === 0) {
-      insertAuditLog({
-        source: 'telegram_command',
-        sender_id: String(ctx.from?.id),
-        sender_name: ctx.from?.first_name || ctx.from?.username || 'User',
-        message_type: 'command',
-        raw_input: ctx.message?.text || '/tasks',
-        action_taken: 'Listed tasks (empty)',
-        status: 'success'
-      });
-      return ctx.reply('📋 No tasks recorded yet.');
-    }
-
-    let reply = `📋 *Tasks (${items.length}):*\n\n`;
-    for (const item of items) {
-      const checked = item.checked === 1 ? '✅' : '⏳';
-      const due = item.due_date ? ` • ${item.due_date}` : '';
-      const reward = item.reward ? ` • +${item.reward} pts` : '';
-      const assignee = item.assignee_name ? ` • @${item.assignee_name}` : '';
-      reply += `${checked} #${item.id}: ${item.content}${assignee}${due}${reward}\n`;
-    }
-    reply += `\n_Tip: /done <id> to complete a task._`;
+    const { text, keyboard } = buildListKeyboardAndText(taskList.id, false);
     insertAuditLog({
       source: 'telegram_command',
       sender_id: String(ctx.from?.id),
@@ -498,30 +858,13 @@ function initBot(io) {
       action_taken: `Listed ${items.length} tasks`,
       status: 'success'
     });
-    await ctx.replyWithMarkdown(reply);
+    await ctx.replyWithMarkdown(text, keyboard);
   });
 
   bot.command('shopping', async (ctx) => {
     const shoppingList = getOrCreateDashboardList('shopping', 'Shopping List', '🛒');
     const items = Array.isArray(shoppingList.items) ? shoppingList.items : [];
-    if (items.length === 0) {
-      insertAuditLog({
-        source: 'telegram_command',
-        sender_id: String(ctx.from?.id),
-        sender_name: ctx.from?.first_name || ctx.from?.username || 'User',
-        message_type: 'command',
-        raw_input: ctx.message?.text || '/shopping',
-        action_taken: 'Listed shopping (empty)',
-        status: 'success'
-      });
-      return ctx.reply('🛒 Shopping list is empty.');
-    }
-
-    let reply = `🛒 *Shopping List (${items.length}):*\n\n`;
-    for (const item of items) {
-      const checked = item.checked === 1 ? '✅' : '⬜';
-      reply += `${checked} ${item.content}\n`;
-    }
+    const { text, keyboard } = buildListKeyboardAndText(shoppingList.id, false);
     insertAuditLog({
       source: 'telegram_command',
       sender_id: String(ctx.from?.id),
@@ -531,7 +874,75 @@ function initBot(io) {
       action_taken: `Listed ${items.length} shopping items`,
       status: 'success'
     });
-    await ctx.replyWithMarkdown(reply);
+    await ctx.replyWithMarkdown(text, keyboard);
+  });
+
+  bot.command('lists', async (ctx) => {
+    const allLists = getLists();
+    let reply = `📋 *All Dashboard Lists (${allLists.length}):*\n\n`;
+    const buttons = [];
+    for (const l of allLists) {
+      const activeCount = (l.items || []).filter(i => i.checked !== 1).length;
+      const doneCount = (l.items || []).filter(i => i.checked === 1).length;
+      reply += `• ${l.icon || '📋'} *${l.name}* — ${activeCount} active, ${doneCount} completed\n`;
+      buttons.push([Markup.button.callback(`${l.icon || '📋'} ${l.name} (${activeCount})`, `menu:list_id:${l.id}`)]);
+    }
+    reply += `\n_Use /list <name> or tap a button below to open a list, or /addlist <List> | <Item> to add an item._`;
+    buttons.push([Markup.button.callback('🏠 Main Menu', 'menu:home')]);
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: String(ctx.from?.id),
+      sender_name: ctx.from?.first_name || ctx.from?.username || 'User',
+      message_type: 'command',
+      raw_input: ctx.message?.text || '/lists',
+      action_taken: `Listed ${allLists.length} lists`,
+      status: 'success'
+    });
+    await ctx.replyWithMarkdown(reply, Markup.inlineKeyboard(buttons));
+  });
+
+  bot.command('list', async (ctx) => {
+    const nameQuery = ctx.message.text.replace(/^\/list\s*/i, '').trim();
+    if (!nameQuery) {
+      return ctx.reply('Usage: /list <list name>  e.g. /list Packing List');
+    }
+    const allLists = getLists();
+    const match = allLists.find(l => l.name.toLowerCase().includes(nameQuery.toLowerCase()));
+    if (!match) {
+      return ctx.reply(`❌ List matching "${nameQuery}" not found. Use /lists to see all lists or /addlist ${nameQuery} | <item> to create it.`);
+    }
+    const { text, keyboard } = buildListKeyboardAndText(match.id, false);
+    await ctx.replyWithMarkdown(text, keyboard);
+  });
+
+  bot.command('addlist', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
+    const raw = ctx.message.text.replace(/^\/addlist\s*/i, '').trim();
+    if (!raw || !raw.includes('|')) {
+      return ctx.reply('Usage: /addlist <List Name> | <Item Content>\nExample: /addlist Hardware Store | AA Batteries');
+    }
+    const [listPart, ...itemParts] = raw.split('|');
+    const listName = listPart.trim();
+    const itemContent = itemParts.join('|').trim();
+    if (!listName || !itemContent) {
+      return ctx.reply('Usage: /addlist <List Name> | <Item Content>');
+    }
+    const targetList = findOrCreateTargetList(listName, 'shopping');
+    const item = insertListItem({ list_id: targetList.id, content: itemContent });
+    io.emit('dashboard_update', getDashboardData());
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: senderId,
+      sender_name: senderName,
+      message_type: 'command',
+      raw_input: ctx.message.text,
+      action_taken: `Added "${itemContent}" (#${item.id}) to list "${targetList.name}"`,
+      status: 'success'
+    });
+    const { text, keyboard } = buildListKeyboardAndText(targetList.id, false);
+    await ctx.replyWithMarkdown(`✅ Added *${itemContent}* to *${targetList.name}*!\n\n${text}`, keyboard);
   });
 
   bot.command('notes', async (ctx) => {
@@ -546,11 +957,19 @@ function initBot(io) {
         action_taken: 'Listed notes (empty)',
         status: 'success'
       });
-      return ctx.reply('📝 No notes recorded yet.');
+      return ctx.reply('📝 No notes recorded yet. Use /addnote <text> to create one.');
     }
 
     let reply = `📝 *Recent Notes (${notes.length}):*\n\n`;
-    for (const n of notes) reply += `• ${n.content}\n`;
+    const buttons = [];
+    for (const n of notes) {
+      reply += `• *#${n.id}:* ${n.content}\n`;
+      buttons.push([
+        Markup.button.callback(`🗑️ Delete #${n.id}: ${n.content.slice(0, 22)}`, `note:del:${n.id}`)
+      ]);
+    }
+    reply += `\n_Tip: /editnote <id> <new text> or /delnote <id>_`;
+    buttons.push([Markup.button.callback('🏠 Main Menu', 'menu:home')]);
     insertAuditLog({
       source: 'telegram_command',
       sender_id: String(ctx.from?.id),
@@ -560,7 +979,211 @@ function initBot(io) {
       action_taken: `Listed ${notes.length} notes`,
       status: 'success'
     });
-    await ctx.replyWithMarkdown(reply);
+    await ctx.replyWithMarkdown(reply, Markup.inlineKeyboard(buttons));
+  });
+
+  bot.command('editnote', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
+    const raw = ctx.message.text.replace(/^\/editnote\s*/i, '').trim();
+    const match = raw.match(/^#?(\d+)\s+(.+)$/);
+    if (!match) {
+      return ctx.reply('Usage: /editnote <id> <new text>\nExample: /editnote 2 Updated alarm code');
+    }
+    const noteId = Number(match[1]);
+    const newText = match[2].trim();
+    const updated = updateNote(noteId, newText);
+    if (!updated) return ctx.reply(`❌ Note #${noteId} not found.`);
+    io.emit('dashboard_update', getDashboardData());
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: senderId,
+      sender_name: senderName,
+      message_type: 'command',
+      raw_input: ctx.message.text,
+      action_taken: `Edited note #${noteId}: "${newText}"`,
+      status: 'success'
+    });
+    await ctx.replyWithMarkdown(`✏️ *Note #${noteId} updated:*\n\n_${updated.content}_`);
+  });
+
+  bot.command('delnote', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
+    const raw = ctx.message.text.replace(/^\/delnote\s*/i, '').trim().replace(/^#/, '');
+    const noteId = Number(raw);
+    if (!noteId) return ctx.reply('Usage: /delnote <id>');
+    deleteNote(noteId);
+    io.emit('dashboard_update', getDashboardData());
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: senderId,
+      sender_name: senderName,
+      message_type: 'command',
+      raw_input: ctx.message.text,
+      action_taken: `Deleted note #${noteId}`,
+      status: 'success'
+    });
+    await ctx.reply(`🗑️ Note #${noteId} deleted.`);
+  });
+
+  bot.command('check', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
+    const raw = ctx.message.text.replace(/^\/check\s*/i, '').trim().replace(/^#/, '');
+    const itemId = Number(raw);
+    if (!itemId) return ctx.reply('Usage: /check <item_id>');
+    const updated = toggleListItemChecked(itemId, true, senderName);
+    if (!updated) return ctx.reply(`❌ Item #${itemId} not found.`);
+    io.emit('dashboard_update', getDashboardData());
+    await ctx.reply(`✅ Item #${itemId} "${updated.content}" checked off by ${senderName}!`);
+  });
+
+  bot.command('uncheck', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
+    const raw = ctx.message.text.replace(/^\/uncheck\s*/i, '').trim().replace(/^#/, '');
+    const itemId = Number(raw);
+    if (!itemId) return ctx.reply('Usage: /uncheck <item_id>');
+    const updated = toggleListItemChecked(itemId, false, senderName);
+    if (!updated) return ctx.reply(`❌ Item #${itemId} not found.`);
+    io.emit('dashboard_update', getDashboardData());
+    await ctx.reply(`↩️ Item #${itemId} "${updated.content}" restored to active list.`);
+  });
+
+  bot.command('edititem', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
+    const raw = ctx.message.text.replace(/^\/edititem\s*/i, '').trim();
+    const match = raw.match(/^#?(\d+)\s+(.+)$/);
+    if (!match) return ctx.reply('Usage: /edititem <id> <new text>');
+    const itemId = Number(match[1]);
+    const newText = match[2].trim();
+    const updated = updateListItem(itemId, { content: newText });
+    if (!updated) return ctx.reply(`❌ Item #${itemId} not found.`);
+    io.emit('dashboard_update', getDashboardData());
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: senderId,
+      sender_name: senderName,
+      message_type: 'command',
+      raw_input: ctx.message.text,
+      action_taken: `Edited item #${itemId} to "${newText}"`,
+      status: 'success'
+    });
+    await ctx.replyWithMarkdown(`✏️ *Item #${itemId} updated:* ${updated.content}`);
+  });
+
+  bot.command('delitem', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
+    const raw = ctx.message.text.replace(/^\/delitem\s*/i, '').trim().replace(/^#/, '');
+    const itemId = Number(raw);
+    if (!itemId) return ctx.reply('Usage: /delitem <id>');
+    deleteListItem(itemId);
+    io.emit('dashboard_update', getDashboardData());
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: senderId,
+      sender_name: senderName,
+      message_type: 'command',
+      raw_input: ctx.message.text,
+      action_taken: `Deleted list item #${itemId}`,
+      status: 'success'
+    });
+    await ctx.reply(`🗑️ Item #${itemId} deleted.`);
+  });
+
+  bot.command('delevent', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
+    const raw = ctx.message.text.replace(/^\/delevent\s*/i, '').trim().replace(/^#/, '');
+    const eventId = Number(raw);
+    if (!eventId) return ctx.reply('Usage: /delevent <id>');
+    deleteCalendarEvent(eventId);
+    io.emit('dashboard_update', getDashboardData());
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: senderId,
+      sender_name: senderName,
+      message_type: 'command',
+      raw_input: ctx.message.text,
+      action_taken: `Deleted calendar event #${eventId}`,
+      status: 'success'
+    });
+    await ctx.reply(`🗑️ Calendar event #${eventId} deleted.`);
+  });
+
+  bot.command('mealmenu', async (ctx) => {
+    const modeArg = ctx.message.text.replace(/^\/mealmenu\s*/i, '').trim().toLowerCase();
+    const mode = ['today', 'tomorrow', 'week'].includes(modeArg) ? modeArg : 'today';
+    const { text, keyboard } = buildMealMenuMessage(mode);
+    await ctx.replyWithMarkdown(text, keyboard);
+  });
+
+  bot.command('dishes', async (ctx) => {
+    const tagFilter = ctx.message.text.replace(/^\/dishes\s*/i, '').trim();
+    const dishes = getDishes({ tag: tagFilter || undefined });
+    if (dishes.length === 0) {
+      return ctx.reply(tagFilter ? `🍲 No dishes found with tag "${tagFilter}".` : '🍲 No dishes in catalog yet.');
+    }
+    let reply = `🍲 *Dish Catalog${tagFilter ? ` (${tagFilter})` : ''} (${dishes.length}):*\n\n`;
+    const buttons = [];
+    for (const d of dishes.slice(0, 15)) {
+      const tags = (d.tags || []).length ? ` _[${d.tags.join(', ')}]_` : '';
+      reply += `• *#${d.id} ${d.name}*${tags}\n`;
+      buttons.push([
+        Markup.button.callback(`📖 ${d.name}`, `dish:view:${d.id}`),
+        Markup.button.callback(`🛒 Ingredients`, `dish:shop:${d.id}`)
+      ]);
+    }
+    buttons.push([Markup.button.callback('🍽️ Back to Meal Menu', 'menu:meals:today')]);
+    await ctx.replyWithMarkdown(reply, Markup.inlineKeyboard(buttons));
+  });
+
+  bot.command('setmeal', async (ctx) => {
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
+    const raw = ctx.message.text.replace(/^\/setmeal\s*/i, '').trim();
+    const parts = raw.split(/\s+/);
+    if (parts.length < 3) {
+      return ctx.reply('Usage: /setmeal <Day> <Slot> <Dish Name>\nExample: /setmeal Monday Dinner Spaghetti Bolognese');
+    }
+    const dayInput = parts[0];
+    const slotInput = parts[1];
+    const dishName = parts.slice(2).join(' ');
+    const weekDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const day = weekDays.find(d => d.toLowerCase().startsWith(dayInput.toLowerCase())) || dayInput;
+    const activeMenu = getActiveMealMenu();
+    if (!activeMenu) return ctx.reply('❌ No active meal menu found.');
+    const slots = activeMenu.meal_slots || getDefaultMealSlots();
+    const slot = slots.find(s => s.toLowerCase() === slotInput.toLowerCase()) || slotInput;
+
+    let dish = getDishes().find(d => d.name.toLowerCase() === dishName.toLowerCase());
+    if (!dish) {
+      dish = insertDish({ name: dishName, tags: [slot.toLowerCase()] });
+    }
+    setMealSlotEntry(activeMenu.id, day, slot, [{ dish_id: dish.id, name: dish.name }]);
+    io.emit('dashboard_update', getDashboardData());
+    insertAuditLog({
+      source: 'telegram_command',
+      sender_id: senderId,
+      sender_name: senderName,
+      message_type: 'command',
+      raw_input: ctx.message.text,
+      action_taken: `Set ${day} ${slot} to "${dish.name}"`,
+      status: 'success'
+    });
+    const { text, keyboard } = buildMealMenuMessage('week');
+    await ctx.replyWithMarkdown(`✅ Set *${day} — ${slot}* to *${dish.name}*!\n\n${text}`, keyboard);
   });
 
   bot.command('addnote', async (ctx) => {
@@ -785,7 +1408,7 @@ function initBot(io) {
         if (!ev.all_day && ev.start_datetime.includes('T')) {
           timeStr = ev.start_datetime.split('T')[1].slice(0, 5);
         }
-        reply += `• *${timeStr}* — ${ev.title}\n`;
+        reply += `• *${timeStr}* — ${ev.title} _(#${ev.id})_\n`;
       }
       reply += `\n`;
     }
@@ -889,7 +1512,7 @@ function initBot(io) {
       if (Array.isArray(list.items)) {
         const found = list.items.find(item => item.id === taskId);
         if (found) {
-          toggleListItemChecked(found.id, true);
+          toggleListItemChecked(found.id, true, senderName);
           io.emit('dashboard_update', getDashboardData());
           insertAuditLog({
             source: 'telegram_command',
@@ -910,7 +1533,7 @@ function initBot(io) {
     const tasks = getTasks();
     const task = tasks.find((t) => t.id === taskId);
     if (task) {
-      updateTaskStatus(taskId, 'completed');
+      updateTaskStatus(taskId, 'completed', senderName);
       io.emit('dashboard_update', getDashboardData());
       insertAuditLog({
         source: 'telegram_command',
@@ -936,6 +1559,272 @@ function initBot(io) {
       error_message: `Task #${taskId} not found`
     });
     return ctx.reply(`❌ Task #${taskId} not found.`);
+  });
+
+  // Handle interactive inline keyboard button callbacks
+  bot.on('callback_query', async (ctx) => {
+    const data = ctx.callbackQuery?.data || '';
+    const senderId = String(ctx.from?.id);
+    const senderProfile = getProfileByTelegramId(senderId);
+    const senderName = senderProfile ? senderProfile.name : (ctx.from?.first_name || 'User');
+
+    try {
+      const safeEdit = async (text, keyboard) => {
+        try {
+          await ctx.editMessageText(text, { parse_mode: 'Markdown', ...(keyboard || {}) });
+        } catch (e) {
+          await ctx.replyWithMarkdown(text, keyboard);
+        }
+      };
+
+      if (data === 'menu:home') {
+        await ctx.answerCbQuery();
+        await safeEdit(`🏠 *Smart Home Dashboard Menu*\nSelect a section below:`, buildMainMenuKeyboard());
+        return;
+      }
+
+      if (data === 'menu:list:shopping') {
+        await ctx.answerCbQuery();
+        const list = getOrCreateDashboardList('shopping', 'Shopping List', '🛒');
+        const { text, keyboard } = buildListKeyboardAndText(list.id, false);
+        await safeEdit(text, keyboard);
+        return;
+      }
+
+      if (data === 'menu:list:tasks') {
+        await ctx.answerCbQuery();
+        const list = getOrCreateDashboardList('tasks', 'Family Tasks', '✅');
+        const { text, keyboard } = buildListKeyboardAndText(list.id, false);
+        await safeEdit(text, keyboard);
+        return;
+      }
+
+      if (data.startsWith('menu:list_id:')) {
+        await ctx.answerCbQuery();
+        const listId = Number(data.split(':')[2]);
+        const { text, keyboard } = buildListKeyboardAndText(listId, false);
+        await safeEdit(text, keyboard);
+        return;
+      }
+
+      if (data.startsWith('menu:list_resolved:')) {
+        await ctx.answerCbQuery();
+        const listId = Number(data.split(':')[2]);
+        const { text, keyboard } = buildListKeyboardAndText(listId, true);
+        await safeEdit(text, keyboard);
+        return;
+      }
+
+      if (data === 'menu:lists_all') {
+        await ctx.answerCbQuery();
+        const allLists = getLists();
+        let reply = `📋 *All Lists (${allLists.length}):*\n\n`;
+        const buttons = [];
+        for (const l of allLists) {
+          const activeCount = (l.items || []).filter(i => i.checked !== 1).length;
+          reply += `• ${l.icon || '📋'} *${l.name}* (${activeCount} active)\n`;
+          buttons.push([Markup.button.callback(`${l.icon || '📋'} ${l.name} (${activeCount})`, `menu:list_id:${l.id}`)]);
+        }
+        buttons.push([Markup.button.callback('🏠 Main Menu', 'menu:home')]);
+        await safeEdit(reply, Markup.inlineKeyboard(buttons));
+        return;
+      }
+
+      if (data.startsWith('item:toggle:')) {
+        const parts = data.split(':');
+        const itemId = Number(parts[2]);
+        const targetChecked = parts[3] === '1';
+        const updated = toggleListItemChecked(itemId, targetChecked, senderName);
+        io.emit('dashboard_update', getDashboardData());
+        await ctx.answerCbQuery(targetChecked ? `✅ Checked by ${senderName}` : '↩️ Restored');
+        if (updated) {
+          const { text, keyboard } = buildListKeyboardAndText(updated.list_id, !targetChecked);
+          await safeEdit(text, keyboard);
+        }
+        return;
+      }
+
+      if (data.startsWith('item:del:')) {
+        const parts = data.split(':');
+        const itemId = Number(parts[2]);
+        const listId = Number(parts[3]);
+        deleteListItem(itemId);
+        io.emit('dashboard_update', getDashboardData());
+        await ctx.answerCbQuery('🗑️ Item deleted');
+        const { text, keyboard } = buildListKeyboardAndText(listId, false);
+        await safeEdit(text, keyboard);
+        return;
+      }
+
+      if (data.startsWith('list:clear:')) {
+        const listId = Number(data.split(':')[2]);
+        clearCompletedListItems(listId);
+        io.emit('dashboard_update', getDashboardData());
+        await ctx.answerCbQuery('🧹 Cleared completed items');
+        const { text, keyboard } = buildListKeyboardAndText(listId, false);
+        await safeEdit(text, keyboard);
+        return;
+      }
+
+      if (data === 'menu:notes') {
+        await ctx.answerCbQuery();
+        const notes = getNotes(12);
+        let reply = `📝 *Notes (${notes.length}):*\n\n`;
+        const buttons = [];
+        if (notes.length === 0) {
+          reply += `_No notes yet. Send /addnote <text> to add one._\n`;
+        } else {
+          for (const n of notes) {
+            reply += `• *#${n.id}:* ${n.content}\n`;
+            buttons.push([Markup.button.callback(`🗑️ Delete #${n.id}: ${n.content.slice(0, 20)}`, `note:del:${n.id}`)]);
+          }
+        }
+        buttons.push([Markup.button.callback('🏠 Main Menu', 'menu:home')]);
+        await safeEdit(reply, Markup.inlineKeyboard(buttons));
+        return;
+      }
+
+      if (data.startsWith('note:del:')) {
+        const noteId = Number(data.split(':')[2]);
+        deleteNote(noteId);
+        io.emit('dashboard_update', getDashboardData());
+        await ctx.answerCbQuery('🗑️ Note deleted');
+        const notes = getNotes(12);
+        let reply = `📝 *Notes (${notes.length}):*\n\n`;
+        const buttons = [];
+        for (const n of notes) {
+          reply += `• *#${n.id}:* ${n.content}\n`;
+          buttons.push([Markup.button.callback(`🗑️ Delete #${n.id}: ${n.content.slice(0, 20)}`, `note:del:${n.id}`)]);
+        }
+        buttons.push([Markup.button.callback('🏠 Main Menu', 'menu:home')]);
+        await safeEdit(reply, Markup.inlineKeyboard(buttons));
+        return;
+      }
+
+      if (data.startsWith('menu:meals:')) {
+        await ctx.answerCbQuery();
+        const mode = data.split(':')[2] || 'today';
+        const { text, keyboard } = buildMealMenuMessage(mode);
+        await safeEdit(text, keyboard);
+        return;
+      }
+
+      if (data === 'menu:dishes') {
+        await ctx.answerCbQuery();
+        const dishes = getDishes();
+        let reply = `🍲 *Dish Catalog (${dishes.length}):*\n\n`;
+        const buttons = [];
+        for (const d of dishes.slice(0, 12)) {
+          const tags = (d.tags || []).length ? ` _[${d.tags.join(', ')}]_` : '';
+          reply += `• *${d.name}*${tags}\n`;
+          buttons.push([
+            Markup.button.callback(`📖 ${d.name}`, `dish:view:${d.id}`),
+            Markup.button.callback(`🛒 +Shop`, `dish:shop:${d.id}`)
+          ]);
+        }
+        buttons.push([Markup.button.callback('🍽️ Back to Meal Menu', 'menu:meals:today')]);
+        await safeEdit(reply, Markup.inlineKeyboard(buttons));
+        return;
+      }
+
+      if (data.startsWith('dish:view:')) {
+        await ctx.answerCbQuery();
+        const dishId = Number(data.split(':')[2]);
+        const dish = getDishById(dishId);
+        if (!dish) return;
+        const tags = (dish.tags || []).length ? `\n🏷️ *Tags:* ${dish.tags.join(', ')}` : '';
+        const ing = (dish.ingredients || []).length
+          ? `\n\n🥕 *Ingredients:*\n${dish.ingredients.map(i => `• ${i}`).join('\n')}`
+          : '\n\n_No ingredients listed._';
+        const recipe = dish.recipe ? `\n\n👩‍🍳 *Recipe:*\n${dish.recipe}` : '';
+        const text = `🍲 *${dish.name}*${tags}${ing}${recipe}`;
+        const kb = Markup.inlineKeyboard([
+          [Markup.button.callback('🛒 Add Ingredients to Shopping List', `dish:shop:${dish.id}`)],
+          [Markup.button.callback('⬅️ Back to Dishes', 'menu:dishes'), Markup.button.callback('🍽️ Meal Menu', 'menu:meals:today')]
+        ]);
+        await safeEdit(text, kb);
+        return;
+      }
+
+      if (data.startsWith('dish:shop:')) {
+        const dishId = Number(data.split(':')[2]);
+        const dish = getDishById(dishId);
+        if (!dish || !Array.isArray(dish.ingredients) || dish.ingredients.length === 0) {
+          await ctx.answerCbQuery('No ingredients on this dish');
+          return;
+        }
+        const shoppingList = getOrCreateDashboardList('shopping', 'Shopping List', '🛒');
+        for (const ing of dish.ingredients) {
+          insertListItem({ list_id: shoppingList.id, content: ing });
+        }
+        io.emit('dashboard_update', getDashboardData());
+        await ctx.answerCbQuery(`🛒 Added ${dish.ingredients.length} ingredients to Shopping List!`);
+        return;
+      }
+
+      if (data.startsWith('meals:shop:')) {
+        const menuId = Number(data.split(':')[2]);
+        const menu = getMealMenuById(menuId) || getActiveMealMenu();
+        if (!menu) {
+          await ctx.answerCbQuery('No active menu');
+          return;
+        }
+        const dishesById = Object.fromEntries(getDishes().map(d => [String(d.id), d]));
+        const ingredients = [];
+        for (const dayObj of Object.values(menu.schedule || {})) {
+          for (const entries of Object.values(dayObj || {})) {
+            for (const entry of (Array.isArray(entries) ? entries : [])) {
+              const dish = entry.dish_id ? dishesById[String(entry.dish_id)] : null;
+              if (dish && Array.isArray(dish.ingredients)) {
+                ingredients.push(...dish.ingredients);
+              }
+            }
+          }
+        }
+        const shoppingList = getOrCreateDashboardList('shopping', 'Shopping List', '🛒');
+        for (const ing of ingredients) {
+          insertListItem({ list_id: shoppingList.id, content: ing });
+        }
+        io.emit('dashboard_update', getDashboardData());
+        await ctx.answerCbQuery(`🛒 Added ${ingredients.length} ingredients to Shopping List!`);
+        return;
+      }
+
+      if (data === 'menu:today') {
+        await ctx.answerCbQuery();
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const todayEvents = getCalendarEvents({ limit: 50 }).filter(e => e.start_datetime && e.start_datetime.startsWith(todayStr));
+        const taskList = getOrCreateDashboardList('tasks', 'Family Tasks', '✅');
+        const pendingTasks = (taskList.items || []).filter(i => i.checked !== 1);
+        let reply = `📅 *Today (${todayStr}):*\n\n`;
+        reply += todayEvents.length
+          ? `*Events:*\n${todayEvents.map(e => `• ${e.title}`).join('\n')}\n\n`
+          : `_No events today._\n\n`;
+        reply += pendingTasks.length
+          ? `*Pending Tasks (${pendingTasks.length}):*\n${pendingTasks.slice(0, 8).map(t => `• ${t.content}`).join('\n')}`
+          : `_All tasks done!_`;
+        await safeEdit(reply, Markup.inlineKeyboard([[Markup.button.callback('🏠 Main Menu', 'menu:home')]]));
+        return;
+      }
+
+      if (data === 'menu:status') {
+        await ctx.answerCbQuery();
+        const tasksList = getOrCreateDashboardList('tasks', 'Family Tasks', '✅');
+        const shoppingList = getOrCreateDashboardList('shopping', 'Shopping List', '🛒');
+        const notes = getNotes(10);
+        const reply = `📊 *Dashboard Status*\n\n` +
+          `• Pending Tasks: ${(tasksList.items || []).filter(i => i.checked !== 1).length}\n` +
+          `• Unchecked Shopping: ${(shoppingList.items || []).filter(i => i.checked !== 1).length}\n` +
+          `• Active Notes: ${notes.length}`;
+        await safeEdit(reply, Markup.inlineKeyboard([[Markup.button.callback('🏠 Main Menu', 'menu:home')]]));
+        return;
+      }
+
+      await ctx.answerCbQuery();
+    } catch (err) {
+      console.error('[Telegram] Callback error:', err.message);
+      try { await ctx.answerCbQuery('Error processing action'); } catch (_) {}
+    }
   });
 
   // Handle incoming PHOTO messages — save to screensaver

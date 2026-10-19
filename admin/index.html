@@ -46,7 +46,7 @@
     </div>
 
     <!-- NAVIGATION TABS -->
-    <nav class="flex border-b border-neutral-800 gap-2 mb-6">
+    <nav class="flex flex-wrap border-b border-neutral-800 gap-2 mb-6">
       <button 
         @click="activeTab = 'profiles'" 
         :class="activeTab === 'profiles' ? 'border-sky-500 text-sky-400 bg-sky-500/10' : 'border-transparent text-neutral-400 hover:text-white'"
@@ -60,6 +60,13 @@
         class="px-4 py-2 border-b-2 font-mono text-xs font-semibold uppercase tracking-wider transition rounded-t"
       >
         📋 Lists & Tasks
+      </button>
+      <button 
+        @click="activeTab = 'meals'" 
+        :class="activeTab === 'meals' ? 'border-amber-500 text-amber-400 bg-amber-500/10' : 'border-transparent text-neutral-400 hover:text-white'"
+        class="px-4 py-2 border-b-2 font-mono text-xs font-semibold uppercase tracking-wider transition rounded-t"
+      >
+        🍽️ Meal Planner
       </button>
       <button 
         @click="activeTab = 'schedules'" 
@@ -644,6 +651,13 @@
 
             <div class="flex items-center gap-2">
               <button 
+                v-if="currentList.items && currentList.items.some(i => i.checked === 1)"
+                @click="clearCompletedListItems(currentList)" 
+                class="text-xs font-mono text-amber-300 hover:text-amber-200 border border-amber-800/60 bg-amber-950/30 hover:bg-amber-900/50 px-2.5 py-1 rounded transition"
+              >
+                🧹 Clear Completed ({{ currentList.items.filter(i => i.checked === 1).length }})
+              </button>
+              <button 
                 @click="startEditList(currentList)" 
                 class="text-xs font-mono text-neutral-300 hover:text-emerald-400 border border-neutral-800 hover:border-emerald-700 px-2.5 py-1 rounded transition"
               >
@@ -908,6 +922,12 @@
                   >
                     <span v-if="item.checked !== 1 && item.due_date < new Date().toISOString().slice(0,10)" class="px-1 py-0.5 rounded bg-red-950 text-red-400 border border-red-800 font-bold">OVERDUE</span>
                     <span>📅 {{ item.due_date }}{{ item.due_time ? ' ' + item.due_time : '' }}</span>
+                  </span>
+                  <span 
+                    v-if="item.checked === 1 && (item.completed_by || item.last_completed_at)" 
+                    class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950/60 border border-emerald-800/50 text-emerald-300 shrink-0"
+                  >
+                    ✓ {{ item.completed_by || 'Done' }}<span v-if="item.last_completed_at"> • {{ formatTime(item.last_completed_at) }}</span>
                   </span>
                 </div>
 
@@ -1335,19 +1355,41 @@
             <div 
               v-for="note in notes" 
               :key="note.id" 
-              class="bg-neutral-950 border border-neutral-800/80 rounded-lg p-3 flex items-start justify-between gap-3 hover:border-neutral-700 transition"
+              class="bg-neutral-950 border border-neutral-800/80 rounded-lg p-3 hover:border-neutral-700 transition"
             >
-              <div>
-                <p class="text-xs text-neutral-200 font-sans leading-relaxed">{{ note.content }}</p>
-                <span class="text-[10px] font-mono text-neutral-500 mt-1 block">{{ note.timestamp }}</span>
+              <div v-if="editingNote && editingNote.id === note.id" class="space-y-2">
+                <textarea 
+                  v-model="editingNote.content" 
+                  rows="2" 
+                  class="w-full bg-neutral-900 border border-neutral-700 rounded p-2 text-xs text-white outline-none focus:border-purple-500"
+                ></textarea>
+                <div class="flex justify-end gap-2">
+                  <button type="button" @click="editingNote = null" class="text-xs font-mono border border-neutral-800 px-3 py-1 rounded text-neutral-400 hover:text-white">Cancel</button>
+                  <button type="button" @click="saveEditNote" class="text-xs font-mono bg-purple-600 hover:bg-purple-500 text-white px-3 py-1 rounded">Save Note</button>
+                </div>
               </div>
-              <button 
-                @click="deleteNote(note.id)" 
-                class="text-neutral-600 hover:text-red-400 text-xs font-mono px-2 py-1 transition"
-                title="Delete note"
-              >
-                ✕
-              </button>
+              <div v-else class="flex items-start justify-between gap-3">
+                <div>
+                  <p class="text-xs text-neutral-200 font-sans leading-relaxed">{{ note.content }}</p>
+                  <span class="text-[10px] font-mono text-neutral-500 mt-1 block">{{ note.timestamp }}</span>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <button 
+                    @click="startEditNote(note)" 
+                    class="text-neutral-400 hover:text-purple-400 text-xs font-mono px-2 py-1 transition"
+                    title="Edit note"
+                  >
+                    Edit
+                  </button>
+                  <button 
+                    @click="deleteNote(note.id)" 
+                    class="text-neutral-600 hover:text-red-400 text-xs font-mono px-2 py-1 transition"
+                    title="Delete note"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1728,41 +1770,265 @@
             <div 
               v-for="ev in events" 
               :key="ev.id" 
-              class="p-3 bg-neutral-950 border border-neutral-800/80 rounded-lg flex items-center justify-between gap-3 hover:border-neutral-700 transition"
+              class="p-3 bg-neutral-950 border border-neutral-800/80 rounded-lg hover:border-neutral-700 transition"
               :style="{ borderLeftColor: ev.color || '#38bdf8', borderLeftWidth: '3px' }"
             >
-              <div>
-                <div class="flex items-center gap-2">
-                  <h4 class="text-xs font-bold text-white">{{ ev.title }}</h4>
-                  <span 
-                    class="text-[9px] font-mono px-1.5 py-0.2 rounded border"
-                    :class="ev.source === 'google' ? 'bg-sky-950/60 border-sky-800 text-sky-400' : 'bg-neutral-900 border-neutral-800 text-neutral-400'"
-                  >
-                    {{ ev.source === 'google' ? 'Google Cal' : 'Manual' }}
-                  </span>
-                  <span v-if="ev.profile_name" class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-neutral-900 border border-neutral-800 text-neutral-400">
-                    @{{ ev.profile_name }}
-                  </span>
+              <div v-if="editingEvent && editingEvent.id === ev.id" class="space-y-2">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <div class="md:col-span-2">
+                    <label class="block text-[10px] font-mono text-neutral-400 mb-1">TITLE</label>
+                    <input v-model="editingEvent.title" type="text" class="w-full bg-neutral-900 border border-neutral-800 rounded p-1.5 text-xs text-white outline-none" />
+                  </div>
+                  <div>
+                    <label class="block text-[10px] font-mono text-neutral-400 mb-1">START DATE/TIME</label>
+                    <input v-model="editingEvent.start_datetime" type="text" class="w-full bg-neutral-900 border border-neutral-800 rounded p-1.5 text-xs text-white outline-none font-mono" />
+                  </div>
                 </div>
-                <div class="text-[11px] font-mono text-neutral-500 mt-0.5">
-                  <span>{{ formatEventDate(ev.start_datetime) }}</span>
-                  <span v-if="ev.description" class="ml-2 text-neutral-400 font-sans">• {{ ev.description }}</span>
+                <div class="flex justify-end gap-2">
+                  <button type="button" @click="editingEvent = null" class="text-xs font-mono border border-neutral-800 px-3 py-1 rounded text-neutral-400 hover:text-white">Cancel</button>
+                  <button type="button" @click="saveEditEvent" class="text-xs font-mono bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded">Save Event</button>
                 </div>
               </div>
+              <div v-else class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="flex items-center gap-2">
+                    <h4 class="text-xs font-bold text-white">{{ ev.title }}</h4>
+                    <span 
+                      class="text-[9px] font-mono px-1.5 py-0.2 rounded border"
+                      :class="ev.source === 'google' ? 'bg-sky-950/60 border-sky-800 text-sky-400' : 'bg-neutral-900 border-neutral-800 text-neutral-400'"
+                    >
+                      {{ ev.source === 'google' ? 'Google Cal' : 'Manual' }}
+                    </span>
+                    <span v-if="ev.profile_name" class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-neutral-900 border border-neutral-800 text-neutral-400">
+                      @{{ ev.profile_name }}
+                    </span>
+                  </div>
+                  <div class="text-[11px] font-mono text-neutral-500 mt-0.5">
+                    <span>{{ formatEventDate(ev.start_datetime) }}</span>
+                    <span v-if="ev.description" class="ml-2 text-neutral-400 font-sans">• {{ ev.description }}</span>
+                  </div>
+                </div>
 
-              <button 
-                @click="deleteEvent(ev.id)" 
-                class="text-neutral-600 hover:text-red-400 text-xs font-mono px-2 py-1 transition"
-                title="Delete event"
-              >
-                ✕
-              </button>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <button 
+                    @click="startEditEvent(ev)" 
+                    class="text-neutral-400 hover:text-emerald-400 text-xs font-mono px-2 py-1 transition"
+                    title="Edit event"
+                  >
+                    Edit
+                  </button>
+                  <button 
+                    @click="deleteEvent(ev.id)" 
+                    class="text-neutral-600 hover:text-red-400 text-xs font-mono px-2 py-1 transition"
+                    title="Delete event"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
       </div>
 
+    </div>
+
+    <!-- =========================================================================
+         TAB: MEAL PLANNER (WEEKLY MENU & DISH CATALOG)
+         ========================================================================= -->
+    <div v-if="activeTab === 'meals'" class="space-y-8">
+      <!-- TOP BAR: MEAL SLOTS & MENU SELECTOR -->
+      <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-800 pb-4">
+          <div>
+            <h2 class="font-mono text-sm font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
+              <span>🍽️</span> WEEKLY MEAL PLANNER & TEMPLATES
+            </h2>
+            <p class="text-xs text-neutral-400 mt-1">
+              Build weekly family meal schedules, save reusable weekly templates, and push dish ingredients straight to your Shopping List.
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <select 
+              v-model="selectedMealMenuId" 
+              class="bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white outline-none"
+            >
+              <option v-for="m in mealMenus" :key="m.id" :value="m.id">
+                {{ m.is_active ? '★ [ACTIVE] ' : '' }}{{ m.name }}{{ m.is_template ? ' (Template)' : '' }}
+              </option>
+            </select>
+            <button 
+              v-if="currentMealMenu && !currentMealMenu.is_active"
+              @click="activateMealMenu(currentMealMenu.id)" 
+              class="text-xs font-mono bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-lg font-semibold transition"
+            >
+              ★ Set Active on Kiosk
+            </button>
+            <button 
+              v-if="currentMealMenu"
+              @click="pushMenuIngredientsAdmin(currentMealMenu.id)" 
+              class="text-xs font-mono bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-semibold transition"
+            >
+              🛒 + Push Week Ingredients to Shopping
+            </button>
+            <button 
+              v-if="currentMealMenu && mealMenus.length > 1"
+              @click="deleteMealMenuAdmin(currentMealMenu.id)" 
+              class="text-xs font-mono bg-red-950/60 hover:bg-red-900 border border-red-800 text-red-300 px-2.5 py-1.5 rounded-lg transition"
+            >
+              Delete Menu
+            </button>
+          </div>
+        </div>
+
+        <!-- CREATE NEW MENU / TEMPLATE + CONFIGURE SLOTS -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <form @submit.prevent="createMealMenuAdmin" class="flex flex-wrap items-center gap-2 bg-neutral-950/70 border border-neutral-800 rounded-lg p-3">
+            <input 
+              v-model="newMealMenuName" 
+              type="text" 
+              placeholder="New menu or template name (e.g. Week B, Kids Favorites)" 
+              class="flex-1 bg-neutral-900 border border-neutral-800 rounded px-2.5 py-1.5 text-xs text-white outline-none min-w-[180px]"
+              required
+            />
+            <label class="flex items-center gap-1.5 text-xs font-mono text-neutral-300">
+              <input v-model="newMealMenuCloneCurrent" type="checkbox" class="accent-amber-500" />
+              Clone current
+            </label>
+            <button type="submit" class="bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded text-xs font-mono font-semibold transition">
+              + Create Menu
+            </button>
+          </form>
+
+          <form @submit.prevent="saveMealSlotsConfig" class="flex flex-wrap items-center gap-2 bg-neutral-950/70 border border-neutral-800 rounded-lg p-3">
+            <span class="text-[11px] font-mono text-neutral-400">MEAL SLOTS:</span>
+            <input 
+              v-model="mealSlotsCsv" 
+              type="text" 
+              placeholder="Breakfast, Lunch, Dinner, Snack" 
+              class="flex-1 bg-neutral-900 border border-neutral-800 rounded px-2.5 py-1.5 text-xs text-white font-mono outline-none"
+            />
+            <button type="submit" class="bg-neutral-800 hover:bg-neutral-700 text-neutral-200 px-3 py-1.5 rounded text-xs font-mono transition">
+              Save Slots
+            </button>
+          </form>
+        </div>
+
+        <!-- 7-DAY MEAL PLANNER TABLE -->
+        <div v-if="currentMealMenu" class="overflow-x-auto">
+          <table class="w-full border-collapse text-left">
+            <thead>
+              <tr class="border-b border-neutral-800 text-[11px] font-mono uppercase text-neutral-400">
+                <th class="py-2 px-3 w-32">Day</th>
+                <th v-for="slot in activeMealSlotsList" :key="slot" class="py-2 px-3 min-w-[180px]">{{ slot }}</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-neutral-800/70 text-xs">
+              <tr v-for="day in ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']" :key="day" class="hover:bg-neutral-950/50">
+                <td class="py-2.5 px-3 font-mono font-bold text-amber-300 align-top">{{ day }}</td>
+                <td v-for="slot in activeMealSlotsList" :key="slot" class="py-2 px-2 align-top">
+                  <div class="space-y-1.5 bg-neutral-950 border border-neutral-800/90 rounded-lg p-2">
+                    <select 
+                      :value="getMenuSlotDishId(day, slot)"
+                      @change="updateMenuSlotDish(day, slot, $event.target.value)"
+                      class="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-xs text-white outline-none focus:border-amber-500"
+                    >
+                      <option value="">— Select Dish —</option>
+                      <option v-for="d in dishes" :key="d.id" :value="d.id">{{ d.name }}</option>
+                    </select>
+                    <input 
+                      :value="getMenuSlotCustomText(day, slot)"
+                      @change="updateMenuSlotCustomText(day, slot, $event.target.value)"
+                      type="text"
+                      placeholder="Or custom note..."
+                      class="w-full bg-neutral-900/60 border border-neutral-800/80 rounded px-2 py-1 text-[11px] text-neutral-300 outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- DISH CATALOG MANAGEMENT -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <!-- ADD / EDIT DISH FORM -->
+        <div class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg h-fit space-y-4">
+          <h3 class="font-mono text-xs font-bold uppercase tracking-wider text-amber-400 border-b border-neutral-800 pb-2">
+            {{ editingDishId ? '✏️ EDIT DISH' : '+ ADD DISH TO CATALOG' }}
+          </h3>
+          <form @submit.prevent="saveDishAdmin" class="space-y-3">
+            <div>
+              <label class="block text-neutral-400 text-[11px] font-mono mb-1">DISH NAME</label>
+              <input v-model="dishForm.name" type="text" placeholder="e.g. Syrniki with Berry Jam" class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-xs text-white outline-none focus:border-amber-500" required />
+            </div>
+            <div>
+              <label class="block text-neutral-400 text-[11px] font-mono mb-1">TAGS (COMMA SEPARATED)</label>
+              <input v-model="dishForm.tagsCsv" type="text" placeholder="breakfast, quick, kids-favorite" class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 font-mono outline-none" />
+            </div>
+            <div>
+              <label class="block text-neutral-400 text-[11px] font-mono mb-1">INGREDIENTS (ONE PER LINE OR COMMA SEPARATED)</label>
+              <textarea v-model="dishForm.ingredientsText" rows="3" placeholder="Cottage cheese 400g&#10;Eggs 2&#10;Flour 3 tbsp" class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 font-mono outline-none"></textarea>
+            </div>
+            <div>
+              <label class="block text-neutral-400 text-[11px] font-mono mb-1">RECIPE / PREPARATION STEPS</label>
+              <textarea v-model="dishForm.recipe" rows="3" placeholder="Mix ingredients, form patties, pan-fry 4 mins per side..." class="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-xs text-neutral-200 outline-none"></textarea>
+            </div>
+            <div>
+              <label class="block text-neutral-400 text-[11px] font-mono mb-1">PHOTO (OPTIONAL)</label>
+              <input type="file" @change="handleDishPhotoSelect" accept="image/*" class="block w-full text-xs text-neutral-400 file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-xs file:font-mono file:bg-neutral-800 file:text-neutral-200" />
+              <div v-if="dishForm.photo_filename" class="text-[11px] font-mono text-emerald-400 mt-1">Photo attached: {{ dishForm.photo_filename }}</div>
+            </div>
+            <div class="flex gap-2 pt-2">
+              <button v-if="editingDishId" type="button" @click="resetDishForm" class="flex-1 font-mono text-xs bg-neutral-800 hover:bg-neutral-700 text-neutral-300 py-2 rounded-lg">Cancel</button>
+              <button type="submit" class="flex-1 font-mono text-xs bg-amber-600 hover:bg-amber-500 text-white py-2 rounded-lg font-semibold">
+                {{ editingDishId ? 'Update Dish' : '+ Save Dish' }}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- DISH CATALOG LIST -->
+        <div class="lg:col-span-2 bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 shadow-lg space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-800 pb-3">
+            <div>
+              <h3 class="font-mono text-sm font-bold uppercase tracking-wider text-white">DISH CATALOG ({{ dishes.length }})</h3>
+              <span class="text-xs text-neutral-500 font-mono">Reusable dishes with ingredients, recipes & tags</span>
+            </div>
+          </div>
+
+          <div v-if="dishes.length === 0" class="text-neutral-500 text-xs font-mono py-8 text-center border border-dashed border-neutral-800 rounded-lg">
+            No dishes in catalog yet. Add one on the left!
+          </div>
+
+          <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[600px] overflow-y-auto pr-1">
+            <div v-for="d in dishes" :key="d.id" class="bg-neutral-950 border border-neutral-800 rounded-xl p-3 flex flex-col justify-between gap-3 hover:border-neutral-700 transition">
+              <div class="flex items-start gap-3">
+                <img v-if="d.photo_filename" :src="'/uploads/photos/' + d.photo_filename" class="w-16 h-16 rounded-lg object-cover shrink-0 border border-neutral-800" />
+                <div class="w-16 h-16 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-center text-2xl shrink-0" v-else>🍲</div>
+                <div class="min-w-0 flex-1">
+                  <div class="font-bold text-sm text-white truncate">{{ d.name }}</div>
+                  <div v-if="d.tags && d.tags.length" class="flex flex-wrap gap-1 mt-1">
+                    <span v-for="tag in d.tags" :key="tag" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-950/50 border border-amber-800/50 text-amber-300">#{{ tag }}</span>
+                  </div>
+                  <div v-if="d.ingredients && d.ingredients.length" class="text-[11px] text-neutral-400 mt-1.5 line-clamp-2">
+                    🛒 {{ d.ingredients.join(', ') }}
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-center justify-between pt-2 border-t border-neutral-900 text-xs font-mono">
+                <button @click="pushDishIngredientsAdmin(d.id)" class="text-emerald-400 hover:text-emerald-300">+ To Shopping</button>
+                <div class="flex items-center gap-2">
+                  <button @click="startEditDish(d)" class="text-neutral-400 hover:text-amber-300">Edit</button>
+                  <button @click="deleteDishAdmin(d.id)" class="text-neutral-600 hover:text-red-400">Delete</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- =========================================================================
@@ -2047,8 +2313,45 @@
         </div>
 
         <!-- HTTPS / SSL Settings -->
-        <div class="border-t border-neutral-700 pt-4">
-          <h3 class="font-mono text-xs text-violet-400 uppercase tracking-widest mb-3">🔒 HTTPS / SSL</h3>
+        <div class="border-t border-neutral-700 pt-4 space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h3 class="font-mono text-xs text-violet-400 uppercase tracking-widest">🔒 HTTPS / SSL & DNS CERTIFICATES</h3>
+            <div class="flex items-center gap-2">
+              <span 
+                v-if="httpsStatus"
+                class="text-[10px] font-mono px-2 py-0.5 rounded border"
+                :class="httpsStatus.ready ? 'bg-emerald-950/70 border-emerald-700 text-emerald-300' : 'bg-amber-950/70 border-amber-700 text-amber-300'"
+              >
+                {{ httpsStatus.ready ? '✓ Cert & Key Found' : '⚠ Cert / Key Missing on Disk' }}
+              </span>
+              <button 
+                type="button"
+                @click="checkHttpsStatus"
+                class="text-[11px] font-mono bg-neutral-800 hover:bg-neutral-700 text-neutral-200 px-2.5 py-1 rounded transition"
+              >
+                Check Certs
+              </button>
+              <button 
+                type="button"
+                @click="generateSelfSignedCert"
+                :disabled="generatingSelfSigned"
+                class="text-[11px] font-mono bg-violet-700 hover:bg-violet-600 disabled:opacity-50 text-white px-2.5 py-1 rounded font-semibold transition"
+              >
+                {{ generatingSelfSigned ? 'Generating...' : '⚡ Generate Self-Signed Cert (LAN/DNS)' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="p-3 rounded-lg bg-violet-950/30 border border-violet-800/50 text-xs text-neutral-300 space-y-1.5">
+            <div class="font-mono text-[11px] text-violet-300 font-bold">💡 How to enable HTTPS with your DNS name:</div>
+            <div>1. <b>Public DNS (Let's Encrypt)</b>: Run <code class="bg-neutral-950 px-1.5 py-0.5 rounded text-emerald-300 font-mono">sudo ./scripts/setup_https.sh your.domain.com you@example.com</code> on the host. It obtains a certificate, copies it into <code class="font-mono">./data/certs/</code> with proper permissions, and updates the database settings automatically.</div>
+            <div>2. <b>Local DNS / LAN (Self-Signed)</b>: Enter your domain below and click <b>⚡ Generate Self-Signed Cert</b>, or run <code class="bg-neutral-950 px-1.5 py-0.5 rounded text-sky-300 font-mono">./scripts/setup_https.sh your.local.domain --self-signed</code>. Restart the server after changing TLS settings.</div>
+            <div class="flex items-center gap-2 pt-1">
+              <span class="text-[11px] font-mono text-neutral-400">Domain for Self-Signed:</span>
+              <input v-model="httpsDomainInput" type="text" placeholder="dashboard.local or home.example.com" class="bg-neutral-900 border border-neutral-700 rounded px-2.5 py-1 text-xs font-mono text-white outline-none flex-1 max-w-xs" />
+            </div>
+          </div>
+
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label class="block text-xs font-mono text-neutral-400 mb-1">Enable HTTPS</label>
@@ -2088,7 +2391,7 @@
                   :false-value="0"
                   class="w-4 h-4 rounded bg-neutral-900 border-neutral-800 text-violet-500 focus:ring-0 cursor-pointer"
                 />
-                <span class="text-xs text-neutral-300 font-mono">Forward port 80 to the TLS endpoint</span>
+                <span class="text-xs text-neutral-300 font-mono">Forward HTTP port to the TLS endpoint</span>
               </div>
             </div>
           </div>
@@ -2976,12 +3279,55 @@
 
         // Notes & Simulator
         const newNoteContent = ref('');
+        const editingNote = ref(null);
+        const editingEvent = ref(null);
         const simText = ref('');
         const simLoading = ref(false);
         const simResult = ref(null);
 
+        // Meal Planner & Dish Catalog State
+        const dishes = ref([]);
+        const mealMenus = ref([]);
+        const selectedMealMenuId = ref(null);
+        const newMealMenuName = ref('');
+        const newMealMenuCloneCurrent = ref(false);
+        const mealSlotsCsv = ref('Breakfast, Lunch, Dinner, Snack');
+        const editingDishId = ref(null);
+        const dishPhotoFile = ref(null);
+        const dishForm = ref({
+          name: '',
+          tagsCsv: '',
+          ingredientsText: '',
+          recipe: '',
+          photo_filename: null
+        });
+
+        // HTTPS Status State
+        const httpsStatus = ref(null);
+        const httpsDomainInput = ref('dashboard.local');
+        const generatingSelfSigned = ref(false);
+
         const currentList = computed(() => {
           return lists.value.find(l => l.id === selectedListId.value) || null;
+        });
+
+        const currentMealMenu = computed(() => {
+          if (!mealMenus.value.length) return null;
+          return mealMenus.value.find(m => m.id === selectedMealMenuId.value)
+            || mealMenus.value.find(m => m.is_active === 1)
+            || mealMenus.value[0];
+        });
+
+        const activeMealSlotsList = computed(() => {
+          try {
+            const raw = settings.value.meal_slots;
+            if (Array.isArray(raw) && raw.length) return raw;
+            if (typeof raw === 'string' && raw.trim()) {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed) && parsed.length) return parsed;
+            }
+          } catch (e) {}
+          return ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
         });
 
         function showAlert(msg, success = true) {
@@ -3001,20 +3347,316 @@
             notes.value = data.notes || [];
             events.value = data.events || [];
             feeds.value = data.feeds || [];
+            dishes.value = data.dishes || [];
+            mealMenus.value = data.meal_menus || [];
             if (data.settings) {
               settings.value = { ...settings.value, ...data.settings };
               if (data.settings.weather_city) settings.value.weather_city = data.settings.weather_city;
               if (data.settings.weather_lat) settings.value.weather_lat = String(data.settings.weather_lat);
               if (data.settings.weather_lon) settings.value.weather_lon = String(data.settings.weather_lon);
               if (data.settings.weather_units) settings.value.weather_units = data.settings.weather_units;
+              try {
+                const parsedSlots = typeof data.settings.meal_slots === 'string'
+                  ? JSON.parse(data.settings.meal_slots)
+                  : data.settings.meal_slots;
+                if (Array.isArray(parsedSlots) && parsedSlots.length) {
+                  mealSlotsCsv.value = parsedSlots.join(', ');
+                }
+              } catch (e) {}
             }
 
             if (lists.value.length > 0 && (!selectedListId.value || !lists.value.some(l => l.id === selectedListId.value))) {
               selectedListId.value = lists.value[0].id;
             }
+            if (mealMenus.value.length > 0 && (!selectedMealMenuId.value || !mealMenus.value.some(m => m.id === selectedMealMenuId.value))) {
+              const active = mealMenus.value.find(m => m.is_active === 1) || mealMenus.value[0];
+              selectedMealMenuId.value = active.id;
+            }
             loadPhotos();
           } catch (err) {
             showAlert('Failed to load data: ' + err.message, false);
+          }
+        }
+
+        async function checkHttpsStatus() {
+          try {
+            const res = await fetch('/api/admin/https/status');
+            if (res.ok) httpsStatus.value = await res.json();
+          } catch (e) {}
+        }
+
+        async function generateSelfSignedCert() {
+          generatingSelfSigned.value = true;
+          try {
+            const res = await fetch('/api/admin/https/generate-self-signed', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ domain: httpsDomainInput.value.trim() || 'localhost' })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to generate certificate');
+            if (data.settings) settings.value = { ...settings.value, ...data.settings };
+            await checkHttpsStatus();
+            showAlert(`Self-signed TLS certificate generated at ${data.certPath}! Save settings or restart server to activate HTTPS.`);
+          } catch (err) {
+            showAlert('HTTPS cert generation failed: ' + err.message, false);
+          } finally {
+            generatingSelfSigned.value = false;
+          }
+        }
+
+        // Meal Planner Helpers
+        function getMenuSlotDishId(day, slot) {
+          const menu = currentMealMenu.value;
+          if (!menu || !menu.plan || !menu.plan[day] || !menu.plan[day][slot]) return '';
+          return menu.plan[day][slot].dish_id || '';
+        }
+
+        function getMenuSlotCustomText(day, slot) {
+          const menu = currentMealMenu.value;
+          if (!menu || !menu.plan || !menu.plan[day] || !menu.plan[day][slot]) return '';
+          return menu.plan[day][slot].custom_text || '';
+        }
+
+        async function updateMenuSlotDish(day, slot, dishIdVal) {
+          const menu = currentMealMenu.value;
+          if (!menu) return;
+          const customText = getMenuSlotCustomText(day, slot);
+          try {
+            const res = await fetch(`/api/admin/meal-menus/${menu.id}/slot`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                day,
+                slot,
+                dish_id: dishIdVal ? Number(dishIdVal) : null,
+                custom_text: customText || null
+              })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to update slot');
+            if (data.meal_menus) mealMenus.value = data.meal_menus;
+            showAlert(`Updated ${day} ${slot}`);
+          } catch (err) {
+            showAlert('Error updating meal slot: ' + err.message, false);
+          }
+        }
+
+        async function updateMenuSlotCustomText(day, slot, customTextVal) {
+          const menu = currentMealMenu.value;
+          if (!menu) return;
+          const dishId = getMenuSlotDishId(day, slot);
+          try {
+            const res = await fetch(`/api/admin/meal-menus/${menu.id}/slot`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                day,
+                slot,
+                dish_id: dishId ? Number(dishId) : null,
+                custom_text: customTextVal || null
+              })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to update slot');
+            if (data.meal_menus) mealMenus.value = data.meal_menus;
+            showAlert(`Updated ${day} ${slot}`);
+          } catch (err) {
+            showAlert('Error updating meal slot: ' + err.message, false);
+          }
+        }
+
+        async function activateMealMenu(menuId) {
+          try {
+            const res = await fetch(`/api/admin/meal-menus/${menuId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ is_active: true })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to activate menu');
+            if (data.meal_menus) mealMenus.value = data.meal_menus;
+            showAlert('Active weekly menu updated on Kiosk!');
+          } catch (err) {
+            showAlert('Error activating menu: ' + err.message, false);
+          }
+        }
+
+        async function createMealMenuAdmin() {
+          if (!newMealMenuName.value.trim()) return;
+          try {
+            const plan = (newMealMenuCloneCurrent.value && currentMealMenu.value && currentMealMenu.value.plan)
+              ? currentMealMenu.value.plan
+              : {};
+            const res = await fetch('/api/admin/meal-menus', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: newMealMenuName.value.trim(),
+                is_template: 1,
+                is_active: 0,
+                plan
+              })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to create menu');
+            if (data.meal_menus) mealMenus.value = data.meal_menus;
+            if (data.menu) selectedMealMenuId.value = data.menu.id;
+            newMealMenuName.value = '';
+            showAlert('New meal menu template created!');
+          } catch (err) {
+            showAlert('Error creating menu: ' + err.message, false);
+          }
+        }
+
+        async function deleteMealMenuAdmin(menuId) {
+          if (!confirm('Delete this meal menu?')) return;
+          try {
+            const res = await fetch(`/api/admin/meal-menus/${menuId}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to delete menu');
+            if (data.meal_menus) mealMenus.value = data.meal_menus;
+            if (mealMenus.value.length) selectedMealMenuId.value = mealMenus.value[0].id;
+            showAlert('Meal menu deleted');
+          } catch (err) {
+            showAlert('Error deleting menu: ' + err.message, false);
+          }
+        }
+
+        async function saveMealSlotsConfig() {
+          const slots = mealSlotsCsv.value.split(',').map(s => s.trim()).filter(Boolean);
+          if (!slots.length) return showAlert('Enter at least one meal slot', false);
+          try {
+            const res = await fetch('/api/admin/settings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ meal_slots: JSON.stringify(slots) })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error('Failed to save slots');
+            if (data.settings) settings.value = { ...settings.value, ...data.settings };
+            showAlert('Meal slots updated: ' + slots.join(', '));
+          } catch (err) {
+            showAlert('Error saving meal slots: ' + err.message, false);
+          }
+        }
+
+        function handleDishPhotoSelect(e) {
+          const file = e.target.files && e.target.files[0];
+          dishPhotoFile.value = file || null;
+        }
+
+        function resetDishForm() {
+          editingDishId.value = null;
+          dishPhotoFile.value = null;
+          dishForm.value = {
+            name: '',
+            tagsCsv: '',
+            ingredientsText: '',
+            recipe: '',
+            photo_filename: null
+          };
+        }
+
+        function startEditDish(d) {
+          editingDishId.value = d.id;
+          dishPhotoFile.value = null;
+          dishForm.value = {
+            name: d.name || '',
+            tagsCsv: Array.isArray(d.tags) ? d.tags.join(', ') : '',
+            ingredientsText: Array.isArray(d.ingredients) ? d.ingredients.join('\n') : '',
+            recipe: d.recipe || '',
+            photo_filename: d.photo_filename || null
+          };
+        }
+
+        async function saveDishAdmin() {
+          if (!dishForm.value.name.trim()) return;
+          try {
+            let photoFilename = dishForm.value.photo_filename;
+            if (dishPhotoFile.value) {
+              const fd = new FormData();
+              fd.append('photos', dishPhotoFile.value);
+              fd.append('caption', dishForm.value.name.trim());
+              fd.append('show_in_screensaver', '0');
+              const upRes = await fetch('/api/admin/upload/photos', { method: 'POST', body: fd });
+              if (upRes.ok) {
+                const upData = await upRes.json();
+                if (upData.photos && upData.photos[0]) {
+                  photoFilename = upData.photos[0].filename;
+                }
+              }
+            }
+            const tags = dishForm.value.tagsCsv.split(',').map(t => t.trim()).filter(Boolean);
+            const ingredients = dishForm.value.ingredientsText.split(/[\n,]+/).map(i => i.trim()).filter(Boolean);
+            const payload = {
+              name: dishForm.value.name.trim(),
+              tags,
+              ingredients,
+              recipe: dishForm.value.recipe.trim(),
+              photo_filename: photoFilename
+            };
+            const url = editingDishId.value ? `/api/admin/dishes/${editingDishId.value}` : '/api/admin/dishes';
+            const method = editingDishId.value ? 'PATCH' : 'POST';
+            const res = await fetch(url, {
+              method,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to save dish');
+            if (data.dishes) dishes.value = data.dishes;
+            showAlert(editingDishId.value ? 'Dish updated!' : 'Dish added to catalog!');
+            resetDishForm();
+            loadData();
+          } catch (err) {
+            showAlert('Error saving dish: ' + err.message, false);
+          }
+        }
+
+        async function deleteDishAdmin(dishId) {
+          if (!confirm('Delete this dish from the catalog?')) return;
+          try {
+            const res = await fetch(`/api/admin/dishes/${dishId}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to delete dish');
+            if (data.dishes) dishes.value = data.dishes;
+            showAlert('Dish deleted');
+            loadData();
+          } catch (err) {
+            showAlert('Error deleting dish: ' + err.message, false);
+          }
+        }
+
+        async function pushDishIngredientsAdmin(dishId) {
+          try {
+            const res = await fetch('/api/admin/meal-menus/push-ingredients', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ dish_id: dishId })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to push ingredients');
+            if (data.lists) lists.value = data.lists;
+            showAlert(`Added ${data.addedCount || 0} ingredient(s) to Shopping List!`);
+          } catch (err) {
+            showAlert('Error pushing ingredients: ' + err.message, false);
+          }
+        }
+
+        async function pushMenuIngredientsAdmin(menuId) {
+          try {
+            const res = await fetch('/api/admin/meal-menus/push-ingredients', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ menu_id: menuId })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to push menu ingredients');
+            if (data.lists) lists.value = data.lists;
+            showAlert(`Added ${data.addedCount || 0} weekly ingredient(s) to Shopping List!`);
+          } catch (err) {
+            showAlert('Error pushing menu ingredients: ' + err.message, false);
           }
         }
 
@@ -3299,16 +3941,34 @@
         }
 
         async function toggleListItem(item) {
+          const nextChecked = item.checked === 1 ? 0 : 1;
+          item.checked = nextChecked;
+          item.completed_by = nextChecked === 1 ? 'Admin' : null;
           try {
             const res = await fetch(`/api/admin/lists/${item.list_id}/items/${item.id}/toggle`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ checked: item.checked === 1 ? 0 : 1 })
+              body: JSON.stringify({ checked: nextChecked, completed_by: 'Admin' })
             });
             if (!res.ok) throw new Error('HTTP ' + res.status);
-            loadData();
+            const data = await res.json();
+            if (data.lists) lists.value = data.lists;
           } catch (err) {
             showAlert('Error: ' + err.message, false);
+            loadData();
+          }
+        }
+
+        async function clearCompletedListItems(list) {
+          if (!list || !list.id) return;
+          try {
+            const res = await fetch(`/api/admin/lists/${list.id}/clear-completed`, { method: 'POST' });
+            const data = await res.json();
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            if (data.lists) lists.value = data.lists;
+            showAlert(`Cleared ${data.cleared || 0} completed item(s)`);
+          } catch (err) {
+            showAlert('Error clearing completed items: ' + err.message, false);
           }
         }
 
@@ -3339,6 +3999,27 @@
             loadData();
           } catch (err) {
             showAlert('Error: ' + err.message, false);
+          }
+        }
+
+        function startEditNote(note) {
+          editingNote.value = { id: note.id, content: note.content || '' };
+        }
+
+        async function saveEditNote() {
+          if (!editingNote.value || !editingNote.value.content.trim()) return;
+          try {
+            const res = await fetch('/api/admin/notes/' + editingNote.value.id, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ content: editingNote.value.content.trim() })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            editingNote.value = null;
+            showAlert('Note updated!');
+            loadData();
+          } catch (err) {
+            showAlert('Error updating note: ' + err.message, false);
           }
         }
 
@@ -3464,6 +4145,35 @@
           }
         }
 
+        function startEditEvent(ev) {
+          editingEvent.value = {
+            id: ev.id,
+            title: ev.title || '',
+            start_datetime: ev.start_datetime || '',
+            all_day: ev.all_day ?? 0
+          };
+        }
+
+        async function saveEditEvent() {
+          if (!editingEvent.value || !editingEvent.value.title.trim()) return;
+          try {
+            const res = await fetch('/api/admin/calendar/events/' + editingEvent.value.id, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title: editingEvent.value.title.trim(),
+                start_datetime: editingEvent.value.start_datetime
+              })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            editingEvent.value = null;
+            showAlert('Event updated!');
+            loadData();
+          } catch (err) {
+            showAlert('Error updating event: ' + err.message, false);
+          }
+        }
+
         async function deleteEvent(id) {
           if (!confirm('Delete this event?')) return;
           try {
@@ -3503,6 +4213,7 @@
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
             if (data.settings) settings.value = data.settings;
+            checkHttpsStatus();
             showAlert('Settings saved and synchronized with kiosk!');
           } catch (err) {
             showAlert('Failed to save settings: ' + err.message, false);
@@ -3553,6 +4264,8 @@
         watch(activeTab, (tab) => {
           if (tab === 'audit_logs') {
             loadAuditLogs();
+          } else if (tab === 'settings') {
+            checkHttpsStatus();
           }
         });
 
@@ -3565,6 +4278,7 @@
         onMounted(() => {
           loadData();
           checkLibrusStatus();
+          checkHttpsStatus();
           loadScheduledSubscriptions();
           fetchGeminiModels();
         });
@@ -3626,15 +4340,51 @@
           alertSuccess,
           settings,
           saveSettings,
+          httpsStatus,
+          httpsDomainInput,
+          generatingSelfSigned,
+          checkHttpsStatus,
+          generateSelfSignedCert,
           profiles,
           lists,
           notes,
+          editingNote,
+          startEditNote,
+          saveEditNote,
           photos,
           events,
+          editingEvent,
+          startEditEvent,
+          saveEditEvent,
           feeds,
           syncingFeeds,
           newFeed,
           newEvent,
+          dishes,
+          mealMenus,
+          selectedMealMenuId,
+          currentMealMenu,
+          activeMealSlotsList,
+          mealSlotsCsv,
+          newMealMenuName,
+          newMealMenuCloneCurrent,
+          editingDishId,
+          dishForm,
+          getMenuSlotDishId,
+          getMenuSlotCustomText,
+          updateMenuSlotDish,
+          updateMenuSlotCustomText,
+          activateMealMenu,
+          createMealMenuAdmin,
+          deleteMealMenuAdmin,
+          saveMealSlotsConfig,
+          handleDishPhotoSelect,
+          resetDishForm,
+          startEditDish,
+          saveDishAdmin,
+          deleteDishAdmin,
+          pushDishIngredientsAdmin,
+          pushMenuIngredientsAdmin,
           screensaverPhotosCount,
           selectedListId,
           currentList,
@@ -3677,6 +4427,7 @@
           deleteList,
           addListItem,
           toggleListItem,
+          clearCompletedListItems,
           deleteListItem,
           addNote,
           deleteNote,

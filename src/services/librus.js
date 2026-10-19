@@ -137,26 +137,99 @@ function normalizeSingleLesson(lesson, idx = 0, hours = []) {
     cancelled,
     moved,
     flag: flag || null,
-    original: source.original || null
+    original: source.original || null,
+    date: source.date ? String(source.date) : null
   };
 }
 
-function normalizeTimetableData(rawTimetable) {
-  if (!rawTimetable) return [];
+const SCHOOL_DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
-  const hours = Array.isArray(rawTimetable.hours) ? rawTimetable.hours : Array.isArray(rawTimetable.time_slots) ? rawTimetable.time_slots : [];
+function formatIsoDateLocal(d) {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getWeekBounds(referenceDate = new Date(), weekOffset = 0) {
+  const base = referenceDate instanceof Date ? new Date(referenceDate.getTime()) : new Date(referenceDate);
+  base.setHours(12, 0, 0, 0);
+  const daysSinceMonday = (base.getDay() + 6) % 7;
+  const monday = new Date(base);
+  monday.setDate(base.getDate() - daysSinceMonday + (weekOffset * 7));
+
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+
+  const dayDates = {};
+  SCHOOL_DAYS_ORDER.forEach((dayName, idx) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + idx);
+    dayDates[dayName] = formatIsoDateLocal(d);
+  });
+
+  return {
+    from: formatIsoDateLocal(monday),
+    to: formatIsoDateLocal(sunday),
+    dayDates
+  };
+}
+
+function stripOneOffLessonChanges(lessons = []) {
+  if (!Array.isArray(lessons)) return [];
+  return lessons.map((lesson) => ({
+    ...lesson,
+    replacementTeacher: null,
+    replacement: false,
+    moved: false,
+    cancelled: false,
+    flag: null,
+    original: null
+  }));
+}
+
+function parseSingleWeekTable(rawTimetable, weekDates = {}) {
+  if (!rawTimetable) return [];
+  const hours = Array.isArray(rawTimetable.hours)
+    ? rawTimetable.hours
+    : Array.isArray(rawTimetable.time_slots)
+      ? rawTimetable.time_slots
+      : [];
   const sourceTable = rawTimetable.table || rawTimetable.days || rawTimetable;
 
   if (Array.isArray(sourceTable)) {
     return sourceTable
       .map((dayEntry, index) => {
-        const dayName = dayEntry && (dayEntry.day || dayEntry.name || dayEntry.label) ? String(dayEntry.day || dayEntry.name || dayEntry.label) : `Day ${index + 1}`;
-        const lessons = Array.isArray(dayEntry && dayEntry.lessons) ? dayEntry.lessons : Array.isArray(dayEntry) ? dayEntry : [];
+        const dayName = dayEntry && (dayEntry.day || dayEntry.name || dayEntry.label)
+          ? String(dayEntry.day || dayEntry.name || dayEntry.label)
+          : `Day ${index + 1}`;
+        const lessons = Array.isArray(dayEntry && dayEntry.lessons)
+          ? dayEntry.lessons
+          : Array.isArray(dayEntry)
+            ? dayEntry
+            : [];
         if (!isSchoolDayName(dayName)) return null;
-        return {
-          day: toDisplayDayName(dayName),
-          lessons: lessons.map((lesson, lessonIndex) => normalizeSingleLesson(lesson, lessonIndex, hours))
+        const displayDay = toDisplayDayName(dayName);
+        const dayDate = (dayEntry && dayEntry.date) || weekDates[displayDay] || null;
+        const normalizedLessons = lessons.map((lesson, lessonIndex) => {
+          const norm = normalizeSingleLesson(lesson, lessonIndex, hours);
+          if (dayDate && !norm.date) norm.date = dayDate;
+          return norm;
+        });
+        const result = {
+          day: displayDay,
+          lessons: normalizedLessons
         };
+        if (dayDate) result.date = dayDate;
+        if (dayEntry && dayEntry.nextDate) result.nextDate = String(dayEntry.nextDate);
+        if (Array.isArray(dayEntry && dayEntry.nextLessons)) {
+          result.nextLessons = dayEntry.nextLessons.map((lesson, lessonIndex) => {
+            const norm = normalizeSingleLesson(lesson, lessonIndex, hours);
+            if (dayEntry.nextDate && !norm.date) norm.date = String(dayEntry.nextDate);
+            return norm;
+          });
+        }
+        return result;
       })
       .filter(Boolean);
   }
@@ -165,9 +238,18 @@ function normalizeTimetableData(rawTimetable) {
     return Object.entries(sourceTable)
       .map(([dayName, lessons]) => {
         if (!isSchoolDayName(dayName)) return null;
+        const displayDay = toDisplayDayName(dayName);
+        const dayDate = weekDates[displayDay] || null;
         return {
-          day: toDisplayDayName(dayName),
-          lessons: Array.isArray(lessons) ? lessons.map((lesson, lessonIndex) => normalizeSingleLesson(lesson, lessonIndex, hours)) : []
+          day: displayDay,
+          ...(dayDate ? { date: dayDate } : {}),
+          lessons: Array.isArray(lessons)
+            ? lessons.map((lesson, lessonIndex) => {
+                const norm = normalizeSingleLesson(lesson, lessonIndex, hours);
+                if (dayDate && !norm.date) norm.date = dayDate;
+                return norm;
+              })
+            : []
         };
       })
       .filter(Boolean);
@@ -176,23 +258,69 @@ function normalizeTimetableData(rawTimetable) {
   return [];
 }
 
-function buildMorningSummary(person, timetableData) {
+function normalizeTimetableData(rawTimetable, options = {}) {
+  if (!rawTimetable) return [];
+
+  const refDate = options.referenceDate ? new Date(options.referenceDate) : new Date();
+  const currentWeek = getWeekBounds(refDate, 0);
+  const nextWeek = getWeekBounds(refDate, 1);
+
+  if (rawTimetable && typeof rawTimetable === 'object' && !Array.isArray(rawTimetable) && rawTimetable.nextWeek) {
+    const currentDays = parseSingleWeekTable(rawTimetable.currentWeek || rawTimetable, rawTimetable.weekDates || currentWeek.dayDates);
+    const nextDays = parseSingleWeekTable(rawTimetable.nextWeek, rawTimetable.nextWeekDates || nextWeek.dayDates);
+    const nextByDay = Object.fromEntries(nextDays.map((d) => [d.day, d]));
+
+    return currentDays.map((entry) => {
+      const nextEntry = nextByDay[entry.day];
+      return {
+        ...entry,
+        date: entry.date || currentWeek.dayDates[entry.day] || null,
+        nextDate: (nextEntry && nextEntry.date) || nextWeek.dayDates[entry.day] || null,
+        nextLessons: nextEntry && Array.isArray(nextEntry.lessons)
+          ? nextEntry.lessons
+          : stripOneOffLessonChanges(entry.lessons)
+      };
+    });
+  }
+
+  return parseSingleWeekTable(rawTimetable, options.weekDates || {});
+}
+
+function resolveLessonsForDate(dayEntry, targetDateIso) {
+  if (!dayEntry) return [];
+  if (targetDateIso && dayEntry.nextDate && dayEntry.nextDate === targetDateIso && Array.isArray(dayEntry.nextLessons)) {
+    return dayEntry.nextLessons;
+  }
+  if (targetDateIso && dayEntry.date && dayEntry.date === targetDateIso) {
+    return Array.isArray(dayEntry.lessons) ? dayEntry.lessons : [];
+  }
+  if (targetDateIso && dayEntry.date && targetDateIso > dayEntry.date) {
+    if (Array.isArray(dayEntry.nextLessons) && dayEntry.nextLessons.length > 0) {
+      return dayEntry.nextLessons;
+    }
+    return stripOneOffLessonChanges(dayEntry.lessons);
+  }
+  return Array.isArray(dayEntry.lessons) ? dayEntry.lessons : [];
+}
+
+function buildMorningSummary(person, timetableData, referenceDate = new Date()) {
   const name = (() => {
     if (!person) return 'Student';
     if (typeof person === 'string') return person.trim() || 'Student';
     return person.name || person.first_name || person.label || 'Student';
   })();
 
-  const normalized = normalizeTimetableData(timetableData);
+  const normalized = normalizeTimetableData(timetableData, { referenceDate });
   if (!normalized.length) {
     return `${name}'s school day: no lessons scheduled yet.`;
   }
 
-  const today = new Date();
+  const today = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const todayLabel = dayNames[today.getDay()];
-  const todayEntry = normalized.find((entry) => String(entry.day).toLowerCase() === todayLabel.toLowerCase());
-  const lessons = Array.isArray(todayEntry && todayEntry.lessons) ? todayEntry.lessons : [];
+  const todayIso = formatIsoDateLocal(today);
+  const todayEntry = normalized.find((entry) => String(entry.day).toLowerCase() === todayLabel.toLowerCase()) || normalized[0];
+  const lessons = resolveLessonsForDate(todayEntry, todayIso);
 
   if (!lessons.length) {
     return `${name}'s school day: no lessons scheduled for ${todayEntry ? todayEntry.day : 'today'}.`;
@@ -333,17 +461,18 @@ function cleanList(values) {
   return Array.isArray(values) ? values.filter(Boolean) : [];
 }
 
-function buildSchoolDaySummary({ weather = null, tasks = [], schedule = [], grades = [], notifications = [], announcements = [], language = 'en' } = {}) {
+function buildSchoolDaySummary({ weather = null, tasks = [], schedule = [], grades = [], notifications = [], announcements = [], language = 'en', referenceDate = new Date() } = {}) {
   const lang = normalizeLanguage(language);
   const labels = SUMMARY_TEXT[lang];
   const parts = [];
 
-  const normalizedSchedule = normalizeTimetableData(schedule);
-  const today = new Date();
+  const normalizedSchedule = normalizeTimetableData(schedule, { referenceDate });
+  const today = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const todayLabel = dayNames[today.getDay()];
-  const todayEntry = normalizedSchedule.find((entry) => String(entry.day).toLowerCase() === todayLabel.toLowerCase());
-  const lessons = Array.isArray(todayEntry && todayEntry.lessons) ? todayEntry.lessons.filter(Boolean) : [];
+  const todayIso = formatIsoDateLocal(today);
+  const todayEntry = normalizedSchedule.find((entry) => String(entry.day).toLowerCase() === todayLabel.toLowerCase()) || normalizedSchedule[0];
+  const lessons = resolveLessonsForDate(todayEntry, todayIso).filter(Boolean);
   const lessonNames = lessons.map((lesson) => lesson.name || lesson.subject || '').filter(Boolean);
 
   if (weather) {
@@ -471,7 +600,7 @@ async function hydrateGradeDetails(client, grades, errors) {
   }));
 }
 
-async function fetchLibrusData({ login, password, resources = null }) {
+async function fetchLibrusData({ login, password, resources = null, referenceDate = new Date() }) {
   if (!LibrusApi) {
     throw new Error('librus-api package is not installed in this environment.');
   }
@@ -491,14 +620,42 @@ async function fetchLibrusData({ login, password, resources = null }) {
       return fallback;
     }
   };
-  const [timetable, notificationCounts, accountInfo, announcements, rawGrades, inboxHeaders] = await Promise.all([
-    shouldFetch('timetable') ? fetchResource('timetable', () => client.calendar.getTimetable(), []) : [],
+
+  const currentWeek = getWeekBounds(referenceDate, 0);
+  const nextWeek = getWeekBounds(referenceDate, 1);
+
+  const [currentTimetableRaw, nextTimetableRaw, notificationCounts, accountInfo, announcements, rawGrades, inboxHeaders] = await Promise.all([
+    shouldFetch('timetable') ? fetchResource('timetable', () => client.calendar.getTimetable(currentWeek.from, currentWeek.to), []) : [],
+    shouldFetch('timetable') ? fetchResource('timetable_next', async () => {
+      try {
+        return await client.calendar.getTimetable(nextWeek.from, nextWeek.to);
+      } catch (e) {
+        return null;
+      }
+    }, null) : null,
     shouldFetch('notifications') ? fetchResource('notification_counts', () => client.info.getNotifications(), {}) : {},
     fetchAll ? fetchResource('account', () => client.info.getAccountInfo(), null) : null,
     shouldFetch('announcements') ? fetchResource('announcements', () => client.inbox.listAnnouncements(), []) : [],
     shouldFetch('grades') ? fetchResource('grades', () => client.info.getGrades(), []) : [],
     shouldFetch('messages') ? fetchResource('inbox', () => client.inbox.listInbox(5), []) : []
   ]);
+
+  let timetable = currentTimetableRaw;
+  if (shouldFetch('timetable') && currentTimetableRaw && typeof currentTimetableRaw === 'object' && !Array.isArray(currentTimetableRaw)) {
+    timetable = {
+      ...currentTimetableRaw,
+      weekDates: currentWeek.dayDates,
+      nextWeek: nextTimetableRaw || null,
+      nextWeekDates: nextWeek.dayDates
+    };
+  } else if (shouldFetch('timetable') && Array.isArray(currentTimetableRaw) && nextTimetableRaw) {
+    timetable = {
+      table: currentTimetableRaw,
+      weekDates: currentWeek.dayDates,
+      nextWeek: nextTimetableRaw,
+      nextWeekDates: nextWeek.dayDates
+    };
+  }
 
   const grades = shouldFetch('grades') ? await hydrateGradeDetails(client, flattenLibrusGrades(rawGrades), errors) : [];
   const messages = shouldFetch('messages') ? await Promise.all((Array.isArray(inboxHeaders) ? inboxHeaders : []).slice(0, 20).map(async (header) => {
@@ -523,16 +680,19 @@ async function fetchLibrusData({ login, password, resources = null }) {
     announcements,
     grades,
     errors,
-    normalizedTimetable: normalizeTimetableData(timetable)
+    normalizedTimetable: normalizeTimetableData(timetable, { referenceDate })
   };
 }
 
-function toSchedulePayload(timetableData) {
-  return normalizeTimetableData(timetableData);
+function toSchedulePayload(timetableData, options = {}) {
+  return normalizeTimetableData(timetableData, options);
 }
 
 module.exports = {
   LibrusApi,
+  getWeekBounds,
+  resolveLessonsForDate,
+  stripOneOffLessonChanges,
   normalizeSingleLesson,
   normalizeTimetableData,
   buildMorningSummary,
