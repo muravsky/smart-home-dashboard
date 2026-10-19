@@ -88,6 +88,20 @@
     }
 
     /* ==========================================================================
+       Meal Menu Widget Base Styles
+       ========================================================================== */
+    .meal-tab-btn.is-active {
+      background-color: #ea580c !important;
+      color: #ffffff !important;
+    }
+    .meal-dish-card {
+      transition: all 150ms ease;
+    }
+    .meal-dish-card:hover {
+      transform: translateY(-1px);
+    }
+
+    /* ==========================================================================
        White Theme System
        ========================================================================== */
     .theme-white {
@@ -286,8 +300,136 @@
     .theme-white .border-emerald-800\/60 {
       border-color: #a7f3d0 !important;
     }
-
-      border-color: #bae6fd !important;
+    /* Meal Planner & Orange System in White Theme */
+    .theme-white .meal-slot-box,
+    .theme-white .meal-dish-card,
+    .theme-white .meal-week-table-wrap {
+      background-color: #ffffff !important;
+      border-color: #e2e8f0 !important;
+      color: #0f172a !important;
+    }
+    .theme-white .meal-dish-card {
+      background-color: #f8fafc !important;
+      box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04) !important;
+    }
+    .theme-white .meal-dish-card:hover {
+      background-color: #ffffff !important;
+      border-color: #fdba74 !important;
+      box-shadow: 0 4px 6px -1px rgba(234, 88, 12, 0.08) !important;
+    }
+    .theme-white .meal-dish-name {
+      color: #0f172a !important;
+    }
+    .theme-white .meal-slot-label {
+      color: #c2410c !important;
+    }
+    .theme-white .meal-slot-edit-btn {
+      color: #64748b !important;
+    }
+    .theme-white .meal-slot-edit-btn:hover {
+      color: #0f172a !important;
+      background-color: #f1f5f9 !important;
+    }
+    .theme-white .meal-empty-slot {
+      background-color: #f8fafc !important;
+      border-color: #cbd5e1 !important;
+      color: #64748b !important;
+    }
+    .theme-white .meal-empty-slot:hover {
+      background-color: #fff7ed !important;
+      border-color: #fdba74 !important;
+      color: #c2410c !important;
+    }
+    .theme-white .meal-dish-thumb {
+      border-color: #e2e8f0 !important;
+    }
+    .theme-white .meal-dish-thumb-fallback {
+      background-color: #ffedd5 !important;
+      border-color: #fed7aa !important;
+    }
+    .theme-white .meal-dish-tag {
+      background-color: #f1f5f9 !important;
+      border-color: #cbd5e1 !important;
+      color: #475569 !important;
+    }
+    .theme-white .meal-segmented-nav {
+      background-color: #f1f5f9 !important;
+      border-color: #cbd5e1 !important;
+    }
+    .theme-white .meal-tab-btn {
+      color: #64748b !important;
+    }
+    .theme-white .meal-tab-btn:hover {
+      color: #0f172a !important;
+    }
+    .theme-white .meal-tab-btn.is-active,
+    .theme-white .meal-filter-active {
+      background-color: #ea580c !important;
+      color: #ffffff !important;
+    }
+    .theme-white .meal-shop-btn {
+      background-color: #fff7ed !important;
+      border-color: #fdba74 !important;
+      color: #c2410c !important;
+    }
+    .theme-white .meal-shop-btn:hover {
+      background-color: #ffedd5 !important;
+      border-color: #fb923c !important;
+      color: #9a3412 !important;
+    }
+    .theme-white .meal-day-header {
+      border-bottom-color: #e2e8f0 !important;
+      color: #c2410c !important;
+    }
+    .theme-white .meal-day-badge {
+      background-color: #ffedd5 !important;
+      border-color: #fdba74 !important;
+      color: #c2410c !important;
+    }
+    .theme-white .meal-week-table {
+      color: #0f172a !important;
+    }
+    .theme-white .meal-week-th {
+      background-color: #f8fafc !important;
+      color: #475569 !important;
+      border-color: #e2e8f0 !important;
+    }
+    .theme-white .meal-week-td,
+    .theme-white .meal-week-day-cell {
+      border-color: #e2e8f0 !important;
+      color: #0f172a !important;
+    }
+    .theme-white .meal-week-today-row {
+      background-color: #fff7ed !important;
+    }
+    .theme-white .meal-modal-tag {
+      background-color: #ffedd5 !important;
+      border-color: #fed7aa !important;
+      color: #c2410c !important;
+    }
+    /* Direct Tailwind utility fallbacks for meal elements */
+    .theme-white .bg-neutral-950\/70 {
+      background-color: #f8fafc !important;
+      border-color: #e2e8f0 !important;
+    }
+    .theme-white .bg-orange-950\/30,
+    .theme-white .bg-orange-950\/50,
+    .theme-white .bg-orange-950\/60 {
+      background-color: #fff7ed !important;
+      border-color: #fed7aa !important;
+    }
+    .theme-white .border-orange-800\/50,
+    .theme-white .border-orange-800\/60,
+    .theme-white .border-orange-800\/70 {
+      border-color: #fdba74 !important;
+    }
+    .theme-white .text-orange-300,
+    .theme-white .text-orange-400 {
+      color: #c2410c !important;
+    }
+    .theme-white .bg-orange-600.text-white,
+    .theme-white .bg-amber-600.text-white {
+      color: #ffffff !important;
     }
     .theme-white .widget-card {
       background-color: #ffffff !important;
@@ -319,6 +461,19 @@
     .theme-white-contrast .bg-neutral-800,
     .theme-white-contrast .bg-neutral-900\/80,
     .theme-white-contrast .bg-neutral-950\/80,
+    .theme-white-contrast .bg-neutral-950\/70,
+    .theme-white-contrast .bg-orange-950\/30,
+    .theme-white-contrast .bg-orange-950\/50,
+    .theme-white-contrast .bg-orange-950\/60,
+    .theme-white-contrast .meal-slot-box,
+    .theme-white-contrast .meal-dish-card,
+    .theme-white-contrast .meal-week-table-wrap,
+    .theme-white-contrast .meal-segmented-nav,
+    .theme-white-contrast .meal-shop-btn,
+    .theme-white-contrast .meal-dish-thumb-fallback,
+    .theme-white-contrast .meal-dish-tag,
+    .theme-white-contrast .meal-empty-slot,
+    .theme-white-contrast .meal-modal-tag,
     .theme-white-contrast .bg-sky-950\/20,
     .theme-white-contrast .bg-sky-950\/30,
     .theme-white-contrast .bg-sky-950\/40,
@@ -341,14 +496,36 @@
     .theme-white-contrast .text-amber-400,
     .theme-white-contrast .text-yellow-300,
     .theme-white-contrast .text-yellow-400,
-    .theme-white-contrast .text-amber-300 {
+    .theme-white-contrast .text-amber-300,
+    .theme-white-contrast .text-orange-300,
+    .theme-white-contrast .text-orange-400,
+    .theme-white-contrast .meal-dish-name,
+    .theme-white-contrast .meal-slot-label,
+    .theme-white-contrast .meal-slot-edit-btn,
+    .theme-white-contrast .meal-day-header,
+    .theme-white-contrast .meal-day-badge,
+    .theme-white-contrast .meal-week-table,
+    .theme-white-contrast .meal-week-th,
+    .theme-white-contrast .meal-week-td,
+    .theme-white-contrast .meal-week-day-cell {
+      color: #000000 !important;
+    }
+    .theme-white-contrast .meal-tab-btn.is-active,
+    .theme-white-contrast .meal-filter-active {
+      background-color: #000000 !important;
+      color: #ffffff !important;
+    }
+    .theme-white-contrast .meal-tab-btn {
       color: #000000 !important;
     }
     .theme-white-contrast .border-neutral-900,
     .theme-white-contrast .border-neutral-800,
     .theme-white-contrast .border-neutral-700,
     .theme-white-contrast .border-sky-950\/60,
-    .theme-white-contrast .border-neutral-300 {
+    .theme-white-contrast .border-neutral-300,
+    .theme-white-contrast .border-orange-800\/50,
+    .theme-white-contrast .border-orange-800\/60,
+    .theme-white-contrast .border-orange-800\/70 {
       border-color: #000000 !important;
     }
     .theme-white-contrast input[type="text"] {
@@ -406,6 +583,43 @@
     .theme-high-contrast .text-amber-300 {
       color: #fde047 !important;
     }
+    .theme-high-contrast .meal-slot-box,
+    .theme-high-contrast .meal-dish-card,
+    .theme-high-contrast .meal-week-table-wrap,
+    .theme-high-contrast .meal-segmented-nav,
+    .theme-high-contrast .meal-empty-slot,
+    .theme-high-contrast .meal-modal-tag {
+      background-color: #000000 !important;
+      border-color: #facc15 !important;
+      color: #f8fafc !important;
+    }
+    .theme-high-contrast .meal-dish-name,
+    .theme-high-contrast .meal-slot-label,
+    .theme-high-contrast .meal-day-header,
+    .theme-high-contrast .meal-dish-tag,
+    .theme-high-contrast .meal-week-dish-link {
+      color: #facc15 !important;
+    }
+    .theme-high-contrast .meal-tab-btn.is-active,
+    .theme-high-contrast .meal-filter-active {
+      background-color: #facc15 !important;
+      color: #000000 !important;
+      font-weight: 700 !important;
+    }
+    .theme-high-contrast .meal-tab-btn {
+      color: #f8fafc !important;
+    }
+    .theme-high-contrast .meal-shop-btn {
+      background-color: #000000 !important;
+      border-color: #facc15 !important;
+      color: #facc15 !important;
+    }
+    .theme-high-contrast .meal-week-th,
+    .theme-high-contrast .meal-week-td,
+    .theme-high-contrast .meal-week-day-cell {
+      border-color: #facc15 !important;
+      color: #f8fafc !important;
+    }
     .theme-high-contrast .widget-card {
       background-color: #000000 !important;
       border: 1px solid #facc15 !important;
@@ -421,7 +635,10 @@
     }
     html.theme-high-contrast .bg-neutral-950,
     html.theme-high-contrast .bg-neutral-900,
-    html.theme-high-contrast .bg-neutral-800 {
+    html.theme-high-contrast .bg-neutral-800,
+    html.theme-high-contrast .meal-slot-box,
+    html.theme-high-contrast .meal-dish-card,
+    html.theme-high-contrast .meal-week-table-wrap {
       background-color: #111111 !important;
       border-color: #facc15 !important;
       color: #f8fafc !important;
@@ -527,6 +744,103 @@
     html.theme-white .widget-card { background-color: #ffffff !important; border: 1px solid #e2e8f0 !important; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05) !important; }
     html.theme-white input[type="text"] { background-color: #f8fafc !important; border-color: #cbd5e1 !important; color: #0f172a !important; }
     html.theme-white .fixed.inset-0 { background-color: #000000 !important; color: #ffffff !important; }
+
+    /* html.theme-white Meal Planner overrides (beats .widget-card .text-white) */
+    html.theme-white .meal-slot-box {
+      background-color: #ffffff !important;
+      border-color: #e2e8f0 !important;
+      color: #0f172a !important;
+    }
+    html.theme-white .meal-dish-card {
+      background-color: #f8fafc !important;
+      border-color: #e2e8f0 !important;
+      color: #0f172a !important;
+    }
+    html.theme-white .meal-dish-card:hover {
+      background-color: #ffffff !important;
+      border-color: #fdba74 !important;
+    }
+    html.theme-white .widget-card .meal-dish-name {
+      color: #0f172a !important;
+    }
+    html.theme-white .widget-card .meal-dish-tag {
+      background-color: #f1f5f9 !important;
+      border-color: #cbd5e1 !important;
+      color: #475569 !important;
+    }
+    html.theme-white .widget-card .meal-slot-label {
+      color: #c2410c !important;
+    }
+    html.theme-white .widget-card .meal-slot-edit-btn {
+      color: #64748b !important;
+    }
+    html.theme-white .widget-card .meal-empty-slot {
+      background-color: #f8fafc !important;
+      border-color: #cbd5e1 !important;
+      color: #64748b !important;
+    }
+    html.theme-white .widget-card .meal-empty-slot:hover {
+      background-color: #fff7ed !important;
+      border-color: #fdba74 !important;
+      color: #c2410c !important;
+    }
+    html.theme-white .widget-card .meal-segmented-nav {
+      background-color: #f1f5f9 !important;
+      border-color: #cbd5e1 !important;
+    }
+    html.theme-white .widget-card .meal-tab-btn {
+      color: #64748b !important;
+    }
+    html.theme-white .widget-card .meal-tab-btn.is-active,
+    html.theme-white .widget-card .meal-tab-btn.bg-orange-600,
+    html.theme-white .widget-card button.bg-orange-600 {
+      background-color: #ea580c !important;
+      color: #ffffff !important;
+      border-color: #ea580c !important;
+    }
+    html.theme-white .widget-card .meal-shop-btn {
+      background-color: #fff7ed !important;
+      border-color: #fdba74 !important;
+      color: #c2410c !important;
+    }
+    html.theme-white .widget-card .meal-shop-btn:hover {
+      background-color: #ffedd5 !important;
+      border-color: #fb923c !important;
+      color: #9a3412 !important;
+    }
+    html.theme-white .widget-card .meal-day-header {
+      border-bottom-color: #e2e8f0 !important;
+      color: #c2410c !important;
+    }
+    html.theme-white .widget-card .meal-day-badge {
+      background-color: #ffedd5 !important;
+      border-color: #fdba74 !important;
+      color: #c2410c !important;
+    }
+    html.theme-white .meal-week-table-wrap {
+      background-color: #ffffff !important;
+      border-color: #e2e8f0 !important;
+    }
+    html.theme-white .meal-week-th {
+      background-color: #f8fafc !important;
+      color: #475569 !important;
+      border-bottom-color: #e2e8f0 !important;
+    }
+    html.theme-white .meal-week-td,
+    html.theme-white .meal-week-day-cell {
+      border-color: #e2e8f0 !important;
+      color: #0f172a !important;
+    }
+    html.theme-white .meal-week-dish-link {
+      color: #0f172a !important;
+    }
+    html.theme-white .meal-week-dish-link:hover {
+      color: #c2410c !important;
+    }
+    html.theme-white .meal-week-today-row {
+      background-color: #fff7ed !important;
+    }
+
 
     /* ==========================================================================
        Font Size Sizing System (Proportional Scaling per Page & Widget)
@@ -2206,32 +2520,35 @@
             </div>
 
             <!-- ================= WIDGET TYPE 15: MENU OF THE WEEK (MEAL PLANNER) ================= -->
-            <div v-else-if="w.widget_type === 'meal_menu'" class="h-full flex flex-col justify-between overflow-hidden">
-              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2 gap-2 flex-wrap">
+            <div v-else-if="w.widget_type === 'meal_menu'" class="h-full flex flex-col justify-between overflow-hidden meal-widget-container">
+              <div class="flex items-center justify-between border-b border-neutral-900 pb-2 mb-2 gap-2 flex-wrap meal-header-bar">
                 <div class="flex items-center gap-2">
-                  <span class="font-mono text-xs uppercase tracking-widest text-orange-400 font-semibold">🍽️ {{ activeMealMenu?.name || 'MENU OF THE WEEK' }}</span>
-                  <div class="flex items-center bg-neutral-900/80 rounded-lg p-0.5 border border-neutral-800">
+                  <span class="font-mono text-xs uppercase tracking-widest text-orange-400 font-semibold meal-widget-title flex items-center gap-1.5">
+                    <span>🍽️</span>
+                    <span>{{ activeMealMenu?.name || 'MENU OF THE WEEK' }}</span>
+                  </span>
+                  <div class="meal-segmented-nav flex items-center bg-neutral-900/80 rounded-lg p-0.5 border border-neutral-800">
                     <button
                       type="button"
                       @click.stop="setMealViewMode(w, 'today')"
-                      class="px-2 py-0.5 rounded text-[10px] font-mono transition"
-                      :class="getMealViewMode(w) === 'today' ? 'bg-orange-600 text-white font-bold' : 'text-neutral-400 hover:text-white'"
+                      class="meal-tab-btn px-2.5 py-0.5 rounded text-[10px] font-mono transition"
+                      :class="getMealViewMode(w) === 'today' ? 'is-active bg-orange-600 text-white font-bold' : 'text-neutral-400 hover:text-white'"
                     >
                       Today
                     </button>
                     <button
                       type="button"
                       @click.stop="setMealViewMode(w, 'tomorrow')"
-                      class="px-2 py-0.5 rounded text-[10px] font-mono transition"
-                      :class="getMealViewMode(w) === 'tomorrow' ? 'bg-orange-600 text-white font-bold' : 'text-neutral-400 hover:text-white'"
+                      class="meal-tab-btn px-2.5 py-0.5 rounded text-[10px] font-mono transition"
+                      :class="getMealViewMode(w) === 'tomorrow' ? 'is-active bg-orange-600 text-white font-bold' : 'text-neutral-400 hover:text-white'"
                     >
                       Tomorrow
                     </button>
                     <button
                       type="button"
                       @click.stop="setMealViewMode(w, 'week')"
-                      class="px-2 py-0.5 rounded text-[10px] font-mono transition"
-                      :class="getMealViewMode(w) === 'week' ? 'bg-orange-600 text-white font-bold' : 'text-neutral-400 hover:text-white'"
+                      class="meal-tab-btn px-2.5 py-0.5 rounded text-[10px] font-mono transition"
+                      :class="getMealViewMode(w) === 'week' ? 'is-active bg-orange-600 text-white font-bold' : 'text-neutral-400 hover:text-white'"
                     >
                       Week
                     </button>
@@ -2242,64 +2559,73 @@
                     v-if="activeMealMenu"
                     type="button"
                     @click.stop="pushMenuIngredientsToShopping(activeMealMenu.id)"
-                    class="text-[10px] font-mono px-2 py-0.5 rounded border border-orange-800/70 bg-orange-950/30 text-orange-300 hover:bg-orange-900/50"
+                    class="meal-shop-btn text-[10px] font-mono px-2.5 py-1 rounded-lg border border-orange-800/70 bg-orange-950/30 text-orange-300 hover:bg-orange-900/50 flex items-center gap-1 shadow-sm transition"
                     title="Add all weekly menu ingredients to Shopping List"
                   >
-                    🛒 +Shop Week
+                    <span>🛒</span>
+                    <span>+Shop Week</span>
                   </button>
                 </div>
               </div>
 
-              <div v-if="!activeMealMenu" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">
+              <div v-if="!activeMealMenu" class="text-xs font-mono text-neutral-500 py-6 text-center my-auto">
                 No active weekly menu yet. Configure in Admin → Meal Planner.
               </div>
 
               <!-- Day View (Today or Tomorrow) -->
               <div v-else-if="getMealViewMode(w) !== 'week'" class="overflow-y-auto space-y-2 flex-1 pr-1">
                 <div v-for="dayBlock in getDisplayedMealDays(w)" :key="dayBlock.day" class="space-y-2">
-                  <div class="text-xs font-mono font-bold text-orange-300 border-b border-neutral-800/80 pb-1 flex items-center justify-between">
-                    <span>{{ dayBlock.day }}</span>
-                    <span class="text-[9px] px-1.5 py-0.5 rounded bg-orange-600/30 text-orange-300 uppercase">{{ dayBlock.badge }}</span>
+                  <div class="meal-day-header text-xs font-mono font-bold text-orange-300 border-b border-neutral-800/80 pb-1 flex items-center justify-between">
+                    <span class="tracking-wide">{{ dayBlock.day }}</span>
+                    <span class="meal-day-badge text-[9px] px-2 py-0.5 rounded-full bg-orange-600/30 text-orange-300 uppercase font-semibold">{{ dayBlock.badge }}</span>
                   </div>
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div
                       v-for="slot in dayBlock.slots"
                       :key="slot.slotName"
-                      class="rounded-xl border border-neutral-800 bg-neutral-900/60 p-2.5 flex flex-col justify-between gap-1.5"
+                      class="meal-slot-box rounded-xl border border-neutral-800 bg-neutral-900/60 p-2.5 flex flex-col justify-between gap-2"
                     >
                       <div class="flex items-center justify-between">
-                        <span class="text-[10px] font-mono uppercase tracking-wider text-orange-400 font-bold">{{ slot.slotName }}</span>
+                        <span class="meal-slot-label text-[10px] font-mono uppercase tracking-wider text-orange-400 font-bold flex items-center gap-1.5">
+                          <span>{{ getMealSlotIcon(slot.slotName) }}</span>
+                          <span>{{ slot.slotName }}</span>
+                        </span>
                         <button
                           type="button"
                           @click.stop="openMealSlotPicker(dayBlock.day, slot.slotName)"
-                          class="text-[10px] font-mono text-neutral-500 hover:text-white px-1"
+                          class="meal-slot-edit-btn text-[10px] font-mono text-neutral-500 hover:text-white px-1.5 py-0.5 rounded transition"
                           title="Assign or change dish"
                         >
                           ✏️
                         </button>
                       </div>
-                      <div v-if="slot.dishes.length === 0" class="text-xs text-neutral-500 italic py-1 cursor-pointer" @click.stop="openMealSlotPicker(dayBlock.day, slot.slotName)">
-                        + Tap to assign dish
+                      <div
+                        v-if="slot.dishes.length === 0"
+                        class="meal-empty-slot text-xs text-neutral-500 italic py-2 cursor-pointer rounded-lg border border-dashed border-neutral-800/80 text-center hover:border-orange-500/50 transition flex items-center justify-center gap-1.5"
+                        @click.stop="openMealSlotPicker(dayBlock.day, slot.slotName)"
+                      >
+                        <span>+</span>
+                        <span>Tap to assign dish</span>
                       </div>
                       <div v-else class="space-y-1.5">
                         <div
                           v-for="(dish, dIdx) in slot.dishes"
                           :key="dIdx"
                           @click.stop="openDishDetailModal(dish, dayBlock.day, slot.slotName)"
-                          class="flex items-center gap-2.5 p-1.5 rounded-lg bg-neutral-950/70 border border-neutral-800/80 hover:border-orange-500/60 cursor-pointer transition"
+                          class="meal-dish-card flex items-center gap-2.5 p-2 rounded-xl bg-neutral-950/70 border border-neutral-800/80 hover:border-orange-500/60 cursor-pointer transition shadow-sm"
                         >
                           <img
                             v-if="dish.photo_filename"
                             :src="'/uploads/photos/' + dish.photo_filename"
-                            class="w-10 h-10 rounded-lg object-cover shrink-0 border border-neutral-700"
+                            class="meal-dish-thumb w-10 h-10 rounded-lg object-cover shrink-0 border border-neutral-700"
                           />
-                          <div v-else class="w-10 h-10 rounded-lg bg-orange-950/50 border border-orange-800/50 flex items-center justify-center text-lg shrink-0">
+                          <div v-else class="meal-dish-thumb-fallback w-10 h-10 rounded-lg bg-orange-950/50 border border-orange-800/50 flex items-center justify-center text-lg shrink-0">
                             🍲
                           </div>
                           <div class="min-w-0 flex-1">
-                            <div class="text-xs font-bold text-white truncate">{{ dish.name }}</div>
-                            <div v-if="dish.tags && dish.tags.length" class="flex flex-wrap gap-1 mt-0.5">
-                              <span v-for="tag in dish.tags.slice(0, 3)" :key="tag" class="text-[9px] font-mono px-1 rounded bg-neutral-800 text-neutral-400">#{{ tag }}</span>
+                            <div class="meal-dish-name text-xs font-bold text-white truncate">{{ dish.name }}</div>
+                            <div v-if="dish.tags && dish.tags.length" class="flex flex-wrap gap-1 mt-1">
+                              <span v-for="tag in dish.tags.slice(0, 3)" :key="tag" class="meal-dish-tag text-[9px] font-mono px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400">#{{ tag }}</span>
                             </div>
                           </div>
                         </div>
@@ -2310,32 +2636,32 @@
               </div>
 
               <!-- Full Week Meal Grid View -->
-              <div v-else class="overflow-auto rounded-xl border border-neutral-800 bg-neutral-950/60 flex-1">
-                <table class="w-full border-collapse text-[10px] text-neutral-200">
+              <div v-else class="meal-week-table-wrap overflow-auto rounded-xl border border-neutral-800 bg-neutral-950/60 flex-1">
+                <table class="meal-week-table w-full border-collapse text-[10px] text-neutral-200">
                   <thead>
-                    <tr class="bg-neutral-900/80 text-neutral-400">
-                      <th class="px-2 py-1.5 text-left font-mono uppercase">Day</th>
-                      <th v-for="slotName in getActiveMealSlots()" :key="slotName" class="px-2 py-1.5 text-left font-mono uppercase min-w-[100px]">
+                    <tr class="meal-week-tr-head bg-neutral-900/80 text-neutral-400">
+                      <th class="meal-week-th meal-week-th-day px-2 py-1.5 text-left font-mono uppercase">Day</th>
+                      <th v-for="slotName in getActiveMealSlots()" :key="slotName" class="meal-week-th px-2 py-1.5 text-left font-mono uppercase min-w-[100px]">
                         {{ slotName }}
                       </th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="dayBlock in getDisplayedMealDays(w)" :key="dayBlock.day" :class="dayBlock.isToday ? 'bg-orange-500/10' : ''">
-                      <td class="px-2 py-2 border-t border-neutral-800 font-bold text-white whitespace-nowrap">
+                    <tr v-for="dayBlock in getDisplayedMealDays(w)" :key="dayBlock.day" :class="dayBlock.isToday ? 'meal-week-today-row bg-orange-500/10' : ''">
+                      <td class="meal-week-day-cell px-2 py-2 border-t border-neutral-800 font-bold text-white whitespace-nowrap">
                         {{ dayBlock.day.slice(0, 3) }}
                       </td>
                       <td
                         v-for="slot in dayBlock.slots"
                         :key="dayBlock.day + '-' + slot.slotName"
-                        class="px-2 py-1.5 border-t border-l border-neutral-800 align-top"
+                        class="meal-week-td px-2 py-1.5 border-t border-l border-neutral-800 align-top"
                       >
                         <div v-if="slot.dishes.length" class="space-y-1">
                           <div
                             v-for="(dish, dIdx) in slot.dishes"
                             :key="dIdx"
                             @click.stop="openDishDetailModal(dish, dayBlock.day, slot.slotName)"
-                            class="font-semibold text-white hover:text-orange-300 cursor-pointer flex items-center gap-1"
+                            class="font-semibold text-white hover:text-orange-300 cursor-pointer flex items-center gap-1 meal-week-dish-link"
                           >
                             <span>🍲</span>
                             <span class="truncate">{{ dish.name }}</span>
@@ -2345,7 +2671,7 @@
                           v-else
                           type="button"
                           @click.stop="openMealSlotPicker(dayBlock.day, slot.slotName)"
-                          class="text-[9px] text-neutral-500 hover:text-orange-300 font-mono"
+                          class="meal-week-set-btn text-[9px] text-neutral-500 hover:text-orange-300 font-mono"
                         >
                           + Set
                         </button>
@@ -2723,7 +3049,7 @@
             class="w-full h-44 object-cover rounded-xl border border-neutral-800"
           />
           <div v-if="selectedDishModal.dish.tags && selectedDishModal.dish.tags.length" class="flex flex-wrap gap-1.5">
-            <span v-for="t in selectedDishModal.dish.tags" :key="t" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-orange-950/60 border border-orange-800/60 text-orange-300">#{{ t }}</span>
+            <span v-for="t in selectedDishModal.dish.tags" :key="t" class="meal-modal-tag text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-orange-950/60 border border-orange-800/60 text-orange-300">#{{ t }}</span>
           </div>
           <div v-if="selectedDishModal.dish.ingredients && selectedDishModal.dish.ingredients.length">
             <div class="flex items-center justify-between mb-1.5">
@@ -2731,7 +3057,7 @@
               <button
                 type="button"
                 @click="pushDishIngredientsToShopping(selectedDishModal.dish)"
-                class="text-[10px] font-mono px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition"
+                class="text-[10px] font-mono px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow-sm"
               >
                 🛒 Add All to Shopping List
               </button>
@@ -2749,11 +3075,11 @@
               v-if="selectedDishModal.day && selectedDishModal.slot"
               type="button"
               @click="openMealSlotPicker(selectedDishModal.day, selectedDishModal.slot); selectedDishModal = null"
-              class="text-xs font-mono px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-orange-300"
+              class="text-xs font-mono px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-orange-300 transition"
             >
               ✏️ Change Dish for Slot
             </button>
-            <button type="button" @click="selectedDishModal = null" class="ml-auto text-xs font-mono px-4 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200">Close</button>
+            <button type="button" @click="selectedDishModal = null" class="ml-auto text-xs font-mono px-4 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition">Close</button>
           </div>
         </template>
 
@@ -2766,8 +3092,8 @@
             <button
               type="button"
               @click="mealSlotTagFilter = ''"
-              class="text-[10px] font-mono px-2 py-0.5 rounded-full border"
-              :class="!mealSlotTagFilter ? 'bg-orange-600 text-white border-orange-500' : 'border-neutral-700 text-neutral-400'"
+              class="text-[10px] font-mono px-2.5 py-0.5 rounded-full border transition"
+              :class="!mealSlotTagFilter ? 'bg-orange-600 text-white border-orange-500 meal-filter-active' : 'border-neutral-700 text-neutral-400'"
             >
               All
             </button>
@@ -2776,8 +3102,8 @@
               :key="tag"
               type="button"
               @click="mealSlotTagFilter = tag"
-              class="text-[10px] font-mono px-2 py-0.5 rounded-full border"
-              :class="mealSlotTagFilter === tag ? 'bg-orange-600 text-white border-orange-500' : 'border-neutral-700 text-neutral-400'"
+              class="text-[10px] font-mono px-2.5 py-0.5 rounded-full border transition"
+              :class="mealSlotTagFilter === tag ? 'bg-orange-600 text-white border-orange-500 meal-filter-active' : 'border-neutral-700 text-neutral-400'"
             >
               #{{ tag }}
             </button>
@@ -2788,13 +3114,13 @@
               :key="d.id"
               type="button"
               @click="assignDishToMealSlot(d)"
-              class="w-full p-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-left flex items-center justify-between transition"
+              class="meal-slot-dish-option w-full p-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-left flex items-center justify-between transition shadow-sm"
             >
               <div>
                 <div class="text-xs font-bold text-white">{{ d.name }}</div>
                 <div v-if="d.tags && d.tags.length" class="text-[10px] font-mono text-neutral-500">{{ d.tags.map(t => '#' + t).join(' ') }}</div>
               </div>
-              <span class="text-xs font-mono text-orange-400">Select →</span>
+              <span class="text-xs font-mono text-orange-400 font-semibold">Select →</span>
             </button>
           </div>
           <div class="flex items-center justify-between pt-2 border-t border-neutral-800">
@@ -5086,6 +5412,16 @@
           return ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
         }
 
+        function getMealSlotIcon(slotName) {
+          const s = String(slotName || '').toLowerCase();
+          if (s.includes('break') || s.includes('śniad')) return '🍳';
+          if (s.includes('lunch') || s.includes('obiad')) return '🥗';
+          if (s.includes('dinner') || s.includes('kolac')) return '🍲';
+          if (s.includes('snack') || s.includes('przekąsk')) return '🍎';
+          if (s.includes('dessert') || s.includes('deser')) return '🍰';
+          return '🍽️';
+        }
+
         function getMealViewMode(widget) {
           const key = widget ? String(widget.id) : 'default';
           if (mealViewModes.value[key]) return mealViewModes.value[key];
@@ -6039,6 +6375,7 @@
           submitNoteModal,
           deleteNoteFromKiosk,
           getActiveMealSlots,
+          getMealSlotIcon,
           getMealViewMode,
           setMealViewMode,
           getDisplayedMealDays,
