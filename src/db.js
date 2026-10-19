@@ -1643,21 +1643,65 @@ function updateCalendarEvent(id, { title, description, start_datetime, end_datet
 }
 
 function upsertCalendarEventByUid({ uid, feed_id = null, title, description = null, start_datetime, end_datetime = null, all_day = 0, profile_id = null, color = '#38bdf8', source = 'google' }) {
+  const trimmedTitle = String(title || 'Untitled Event').trim();
+
+  // 1. Check if an event with this exact UID already exists
+  const existingByUid = db.prepare('SELECT id FROM calendar_events WHERE uid = ?').get(uid);
+  if (existingByUid) {
+    db.prepare(`
+      UPDATE calendar_events
+      SET feed_id = ?, title = ?, description = ?, start_datetime = ?, end_datetime = ?, all_day = ?, profile_id = ?, color = ?, source = ?
+      WHERE id = ?
+    `).run(
+      feed_id,
+      trimmedTitle,
+      description,
+      start_datetime,
+      end_datetime,
+      all_day ? 1 : 0,
+      profile_id || null,
+      color,
+      source,
+      existingByUid.id
+    );
+    return db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(existingByUid.id);
+  }
+
+  // 2. Check if an event with same feed_id, title, and start_datetime already exists (e.g. from an older shifting UID format)
+  if (feed_id) {
+    const existingSameFeed = db.prepare(`
+      SELECT id FROM calendar_events
+      WHERE feed_id = ? AND TRIM(title) = ? AND start_datetime = ?
+    `).get(feed_id, trimmedTitle, start_datetime);
+
+    if (existingSameFeed) {
+      db.prepare(`
+        UPDATE calendar_events
+        SET uid = ?, description = ?, end_datetime = ?, all_day = ?, profile_id = ?, color = ?, source = ?
+        WHERE id = ?
+      `).run(
+        uid,
+        description,
+        end_datetime,
+        all_day ? 1 : 0,
+        profile_id || null,
+        color,
+        source,
+        existingSameFeed.id
+      );
+      return db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(existingSameFeed.id);
+    }
+  }
+
+  // 3. Otherwise insert fresh row
   const stmt = db.prepare(`
     INSERT INTO calendar_events (uid, feed_id, title, description, start_datetime, end_datetime, all_day, profile_id, color, source)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(uid) DO UPDATE SET
-      title = excluded.title,
-      description = excluded.description,
-      start_datetime = excluded.start_datetime,
-      end_datetime = excluded.end_datetime,
-      all_day = excluded.all_day,
-      color = excluded.color
   `);
-  stmt.run(
+  const info = stmt.run(
     uid,
     feed_id,
-    title.trim(),
+    trimmedTitle,
     description,
     start_datetime,
     end_datetime,
@@ -1666,7 +1710,83 @@ function upsertCalendarEventByUid({ uid, feed_id = null, title, description = nu
     color,
     source
   );
-  return db.prepare('SELECT * FROM calendar_events WHERE uid = ?').get(uid);
+  return db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(info.lastInsertRowid);
+}
+
+function cleanDuplicateCalendarEvents() {
+  try {
+    // 1. Delete duplicate events from the same feed with identical title & start_datetime
+    const feedDupes = db.prepare(`
+      DELETE FROM calendar_events
+      WHERE feed_id IS NOT NULL AND id NOT IN (
+        SELECT id FROM (
+          SELECT id,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY feed_id, TRIM(title), start_datetime
+                   ORDER BY (CASE WHEN uid IS NOT NULL AND uid NOT LIKE '%_%_%' THEN 0 ELSE 1 END), id ASC
+                 ) as rn
+          FROM calendar_events
+          WHERE feed_id IS NOT NULL
+        ) WHERE rn = 1
+      )
+    `).run();
+
+    // 2. Also clean duplicate manual events with same title, start_datetime, and profile_id
+    const manualDupes = db.prepare(`
+      DELETE FROM calendar_events
+      WHERE feed_id IS NULL AND id NOT IN (
+        SELECT id FROM (
+          SELECT id,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY TRIM(title), start_datetime, COALESCE(profile_id, -1)
+                   ORDER BY (CASE WHEN uid IS NOT NULL THEN 0 ELSE 1 END), id ASC
+                 ) as rn
+          FROM calendar_events
+          WHERE feed_id IS NULL
+        ) WHERE rn = 1
+      )
+    `).run();
+
+    return {
+      feedDuplicatesRemoved: feedDupes.changes,
+      manualDuplicatesRemoved: manualDupes.changes,
+      totalRemoved: feedDupes.changes + manualDupes.changes
+    };
+  } catch (err) {
+    console.warn('[Calendar] cleanDuplicateCalendarEvents error:', err.message);
+    return { feedDuplicatesRemoved: 0, manualDuplicatesRemoved: 0, totalRemoved: 0 };
+  }
+}
+
+function deleteObsoleteFeedEvents(feedId, validUids, minDateIso, maxDateIso) {
+  if (!feedId || !Array.isArray(validUids) || validUids.length === 0) return { changes: 0 };
+  try {
+    const rows = db.prepare(`
+      SELECT id, uid FROM calendar_events
+      WHERE feed_id = ? AND start_datetime >= ? AND start_datetime <= ?
+    `).all(feedId, minDateIso, maxDateIso);
+
+    const validSet = new Set(validUids);
+    const obsoleteIds = rows.filter(r => !validSet.has(r.uid)).map(r => r.id);
+
+    if (obsoleteIds.length === 0) return { changes: 0 };
+
+    const deleteStmt = db.prepare('DELETE FROM calendar_events WHERE id = ?');
+    const tx = db.transaction((ids) => {
+      let count = 0;
+      for (const id of ids) {
+        deleteStmt.run(id);
+        count++;
+      }
+      return count;
+    });
+
+    const removed = tx(obsoleteIds);
+    return { changes: removed };
+  } catch (err) {
+    console.warn('[Calendar] deleteObsoleteFeedEvents error:', err.message);
+    return { changes: 0 };
+  }
 }
 
 function deleteCalendarEvent(id) {
@@ -2358,6 +2478,8 @@ module.exports = {
   insertCalendarEvent,
   updateCalendarEvent,
   upsertCalendarEventByUid,
+  cleanDuplicateCalendarEvents,
+  deleteObsoleteFeedEvents,
   deleteCalendarEvent,
   deleteOldCalendarEventsByFeed,
   deleteOldCalendarEvents,
@@ -2394,4 +2516,12 @@ module.exports = {
   markScheduledSubscriptionSent,
   pruneData
 };
+
+// Clean any pre-existing duplicate events on startup
+try {
+  cleanDuplicateCalendarEvents();
+} catch (e) {
+  console.warn('[Calendar] Startup deduplication warning:', e.message);
+}
+
 

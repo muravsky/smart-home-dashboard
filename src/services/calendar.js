@@ -5,6 +5,8 @@ const {
   cleanOrphanedEventProfileIds,
   updateCalendarFeedSyncTime,
   upsertCalendarEventByUid,
+  cleanDuplicateCalendarEvents,
+  deleteObsoleteFeedEvents,
   deleteOldCalendarEventsByFeed,
   deleteOldCalendarEvents,
   getDashboardData,
@@ -76,6 +78,7 @@ async function syncFeed(feed) {
   try {
     const data = await ical.async.fromURL(feedUrl);
     let count = 0;
+    const syncedUids = new Set();
 
     const now = new Date();
     // Expand recurring events from 30 days ago to 90 days in the future
@@ -104,12 +107,15 @@ async function syncFeed(feed) {
             const instStart = inst.start instanceof Date ? inst.start.toISOString() : new Date(inst.start).toISOString();
             const instEnd = inst.end ? (inst.end instanceof Date ? inst.end.toISOString() : new Date(inst.end).toISOString()) : null;
             const isAllDay = inst.datetype === 'date' || (inst.start && typeof inst.start.toISOString === 'function' && inst.start.toISOString().endsWith('T00:00:00.000Z') && inst.end && (inst.end - inst.start) % 86400000 === 0) ? 1 : 0;
+            const eventTitle = inst.summary || title;
+            const eventDesc = inst.description || description;
+            const eventUid = `feed-${feed.id}-${baseUid}_${instStart}`;
 
             upsertCalendarEventByUid({
-              uid: `${baseUid}_${instStart.slice(0, 10)}_${idx}`,
+              uid: eventUid,
               feed_id: feed.id,
-              title,
-              description,
+              title: eventTitle,
+              description: eventDesc,
               start_datetime: instStart,
               end_datetime: instEnd,
               all_day: isAllDay,
@@ -117,6 +123,7 @@ async function syncFeed(feed) {
               color: feed.color || '#38bdf8',
               source: 'google'
             });
+            syncedUids.add(eventUid);
             count++;
           }
           continue;
@@ -147,8 +154,10 @@ async function syncFeed(feed) {
         allDay = 1;
       }
 
+      const eventUid = item.recurrenceid ? `feed-${feed.id}-${baseUid}_${startIso}` : `feed-${feed.id}-${baseUid}`;
+
       upsertCalendarEventByUid({
-        uid: baseUid,
+        uid: eventUid,
         feed_id: feed.id,
         title,
         description,
@@ -160,8 +169,15 @@ async function syncFeed(feed) {
         source: 'google'
       });
 
+      syncedUids.add(eventUid);
       count++;
     }
+
+    // Prune obsolete events from this feed in the current sync window
+    deleteObsoleteFeedEvents(feed.id, Array.from(syncedUids), rangeFrom.toISOString(), rangeTo.toISOString());
+
+    // Clean duplicate events from this feed
+    cleanDuplicateCalendarEvents();
 
     // Clean up stale past events for this feed older than 60 days
     const purgeCutoff = new Date(now.getTime() - 60 * 86400000).toISOString();
@@ -182,7 +198,7 @@ async function syncFeed(feed) {
  */
 async function syncAllFeeds(io = null) {
   const feeds = getCalendarFeeds();
-  if (feeds.length === 0) return { syncedFeeds: 0, totalEvents: 0 };
+  if (feeds.length === 0) return { syncedFeeds: 0, totalEvents: 0, duplicatesCleaned: 0 };
 
   let totalEvents = 0;
   let failedFeeds = 0;
@@ -195,6 +211,9 @@ async function syncAllFeeds(io = null) {
     }
   }
 
+  // Purge duplicates across the database
+  const dupes = cleanDuplicateCalendarEvents();
+
   // Purge any orphaned or old synced events older than 60 days
   const purgeCutoff = new Date(Date.now() - 60 * 86400000).toISOString();
   const purged = deleteOldCalendarEvents(purgeCutoff);
@@ -203,7 +222,7 @@ async function syncAllFeeds(io = null) {
     source: 'scheduled_job',
     sender_name: 'Calendar Sync',
     message_type: 'calendar_sync',
-    action_taken: `Calendar feed sync: ${feeds.length - failedFeeds}/${feeds.length} feeds succeeded, ${totalEvents} events updated, ${purged.changes || 0} expired events removed`,
+    action_taken: `Calendar feed sync: ${feeds.length - failedFeeds}/${feeds.length} feeds succeeded, ${totalEvents} events updated, ${dupes.totalRemoved || 0} duplicates cleaned, ${purged.changes || 0} expired events removed`,
     status: failedFeeds ? 'partial' : 'success',
     error_message: failedFeeds ? `${failedFeeds} feed(s) failed; see server logs for details.` : null
   });
@@ -212,7 +231,7 @@ async function syncAllFeeds(io = null) {
     io.emit('dashboard_update', getDashboardData());
   }
 
-  return { syncedFeeds: feeds.length, totalEvents };
+  return { syncedFeeds: feeds.length, totalEvents, duplicatesCleaned: dupes.totalRemoved };
 }
 
 /**

@@ -62,6 +62,7 @@ const {
   insertCalendarEvent,
   updateCalendarEvent,
   deleteCalendarEvent,
+  cleanDuplicateCalendarEvents,
   deleteOldCalendarEvents,
   getDishes,
   getDishById,
@@ -1139,8 +1140,9 @@ app.post('/api/admin/calendar/clean-past', (req, res) => {
     const days = parseInt(req.body?.days, 10) || 1;
     const cutoff = new Date(Date.now() - days * 86400000).toISOString();
     const info = deleteOldCalendarEvents(cutoff);
+    const dupes = cleanDuplicateCalendarEvents();
     io.emit('dashboard_update', getDashboardData());
-    res.json({ ok: true, deleted: info.changes });
+    res.json({ ok: true, deleted: info.changes, duplicatesCleaned: dupes.totalRemoved });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

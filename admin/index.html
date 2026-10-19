@@ -1808,10 +1808,10 @@
             <div class="flex items-center gap-2">
               <button 
                 @click="cleanPastEvents" 
-                title="Remove old past events from database"
+                title="Remove old past events and clean duplicate entries from database"
                 class="text-xs font-mono bg-neutral-950 hover:bg-neutral-800 hover:text-rose-400 border border-neutral-800 text-neutral-400 px-2.5 py-1 rounded transition"
               >
-                Clean Past
+                Clean Past & Dupes
               </button>
               <button 
                 @click="loadData" 
@@ -4323,7 +4323,7 @@
         }
 
         async function cleanPastEvents() {
-          if (!confirm('Clean up past synced calendar events from database?')) return;
+          if (!confirm('Clean up past synced calendar events and duplicate entries from database?')) return;
           try {
             const res = await fetch('/api/admin/calendar/clean-past', {
               method: 'POST',
@@ -4332,10 +4332,13 @@
             });
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
-            showAlert(`Cleaned ${data.deleted} past events!`);
+            const msg = data.duplicatesCleaned > 0
+              ? `Cleaned ${data.deleted} past events and ${data.duplicatesCleaned} duplicates!`
+              : `Cleaned ${data.deleted} past events!`;
+            showAlert(msg);
             loadData();
           } catch (err) {
-            showAlert('Error cleaning past events: ' + err.message, false);
+            showAlert('Error cleaning events: ' + err.message, false);
           }
         }
 
