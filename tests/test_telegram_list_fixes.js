@@ -131,6 +131,28 @@ async function runTests() {
   const siblingBtn = allButtonsFlat.find(b => b.text.includes('Organic Market'));
   assert(Boolean(siblingBtn), 'Sibling shopping list switcher button generated');
 
+  // Verify NO delete button is present in keyboard
+  const deleteBtn = allButtonsFlat.find(b => b.text.includes('🗑️') || (b.callback_data && b.callback_data.startsWith('item:del:')));
+  assert(!deleteBtn, 'No delete (🗑️) button present in keyboard');
+
+  // 4. Test displaying all items (>15 items) and lack of delete buttons
+  const longList = insertList({ name: 'Huge Grocery Haul', type: 'shopping', icon: '🛒' });
+  for (let i = 1; i <= 22; i++) {
+    insertListItem({ list_id: longList.id, content: `Grocery_item_${i}` });
+  }
+
+  const { text: longText, keyboard: longKeyboard } = buildListKeyboardAndText(longList.id, false);
+  assert(longText.includes('Grocery\\_item\\_1'), 'Item 1 is present in text');
+  assert(longText.includes('Grocery\\_item\\_15'), 'Item 15 is present in text');
+  assert(longText.includes('Grocery\\_item\\_22'), 'Item 22 (>15) is present in text');
+  assert(!longText.includes('more active items'), 'Does not truncate or show "...and X more active items"');
+
+  const longButtonsFlat = longKeyboard.reply_markup.inline_keyboard.flat();
+  const hasTrash = longButtonsFlat.some(b => b.text.includes('🗑️') || (b.callback_data && b.callback_data.startsWith('item:del:')));
+  assert(!hasTrash, 'No delete buttons generated for 22 items');
+  const toggleButtons = longButtonsFlat.filter(b => b.callback_data && b.callback_data.startsWith('item:toggle:'));
+  assert(toggleButtons.length === 22, `All 22 item toggle buttons generated (got ${toggleButtons.length})`);
+
   console.log('\n=== 3. Markdown Entity Safety & Fallback Resilience ===');
   let fallbackPlainCalled = false;
   const mockCtx = {

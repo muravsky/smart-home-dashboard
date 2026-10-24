@@ -721,21 +721,23 @@ function buildListKeyboardAndText(listOrId, showHistory = false) {
     if (activeItems.length === 0) {
       text += `🎉 No active items in this list!\n`;
     } else {
-      const displayedItems = activeItems.slice(0, 15);
-      for (const item of displayedItems) {
+      for (const item of activeItems) {
         const who = item.assignee_name ? ` (@${escapeMd(item.assignee_name)})` : '';
         const due = item.due_date ? ` • 📅 ${escapeMd(item.due_date)}` : '';
         const pts = item.reward ? ` • ⭐+${item.reward}pts` : '';
         const cat = item.category && list.type === 'shopping' ? ` • 🏷️ ${escapeMd(item.category)}` : '';
-        text += `⬜ *#${item.id}* ${escapeMd(item.content)}${cat}${who}${due}${pts}\n`;
-        const btnLabel = `✅ ${item.content}`.slice(0, 26);
-        buttons.push([
-          Markup.button.callback(btnLabel, `item:toggle:${item.id}:1`),
-          Markup.button.callback('🗑️', `item:del:${item.id}:${list.id}`)
-        ]);
-      }
-      if (activeItems.length > 15) {
-        text += `\n_...and ${activeItems.length - 15} more active items._\n`;
+        const line = `⬜ *#${item.id}* ${escapeMd(item.content)}${cat}${who}${due}${pts}\n`;
+        if (text.length + line.length > 3900) {
+          text += `\n_...and more items (Telegram message limit reached)._\n`;
+          break;
+        }
+        text += line;
+        if (buttons.length < 85) {
+          const btnLabel = `✅ ${item.content}`.slice(0, 36);
+          buttons.push([
+            Markup.button.callback(btnLabel, `item:toggle:${item.id}:1`)
+          ]);
+        }
       }
     }
 
@@ -751,19 +753,21 @@ function buildListKeyboardAndText(listOrId, showHistory = false) {
     if (completedItems.length === 0) {
       text += `_No completed items yet._\n`;
     } else {
-      const displayedDone = completedItems.slice(0, 15);
-      for (const item of displayedDone) {
+      for (const item of completedItems) {
         const when = item.last_completed_at ? item.last_completed_at.slice(0, 16).replace('T', ' ') : '';
         const by = item.completed_by ? ` by *${escapeMd(item.completed_by)}*` : '';
-        text += `✓ *#${item.id}* ${escapeMd(item.content)}${by}${when ? ` (${escapeMd(when)})` : ''}\n`;
-        const btnLabel = `↩️ ${item.content}`.slice(0, 24);
-        buttons.push([
-          Markup.button.callback(btnLabel, `item:toggle:${item.id}:0`),
-          Markup.button.callback('🗑️', `item:del:${item.id}:${list.id}`)
-        ]);
-      }
-      if (completedItems.length > 15) {
-        text += `\n_...and ${completedItems.length - 15} more completed items._\n`;
+        const line = `✓ *#${item.id}* ${escapeMd(item.content)}${by}${when ? ` (${escapeMd(when)})` : ''}\n`;
+        if (text.length + line.length > 3900) {
+          text += `\n_...and more completed items (Telegram message limit reached)._\n`;
+          break;
+        }
+        text += line;
+        if (buttons.length < 85) {
+          const btnLabel = `↩️ ${item.content}`.slice(0, 36);
+          buttons.push([
+            Markup.button.callback(btnLabel, `item:toggle:${item.id}:0`)
+          ]);
+        }
       }
     }
     buttons.push([
