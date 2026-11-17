@@ -4,6 +4,7 @@ try {
 } catch (err) {
   LibrusApi = null;
 }
+const { createLocalLibrusMock } = require('./librus-mock');
 
 function toDisplayDayName(value) {
   if (!value) return 'Day';
@@ -697,7 +698,12 @@ async function hydrateGradeDetails(client, grades, errors) {
 }
 
 async function fetchLibrusData({ login, password, resources = null, referenceDate = new Date() }) {
-  if (!LibrusApi) {
+  const mockRequested = process.env.LIBRUS_MOCK === '1';
+  if (mockRequested && process.env.NODE_ENV === 'production') {
+    throw new Error('LIBRUS_MOCK is only available outside production.');
+  }
+  const mockMode = mockRequested;
+  if (!mockMode && !LibrusApi) {
     throw new Error('librus-api package is not installed in this environment.');
   }
 
@@ -705,7 +711,9 @@ async function fetchLibrusData({ login, password, resources = null, referenceDat
     throw new Error('Librus login and password are required.');
   }
 
-  const client = new LibrusApi();
+  const client = mockMode
+    ? createLocalLibrusMock(referenceDate)
+    : new LibrusApi();
   await client.authorize(String(login), String(password));
   const fetchAll = !Array.isArray(resources);
   const shouldFetch = resource => fetchAll || resources.includes(resource);
@@ -774,6 +782,7 @@ async function fetchLibrusData({ login, password, resources = null, referenceDat
   );
 
   return {
+    source: mockMode ? 'local-mock' : 'librus',
     timetable,
     terminarz: terminarzEvents,
     notifications,

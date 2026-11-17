@@ -55,6 +55,7 @@ GEMINI_API_KEY=your_gemini_api_key
 - The app uses layered, non-destructive schema checks instead of destructive resets: if a column or table is missing, it is added safely during startup.
 - Seed data is only inserted when the corresponding table is empty; it is not intended to wipe or replace an existing database.
 - For per-child integrations (for example Librus), prefer storing credentials on the profile itself instead of relying only on a single global `.env` value.
+- For local Librus development, set `LIBRUS_MOCK=1` in `.env` (never use this in production), then save `demo` as both the Librus login and password on a local profile. Manual and scheduled syncs will use the bundled sample timetable and Terminarz entries without contacting Librus. The Librus status endpoint reports when mock mode is enabled, and manual sync responses include `source: "local-mock"`. Sample data lives in `src/services/librus-mock.js`.
 
 ## 🏃 Quick Start
 

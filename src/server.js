@@ -676,7 +676,8 @@ app.get('/api/admin/librus/status', (req, res) => {
   const profileCount = getProfiles().filter(profile => profile.librus_login && profile.librus_password).length;
   const globalConfigured = Boolean(process.env.LIBRUS_LOGIN && process.env.LIBRUS_PASSWORD);
   const configured = globalConfigured || profileCount > 0;
-  res.json({ configured, profileCount, globalConfigured, status: configured ? 'ready' : 'missing_credentials' });
+  const mockMode = process.env.LIBRUS_MOCK === '1' && process.env.NODE_ENV !== 'production';
+  res.json({ configured, profileCount, globalConfigured, mockMode, status: configured ? 'ready' : 'missing_credentials' });
 });
 
 app.post('/api/admin/librus/sync', async (req, res) => {
@@ -757,6 +758,7 @@ app.post('/api/admin/librus/sync', async (req, res) => {
 
     res.json({
       ok: true,
+      source: data.source || 'librus',
       schedule: created,
       timetable,
       notifications: saved.notifications || [],

@@ -15,6 +15,7 @@ const {
   normalizeTerminarzDate,
   attachTerminarzToTimetable,
   fetchTerminarzEvents,
+  fetchLibrusData,
   flattenLibrusGrades,
   buildMorningSummary,
   buildSchoolDaySummary
@@ -184,6 +185,40 @@ const adminDashboard = db.getDashboardData({ includePrivateSettings: true });
 assert.strictEqual(adminDashboard.settings.weekly_backup_chat_id, 'private-chat-id', 'admin dashboard payload should retain private backup destination');
 
 (async () => {
+  const previousMockMode = process.env.LIBRUS_MOCK;
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.LIBRUS_MOCK = '1';
+  process.env.NODE_ENV = 'production';
+  await assert.rejects(
+    fetchLibrusData({ login: 'demo', password: 'demo' }),
+    /only available outside production/,
+    'local demo mode should fail safely in production'
+  );
+  process.env.NODE_ENV = 'development';
+  try {
+    const mockData = await fetchLibrusData({
+      login: 'demo',
+      password: 'demo',
+      referenceDate: new Date('2026-11-16T12:00:00')
+    });
+    assert.strictEqual(mockData.source, 'local-mock', 'local mock mode should be clearly identified');
+    assert.strictEqual(mockData.errors.length, 0, 'local mock sync should complete without errors');
+    assert.strictEqual(mockData.terminarz.length, 4, 'local mock should return current and next-week Terminarz entries');
+    assert.strictEqual(mockData.normalizedTimetable[0].lessons[0].terminarz[0].description, 'Rozwiązać zadania 1–5 ze strony 42. Przynieść zeszyt ćwiczeń.', 'complete Librus mock flow should attach homework to the matching lesson');
+    assert.strictEqual(mockData.normalizedTimetable[0].nextLessons[0].terminarz[0].id, 904, 'complete Librus mock flow should attach next-week details too');
+
+    const savedMockSchedule = db.upsertLibrusSchedule({
+      profile_name: 'Local Demo',
+      schedule: mockData.normalizedTimetable
+    });
+    assert.strictEqual(savedMockSchedule.schedule[0].lessons[0].terminarz[0].id, 901, 'saved demo timetable should preserve linked Terminarz data');
+  } finally {
+    if (previousMockMode === undefined) delete process.env.LIBRUS_MOCK;
+    else process.env.LIBRUS_MOCK = previousMockMode;
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+  }
+
   const requestedMonths = [];
   const terminarzErrors = [];
   const fetchedTerminarz = await fetchTerminarzEvents({
