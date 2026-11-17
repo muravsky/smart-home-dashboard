@@ -100,8 +100,17 @@ const { getWeather, searchCity, clearWeatherCache } = require('./services/weathe
 const { fetchLibrusData, normalizeTimetableData, buildSchoolDaySummary } = require('./services/librus');
 const { initBot, applyParsedGeminiActions } = require('./bot');
 const { createMaintenanceService, SUBSCRIPTION_TYPES } = require('./services/maintenance');
-const { uploadAvatar, uploadPhoto, photosDir, createScreensaverDerivative } = require('./middleware/upload');
-const { normalizeCalendarUrl, syncFeed, syncAllFeeds, startCalendarSyncCron } = require('./services/calendar');
+const { uploadAvatar, uploadPhoto, photosDir, createScreensaverDerivative, createAvatarDerivative } = require('./middleware/upload');
+const { normalizeCalendarUrl, validateExternalUrl, syncFeed, syncAllFeeds, startCalendarSyncCron } = require('./services/calendar');
+
+const INSECURE_PLACEHOLDER_SECRETS = new Set(['', 'your_secret_token', 'your_admin_pass', 'secret123', 'adminpass']);
+if (process.env.NODE_ENV === 'production') {
+  const dashTok = String(process.env.DASHBOARD_TOKEN || '').trim();
+  const adminPass = String(process.env.ADMIN_PASS || '').trim();
+  if (!dashTok || INSECURE_PLACEHOLDER_SECRETS.has(dashTok) || !adminPass || INSECURE_PLACEHOLDER_SECRETS.has(adminPass)) {
+    throw new Error('FATAL: DASHBOARD_TOKEN and ADMIN_PASS must be set to non-default secrets in production.');
+  }
+}
 
 const app = express();
 const liveSettings = getSettings();
@@ -142,10 +151,59 @@ if (enableHttps) {
 // Initialize Socket.IO
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map(s => s.trim()).filter(Boolean) : false,
     methods: ['GET', 'POST']
   }
 });
+
+function getExpectedDashboardToken() {
+  return process.env.DASHBOARD_TOKEN || 'your_secret_token';
+}
+
+function parseCookieValue(cookieHeader, name) {
+  if (!cookieHeader || typeof cookieHeader !== 'string') return null;
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${escaped}=([^;]+)`));
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch (e) {
+    return match[1];
+  }
+}
+
+function extractDashboardToken(req) {
+  const queryToken = req.query?.token;
+  const headerToken = req.headers['x-dashboard-token'] ||
+    (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')
+      ? req.headers.authorization.slice(7)
+      : null);
+  const bodyToken = req.body && typeof req.body === 'object' ? req.body.token : null;
+  const cookieToken = parseCookieValue(req.headers.cookie, 'auth_token');
+  return queryToken || headerToken || bodyToken || cookieToken || null;
+}
+
+function isValidDashboardToken(candidate) {
+  if (!candidate || typeof candidate !== 'string') return false;
+  const expected = getExpectedDashboardToken();
+  return basicAuth.safeCompare(candidate, expected);
+}
+
+function requireDashboardToken(req, res, next) {
+  const token = extractDashboardToken(req);
+  if (isValidDashboardToken(token)) {
+    return next();
+  }
+  return res.status(403).json({ error: 'Forbidden' });
+}
+
+function redactProfileSecrets(profile) {
+  if (!profile || typeof profile !== 'object') return profile;
+  const copy = { ...profile };
+  copy.has_librus_password = Boolean(copy.librus_password);
+  delete copy.librus_password;
+  return copy;
+}
 
 function sanitizePublicProfiles() {
   return getProfiles().map((p) => {
@@ -201,10 +259,9 @@ function broadcastDashboard(section = null) {
 
 // Socket.IO authentication middleware
 io.use((socket, next) => {
-  const token = socket.handshake.auth?.token || socket.handshake.query?.token;
-  const expectedToken = process.env.DASHBOARD_TOKEN || 'your_secret_token';
+  const token = socket.handshake.auth?.token || socket.handshake.query?.token || parseCookieValue(socket.handshake.headers?.cookie, 'auth_token');
 
-  if (token === expectedToken) {
+  if (isValidDashboardToken(token)) {
     return next();
   }
 
@@ -414,13 +471,23 @@ io.on('connection', (socket) => {
   });
 });
 
-// Body parsers
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Security headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'geolocation=(), camera=()');
+  next();
+});
+
+// Body parsers with size limits
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Sliding-window Rate Limiter for Auth Routes (/api/verify-pass and /admin)
 const AUTH_WINDOW_MS = 5 * 60 * 1000;
 const AUTH_MAX_FAILURES = 12;
+const AUTH_MAX_TRACKED_IPS = 10000;
 const authFailuresByIp = new Map();
 
 function getClientIp(req) {
@@ -441,6 +508,10 @@ function isRateLimited(ip) {
 
 function recordAuthFailure(ip) {
   const now = Date.now();
+  if (!authFailuresByIp.has(ip) && authFailuresByIp.size >= AUTH_MAX_TRACKED_IPS) {
+    const oldestKey = authFailuresByIp.keys().next().value;
+    if (oldestKey !== undefined) authFailuresByIp.delete(oldestKey);
+  }
   const entry = authFailuresByIp.get(ip) || { timestamps: [] };
   entry.timestamps = entry.timestamps.filter(ts => now - ts < AUTH_WINDOW_MS);
   entry.timestamps.push(now);
@@ -476,7 +547,7 @@ app.post('/api/verify-pass', (req, res) => {
       ok: true,
       valid: true,
       method: matchesKioskPin && !matchesAdminPass ? 'pin' : 'password',
-      token: process.env.DASHBOARD_TOKEN || 'your_secret_token'
+      token: getExpectedDashboardToken()
     });
   }
 
@@ -484,32 +555,28 @@ app.post('/api/verify-pass', (req, res) => {
   return res.status(401).json({ ok: false, error: 'Incorrect password or PIN' });
 });
 
-// Public Settings endpoint (sanitized)
-app.get('/api/settings', (req, res) => {
+// Public Settings endpoint (token-guarded & sanitized)
+app.get('/api/settings', requireDashboardToken, (req, res) => {
   const s = getSettings();
   s.has_kiosk_pin = Boolean(s.kiosk_pin && String(s.kiosk_pin).trim());
   delete s.kiosk_pin;
   delete s.weekly_backup_chat_id;
+  delete s.https_cert_path;
+  delete s.https_key_path;
+  delete s.gemini_system_prompt;
+  delete s.gemini_text_prompt;
+  delete s.gemini_voice_prompt;
+  delete s.gemini_summary_prompt;
   res.json(s);
 });
 
 // Public Dashboard Snapshot endpoint (token-guarded for Kiosk & Offline Service Worker)
-app.get('/api/dashboard', (req, res) => {
-  const expectedToken = process.env.DASHBOARD_TOKEN || 'your_secret_token';
-  const token = req.query.token || req.headers['x-dashboard-token'];
-  if (token && token !== expectedToken) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
+app.get('/api/dashboard', requireDashboardToken, (req, res) => {
   res.json(getDashboardData());
 });
 
 // Public Reward Redemption endpoint (for Kiosk)
-app.post('/api/rewards/redeem', (req, res) => {
-  const expectedToken = process.env.DASHBOARD_TOKEN || 'your_secret_token';
-  const token = req.body?.token || req.query.token || req.headers['x-dashboard-token'];
-  if (token && token !== expectedToken) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
+app.post('/api/rewards/redeem', requireDashboardToken, (req, res) => {
   const profileId = req.body?.profile_id || req.body?.profileId;
   const rewardId = req.body?.reward_id || req.body?.rewardId;
   if (!profileId || !rewardId) {
@@ -643,7 +710,7 @@ app.delete('/api/admin/tasks/:id', (req, res) => {
 
 // Profiles API
 app.get('/api/admin/profiles', (req, res) => {
-  res.json(getProfiles());
+  res.json(getProfiles().map(redactProfileSecrets));
 });
 
 app.post('/api/admin/profiles', (req, res) => {
@@ -651,14 +718,14 @@ app.post('/api/admin/profiles', (req, res) => {
   if (!name) return res.status(400).json({ error: 'name is required' });
   const profile = insertProfile({ name, color, avatar_type, avatar_value, telegram_id, theme, font_size, language, librus_login, librus_password });
   io.emit('dashboard_update', getDashboardData());
-  res.json({ ok: true, profile });
+  res.json({ ok: true, profile: redactProfileSecrets(profile) });
 });
 
 app.patch('/api/admin/profiles/:id', (req, res) => {
   const profile = updateProfile(req.params.id, req.body);
   if (!profile) return res.status(404).json({ error: 'Profile not found' });
   io.emit('dashboard_update', getDashboardData());
-  res.json({ ok: true, profile });
+  res.json({ ok: true, profile: redactProfileSecrets(profile) });
 });
 
 app.delete('/api/admin/profiles/:id', (req, res) => {
@@ -676,8 +743,7 @@ app.get('/api/admin/librus/status', (req, res) => {
   const profileCount = getProfiles().filter(profile => profile.librus_login && profile.librus_password).length;
   const globalConfigured = Boolean(process.env.LIBRUS_LOGIN && process.env.LIBRUS_PASSWORD);
   const configured = globalConfigured || profileCount > 0;
-  const mockMode = process.env.LIBRUS_MOCK === '1' && process.env.NODE_ENV !== 'production';
-  res.json({ configured, profileCount, globalConfigured, mockMode, status: configured ? 'ready' : 'missing_credentials' });
+  res.json({ configured, profileCount, globalConfigured, status: configured ? 'ready' : 'missing_credentials' });
 });
 
 app.post('/api/admin/librus/sync', async (req, res) => {
@@ -758,7 +824,6 @@ app.post('/api/admin/librus/sync', async (req, res) => {
 
     res.json({
       ok: true,
-      source: data.source || 'librus',
       schedule: created,
       timetable,
       notifications: saved.notifications || [],
@@ -806,7 +871,7 @@ app.delete('/api/admin/schedules/:id', (req, res) => {
 });
 
 // Page Config API (admin & kiosk)
-app.get('/api/page-configs', (req, res) => {
+app.get('/api/page-configs', requireDashboardToken, (req, res) => {
   res.json(getPageConfigs());
 });
 
@@ -823,10 +888,17 @@ app.post('/api/admin/page-config', (req, res) => {
   res.json({ ok: true, page_configs: configs });
 });
 
-app.post('/api/admin/upload/avatar', uploadAvatar.single('avatar'), (req, res) => {
+app.post('/api/admin/upload/avatar', uploadAvatar.single('avatar'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
-  const url = `/uploads/avatars/${req.file.filename}`;
-  res.json({ ok: true, url, filename: req.file.filename });
+  try {
+    const derivative = await createAvatarDerivative(req.file.path, req.file.filename);
+    if (derivative.optimized) await fs.promises.unlink(req.file.path).catch(() => {});
+    const url = `/uploads/avatars/${derivative.filename}`;
+    res.json({ ok: true, url, filename: derivative.filename });
+  } catch (err) {
+    await fs.promises.unlink(req.file.path).catch(() => {});
+    res.status(400).json({ error: `Invalid avatar image: ${err.message}` });
+  }
 });
 
 // Lists API
@@ -904,7 +976,7 @@ app.delete('/api/admin/lists/:listId/items/:itemId', (req, res) => {
 });
 
 // Layouts API
-app.get('/api/layouts', (req, res) => {
+app.get('/api/layouts', requireDashboardToken, (req, res) => {
   const profileId = req.query.profileId ? Number(req.query.profileId) : null;
   res.json(getWidgetLayouts(profileId));
 });
@@ -917,11 +989,36 @@ app.post('/api/admin/layouts', (req, res) => {
   res.json({ ok: true, layouts: saved });
 });
 
+const ALLOWED_ADMIN_SETTINGS_KEYS = new Set([
+  'sleep_timeout', 'sleep_timeout_day', 'sleep_timeout_night',
+  'screensaver_mode', 'screensaver_mode_day', 'screensaver_mode_night',
+  'photo_interval', 'photo_interval_day', 'photo_interval_night',
+  'night_mode_enabled', 'night_mode_start', 'night_mode_end',
+  'weather_city', 'weather_lat', 'weather_lon', 'weather_units',
+  'language', 'header_clock_enabled', 'header_weather_enabled', 'header_display_size',
+  'default_theme', 'default_font_size',
+  'https_enabled', 'https_port', 'https_redirect_http',
+  'notification_items_limit', 'announcement_items_limit',
+  'weekly_backup_enabled', 'weekly_backup_chat_id', 'weekly_backup_weekday', 'weekly_backup_time',
+  'backup_retention_count', 'audit_retention_days', 'notes_retention_days', 'completed_items_retention_days',
+  'librus_sync_timetable', 'librus_sync_grades', 'librus_sync_notifications', 'librus_sync_announcements', 'librus_sync_messages',
+  'librus_sync_time', 'librus_sync_weekday',
+  'meal_default_slots', 'meal_slots', 'kiosk_pin',
+  'gemini_model', 'gemini_system_prompt', 'gemini_text_prompt', 'gemini_voice_prompt', 'gemini_summary_prompt'
+]);
+
 // Settings API (admin)
 app.post('/api/admin/settings', (req, res) => {
-  const updated = updateSettings(req.body);
+  const incoming = req.body && typeof req.body === 'object' ? req.body : {};
+  const filtered = {};
+  for (const [k, v] of Object.entries(incoming)) {
+    if (ALLOWED_ADMIN_SETTINGS_KEYS.has(k)) {
+      filtered[k] = v;
+    }
+  }
+  const updated = updateSettings(filtered);
   const weatherKeys = ['weather_lat', 'weather_lon', 'weather_city', 'weather_units'];
-  if (weatherKeys.some(k => req.body[k] !== undefined)) {
+  if (weatherKeys.some(k => filtered[k] !== undefined)) {
     clearWeatherCache();
   }
   io.emit('dashboard_update', getDashboardData());
@@ -1012,7 +1109,7 @@ app.get('/api/admin/gemini/models', async (req, res) => {
   }
 });
 
-app.get('/api/weather/search', async (req, res) => {
+app.get('/api/weather/search', requireDashboardToken, async (req, res) => {
   try {
     const { q } = req.query;
     if (!q || q.trim().length < 2) return res.json([]);
@@ -1084,15 +1181,16 @@ app.delete('/api/admin/photos/:id', (req, res) => {
 });
 
 // Public photos endpoint (token-guarded for kiosk)
-app.get('/api/photos', (req, res) => {
-  const expectedToken = process.env.DASHBOARD_TOKEN || 'your_secret_token';
-  if (req.query.token !== expectedToken) return res.status(403).json({ error: 'Forbidden' });
+app.get('/api/photos', requireDashboardToken, (req, res) => {
   res.json(getPhotos({ screensaverOnly: true }));
 });
 
+// Require dashboard token for all uploaded media (photos & avatars)
+app.use('/uploads', requireDashboardToken);
+
 app.get('/uploads/photos/:filename', (req, res, next) => {
   if (!/^screen-[a-zA-Z0-9_-]+\.jpg$/.test(req.params.filename)) return next();
-  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
   res.sendFile(path.join(__dirname, '../public/uploads/photos', req.params.filename), (error) => {
     if (error && !res.headersSent) res.status(error.statusCode || 404).end();
   });
@@ -1107,6 +1205,11 @@ app.post('/api/admin/calendar/feeds', async (req, res) => {
   let { name, ical_url, color, profile_id } = req.body;
   if (!name || !ical_url) return res.status(400).json({ error: 'name and ical_url are required' });
   ical_url = normalizeCalendarUrl(ical_url);
+  try {
+    await validateExternalUrl(ical_url);
+  } catch (ssrfErr) {
+    return res.status(400).json({ error: ssrfErr.message });
+  }
   const feed = insertCalendarFeed({ name, ical_url, color, profile_id });
 
   let count = 0;
@@ -1389,9 +1492,7 @@ app.post('/api/admin/rewards/redeem', (req, res) => {
 });
 
 // Public calendar events endpoint (token-guarded for kiosk)
-app.get('/api/calendar/events', (req, res) => {
-  const expectedToken = process.env.DASHBOARD_TOKEN || 'your_secret_token';
-  if (req.query.token !== expectedToken) return res.status(403).json({ error: 'Forbidden' });
+app.get('/api/calendar/events', requireDashboardToken, (req, res) => {
   // fromDate defaults to yesterday in getCalendarEvents; can be overridden with ?from=YYYY-MM-DD
   const fromDate = req.query.from;
   const events = getCalendarEvents({ profileId: req.query.profileId, fromDate });
@@ -1431,15 +1532,25 @@ app.post('/api/admin/simulate-message', async (req, res) => {
   }
 });
 
-// Root route /: check if req.query.token === process.env.DASHBOARD_TOKEN. If not, return 403.
+// Root route /: check if req.query.token matches DASHBOARD_TOKEN. If not, return 403.
 app.get('/', (req, res) => {
-  const expectedToken = process.env.DASHBOARD_TOKEN || 'your_secret_token';
   const queryToken = req.query.token;
 
-  if (queryToken !== expectedToken) {
+  if (!isValidDashboardToken(queryToken)) {
     return res.status(403).send('403 Forbidden: Invalid or missing dashboard token');
   }
 
+  res.cookie('auth_token', getExpectedDashboardToken(), {
+    path: '/',
+    httpOnly: false,
+    sameSite: 'lax',
+    maxAge: 30 * 24 * 60 * 60 * 1000
+  });
+  res.sendFile(path.join(__dirname, '../public/index.html'));
+});
+
+// Prevent unauthenticated bypass via direct /index.html fetch
+app.get('/index.html', requireDashboardToken, (req, res) => {
   res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
@@ -1456,7 +1567,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Weather endpoint for kiosk tablet
-app.get('/api/weather', async (req, res) => {
+app.get('/api/weather', requireDashboardToken, async (req, res) => {
   try {
     const weather = await getWeather();
     res.json(weather);
@@ -1466,12 +1577,13 @@ app.get('/api/weather', async (req, res) => {
 });
 
 // API endpoint to simulate or inject an incoming text message (useful for webhooks or testing)
-app.post('/api/message', async (req, res) => {
-  const { senderId, text, token, senderName } = req.body;
-  const expectedToken = process.env.DASHBOARD_TOKEN || 'your_secret_token';
-
-  if (token !== expectedToken && req.query.token !== expectedToken) {
-    return res.status(403).json({ error: 'Forbidden' });
+app.post('/api/message', requireDashboardToken, async (req, res) => {
+  const { senderId, text, senderName } = req.body || {};
+  if (!text || typeof text !== 'string' || !text.trim()) {
+    return res.status(400).json({ error: 'text is required' });
+  }
+  if (text.length > 2000) {
+    return res.status(400).json({ error: 'text exceeds maximum length of 2000 characters' });
   }
 
   // Whitelist check if senderId is provided

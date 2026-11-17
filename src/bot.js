@@ -924,12 +924,14 @@ function initBot(io) {
       .filter(Boolean);
   };
 
-  // Middleware to strictly block any sender ID not in TELEGRAM_WHITELIST_IDS
+  // Middleware to strictly block any sender ID not in TELEGRAM_WHITELIST_IDS (or registered profiles if whitelist is empty)
   bot.use(async (ctx, next) => {
-    const senderId = String(ctx.from?.id);
+    const senderId = String(ctx.from?.id || '');
     const whitelist = getWhitelist();
+    const isAllowedByWhitelist = whitelist.length > 0 && whitelist.includes(senderId);
+    const isRegisteredProfile = whitelist.length === 0 && Boolean(senderId && getProfileByTelegramId(senderId));
 
-    if (whitelist.length > 0 && !whitelist.includes(senderId)) {
+    if (!isAllowedByWhitelist && !isRegisteredProfile) {
       console.warn(`[Telegram] Blocked unauthorized message from ID: ${senderId} (@${ctx.from?.username || 'unknown'})`);
       insertAuditLog({
         source: 'telegram',
@@ -937,9 +939,9 @@ function initBot(io) {
         sender_name: ctx.from?.username || ctx.from?.first_name || 'unknown',
         message_type: ctx.message?.text ? 'text' : (ctx.message?.voice ? 'voice' : (ctx.message?.photo ? 'photo' : 'other')),
         raw_input: ctx.message?.text || ctx.message?.caption || null,
-        action_taken: 'Blocked by TELEGRAM_WHITELIST_IDS',
+        action_taken: whitelist.length > 0 ? 'Blocked by TELEGRAM_WHITELIST_IDS' : 'Blocked (no whitelist or matching profile)',
         status: 'blocked',
-        error_message: `Sender ${senderId} not in whitelist`
+        error_message: `Sender ${senderId} not authorized`
       });
       return;
     }

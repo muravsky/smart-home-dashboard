@@ -66,6 +66,18 @@ async function createScreensaverDerivative(originalPath, filename) {
   return { filename: derivativeName, path: derivativePath, optimized: true };
 }
 
+async function createAvatarDerivative(originalPath, filename) {
+  if (!sharp) return { filename, path: originalPath, optimized: false };
+  const derivativeName = `avatar-opt-${path.basename(filename, path.extname(filename))}.jpg`;
+  const derivativePath = path.join(avatarsDir, derivativeName);
+  await sharp(originalPath)
+    .rotate()
+    .resize({ width: 512, height: 512, fit: 'cover' })
+    .jpeg({ quality: 85, mozjpeg: true })
+    .toFile(derivativePath);
+  return { filename: derivativeName, path: derivativePath, optimized: true };
+}
+
 const uploadAvatar = multer({
   storage: avatarStorage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
@@ -83,5 +95,6 @@ module.exports = {
   uploadPhoto,
   avatarsDir,
   photosDir,
-  createScreensaverDerivative
+  createScreensaverDerivative,
+  createAvatarDerivative
 };

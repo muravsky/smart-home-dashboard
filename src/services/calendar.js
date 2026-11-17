@@ -1,4 +1,6 @@
 const ical = require('node-ical');
+const dns = require('dns').promises;
+const net = require('net');
 const {
   getCalendarFeeds,
   clearCalendarFeedProfileIfMissing,
@@ -12,6 +14,64 @@ const {
   getDashboardData,
   insertAuditLog
 } = require('../db');
+
+function isPrivateOrLocalIp(ip) {
+  if (!ip) return true;
+  let clean = String(ip).trim().toLowerCase();
+  if (clean.startsWith('::ffff:')) {
+    clean = clean.slice(7);
+  }
+  const ipType = net.isIP(clean);
+  if (ipType === 4) {
+    const parts = clean.split('.').map(Number);
+    if (parts.length !== 4 || parts.some(n => Number.isNaN(n) || n < 0 || n > 255)) return true;
+    const [a, b] = parts;
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+    return false;
+  }
+  if (ipType === 6) {
+    if (clean === '::' || clean === '::1') return true;
+    if (clean.startsWith('fe80:') || clean.startsWith('fc') || clean.startsWith('fd')) return true;
+    return false;
+  }
+  return true;
+}
+
+async function validateExternalUrl(rawUrl) {
+  let parsed;
+  try {
+    parsed = new URL(String(rawUrl || '').trim());
+  } catch (e) {
+    throw new Error('Invalid calendar URL');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Calendar URL must use http:// or https://');
+  }
+  const host = (parsed.hostname || '').replace(/^\[|\]$/g, '').toLowerCase();
+  if (!host || host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal')) {
+    throw new Error('Blocked internal or localhost calendar URL');
+  }
+  if (net.isIP(host)) {
+    if (isPrivateOrLocalIp(host)) {
+      throw new Error('Blocked private or loopback IP in calendar URL');
+    }
+    return parsed.toString();
+  }
+  const records = await dns.lookup(host, { all: true });
+  if (!records || records.length === 0) {
+    throw new Error('Could not resolve calendar host');
+  }
+  for (const rec of records) {
+    if (isPrivateOrLocalIp(rec.address)) {
+      throw new Error('Blocked calendar URL resolving to private or loopback IP');
+    }
+  }
+  return parsed.toString();
+}
 
 /**
  * Normalize calendar URL (handles webcal:// and extracts Google Calendar ID from cid web URLs)
@@ -51,7 +111,7 @@ function normalizeCalendarUrl(url) {
  */
 async function syncFeed(feed) {
   if (!feed || !feed.ical_url) return 0;
-  const feedUrl = normalizeCalendarUrl(feed.ical_url);
+  const feedUrl = await validateExternalUrl(normalizeCalendarUrl(feed.ical_url));
   const redactedUrl = (() => {
     try { return new URL(feedUrl).origin; } catch (error) { return '[invalid URL]'; }
   })();
@@ -254,6 +314,8 @@ function startCalendarSyncCron(io, intervalMs = 15 * 60 * 1000) {
 
 module.exports = {
   normalizeCalendarUrl,
+  validateExternalUrl,
+  isPrivateOrLocalIp,
   syncFeed,
   syncAllFeeds,
   startCalendarSyncCron

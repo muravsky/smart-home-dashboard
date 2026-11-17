@@ -2287,15 +2287,28 @@ function getDashboardData({ includePrivateSettings = false } = {}) {
   if (!includePrivateSettings) {
     delete settings.weekly_backup_chat_id;
     delete settings.kiosk_pin;
+    delete settings.https_cert_path;
+    delete settings.https_key_path;
+    delete settings.gemini_system_prompt;
+    delete settings.gemini_text_prompt;
+    delete settings.gemini_voice_prompt;
+    delete settings.gemini_summary_prompt;
   }
   const profiles = getProfiles();
-  if (!includePrivateSettings) {
-    profiles.forEach(profile => {
+  profiles.forEach(profile => {
+    profile.has_librus_password = Boolean(profile.librus_password);
+    delete profile.librus_password;
+    if (!includePrivateSettings) {
       delete profile.telegram_id;
       delete profile.librus_login;
-      delete profile.librus_password;
-    });
-  }
+    }
+  });
+  const feeds = getCalendarFeeds().map((feed) => {
+    if (includePrivateSettings) return feed;
+    const copy = { ...feed };
+    delete copy.ical_url;
+    return copy;
+  });
   return {
     notes: getNotes(),
     tasks: getTasks(),
@@ -2307,7 +2320,7 @@ function getDashboardData({ includePrivateSettings = false } = {}) {
     page_configs: getPageConfigs(),
     photos: getPhotos({ screensaverOnly: true }),
     events: getCalendarEvents({ limit: 250 }),
-    feeds: getCalendarFeeds(),
+    feeds,
     dishes: getDishes(),
     meal_menus: getMealMenus(),
     rewards: getRewards(),

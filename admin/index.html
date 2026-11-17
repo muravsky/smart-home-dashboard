@@ -3859,7 +3859,8 @@
             avatar_value: prof.avatar_value || '🙂',
             telegram_id: prof.telegram_id || '',
             librus_login: prof.librus_login || '',
-            librus_password: prof.librus_password || '',
+            librus_password: '',
+            has_librus_password: Boolean(prof.has_librus_password),
             theme: prof.theme || 'dark',
             font_size: prof.font_size || 'normal',
             language: prof.language || 'en'
@@ -3898,21 +3899,25 @@
               avatarVal = upData.url;
             }
 
+            const patchBody = {
+              name: editingProfile.value.name,
+              color: editingProfile.value.color,
+              avatar_type: editingProfile.value.avatar_type,
+              avatar_value: avatarVal,
+              telegram_id: editingProfile.value.telegram_id || null,
+              librus_login: editingProfile.value.librus_login || null,
+              theme: editingProfile.value.theme || 'dark',
+              font_size: editingProfile.value.font_size || 'normal',
+              language: editingProfile.value.language || 'en'
+            };
+            if (editingProfile.value.librus_password && editingProfile.value.librus_password.trim()) {
+              patchBody.librus_password = editingProfile.value.librus_password;
+            }
+
             const res = await fetch('/api/admin/profiles/' + editingProfile.value.id, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                name: editingProfile.value.name,
-                color: editingProfile.value.color,
-                avatar_type: editingProfile.value.avatar_type,
-                avatar_value: avatarVal,
-                telegram_id: editingProfile.value.telegram_id || null,
-                librus_login: editingProfile.value.librus_login || null,
-                librus_password: editingProfile.value.librus_password || null,
-                theme: editingProfile.value.theme || 'dark',
-                font_size: editingProfile.value.font_size || 'normal',
-                language: editingProfile.value.language || 'en'
-              })
+              body: JSON.stringify(patchBody)
             });
             if (!res.ok) throw new Error('HTTP ' + res.status);
             showAlert('Profile updated successfully!');

@@ -7,3 +7,4 @@ node_modules/
 !data/samples/*.db
 !data/samples/**/*.db
 .DS_Store
+:memory:
