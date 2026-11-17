@@ -10,7 +10,15 @@ for (const suffix of ['.db', '.db-wal', '.db-shm']) {
 process.env.DB_PATH = testDbPath;
 
 const db = require('../src/db');
-const { normalizeTimetableData, flattenLibrusGrades, buildMorningSummary, buildSchoolDaySummary } = require('../src/services/librus');
+const {
+  normalizeTimetableData,
+  normalizeTerminarzDate,
+  attachTerminarzToTimetable,
+  fetchTerminarzEvents,
+  flattenLibrusGrades,
+  buildMorningSummary,
+  buildSchoolDaySummary
+} = require('../src/services/librus');
 const { getWeather } = require('../src/services/weather');
 
 const sampleTimetable = {
@@ -31,6 +39,23 @@ assert(Array.isArray(normalized), 'expected normalized timetable array');
 assert.strictEqual(normalized[0].day, 'Monday', 'Monday should be first day');
 assert.strictEqual(normalized[0].lessons.length, 2, 'two lessons should be parsed for Monday');
 assert.strictEqual(normalized[0].lessons[0].name, 'Math', 'Math lesson should be preserved');
+
+assert.strictEqual(normalizeTerminarzDate('16.11.2026'), '2026-11-16', 'Polish Terminarz dates should normalize to ISO');
+const terminarzSchedule = attachTerminarzToTimetable(
+  normalizeTimetableData({
+    table: { Monday: [{ subject: 'Math' }, { subject: 'Biology' }] }
+  }, {
+    referenceDate: new Date('2026-11-17T12:00:00'),
+    weekDates: { Monday: '2026-11-16' }
+  }),
+  [
+    { id: 501, date: '16.11.2026', lessonNumber: '2', subject: 'Biology', description: 'Bring the workbook' },
+    { id: 502, date: '2026-11-16', subject: 'Math', description: 'Read chapter 3' }
+  ]
+);
+assert.strictEqual(terminarzSchedule[0].lessons[0].terminarz[0].id, 502, 'subject-only details should attach when the subject match is unique');
+assert.strictEqual(terminarzSchedule[0].lessons[1].terminarz[0].id, 501, 'Terminarz details should attach using the date and lesson number');
+assert.strictEqual(terminarzSchedule[0].lessons[1].terminarz[0].description, 'Bring the workbook', 'lesson details should survive normalization');
 
 const flattenedGrades = flattenLibrusGrades([{
   name: 'Mathematics',
@@ -64,7 +89,7 @@ const weekendFiltered = normalizeTimetableData(weekendSchedule);
 assert.strictEqual(weekendFiltered.length, 1, 'weekend entries should be excluded from the school timetable');
 assert.strictEqual(weekendFiltered[0].day, 'Monday', 'only school week days should remain');
 
-const summary = buildMorningSummary({ name: 'Mia' }, sampleTimetable);
+const summary = buildMorningSummary({ name: 'Mia' }, sampleTimetable, new Date('2026-11-16T12:00:00'));
 assert(summary.includes('Mia'), 'summary should mention the person');
 assert(summary.includes('Math'), 'summary should include first lesson');
 
@@ -75,7 +100,8 @@ const daySummary = buildSchoolDaySummary({
   grade: 'A',
   notifications: [{ title: 'School event' }],
   announcements: [{ title: 'Trip notice', author: 'Marta', date: '2026-09-25', time: '08:15' }],
-  language: 'en'
+  language: 'en',
+  referenceDate: new Date('2026-11-16T12:00:00')
 });
 assert(daySummary.includes('21'), 'day summary should include weather temperature');
 assert(daySummary.includes('Clean room'), 'day summary should include tasks');
@@ -126,6 +152,8 @@ assert.strictEqual(storedSchedule.schedule[0].lessons[0].replacement, true, 'Lib
 assert.strictEqual(storedSchedule.schedule[0].lessons[0].moved, true, 'Librus moved-lesson markers should survive schedule persistence');
 assert.strictEqual(storedSchedule.schedule[0].lessons[0].original.subject, 'Chemistry', 'original lesson details should survive schedule persistence');
 assert.strictEqual(storedSchedule.schedule[0].lessons[1].cancelled, true, 'Librus cancellations should survive schedule persistence');
+const storedTerminarzSchedule = db.insertSchedule({ name: 'Terminarz timetable', schedule: terminarzSchedule });
+assert.strictEqual(storedTerminarzSchedule.schedule[0].lessons[1].terminarz[0].description, 'Bring the workbook', 'lesson Terminarz details should survive database persistence');
 
 const storedLibrusData = db.saveLibrusData({ messages: [{ id: 9, title: 'Parent message' }], notification_counts: { inbox: 2 } });
 assert.strictEqual(storedLibrusData.messages[0].title, 'Parent message', 'Librus inbox messages should persist separately');
@@ -156,6 +184,31 @@ const adminDashboard = db.getDashboardData({ includePrivateSettings: true });
 assert.strictEqual(adminDashboard.settings.weekly_backup_chat_id, 'private-chat-id', 'admin dashboard payload should retain private backup destination');
 
 (async () => {
+  const requestedMonths = [];
+  const terminarzErrors = [];
+  const fetchedTerminarz = await fetchTerminarzEvents({
+    calendar: {
+      async getCalendar(month, year) {
+        requestedMonths.push(`${year}-${month}`);
+        return month === 11
+          ? [{ id: 601, day: '2026-11-30', title: 'Math homework' }]
+          : [{ id: 602, day: '2026-12-01', title: 'Class activity' }];
+      },
+      async getEvent(id) {
+        return {
+          date: id === 601 ? '30.11.2026' : '01.12.2026',
+          lessonNumber: id === 601 ? '2' : '3',
+          subject: id === 601 ? 'Math' : 'Art',
+          description: `Details for ${id}`
+        };
+      }
+    }
+  }, '2026-11-30', '2026-12-06', terminarzErrors);
+  assert.deepStrictEqual(requestedMonths.sort(), ['2026-11', '2026-12'], 'Terminarz sync should load each month covered by the timetable window');
+  assert.strictEqual(fetchedTerminarz.length, 2, 'Terminarz sync should fetch event details for the timetable window');
+  assert.strictEqual(fetchedTerminarz[0].date, '2026-11-30', 'fetched Terminarz detail dates should normalize');
+  assert.deepStrictEqual(terminarzErrors, [], 'successful Terminarz detail fetches should not report sync errors');
+
   const previous = db.getSettings();
   db.updateSettings({
     weather_city: '',

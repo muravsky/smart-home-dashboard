@@ -303,6 +303,102 @@ function resolveLessonsForDate(dayEntry, targetDateIso) {
   return Array.isArray(dayEntry.lessons) ? dayEntry.lessons : [];
 }
 
+function normalizeTerminarzDate(value) {
+  const date = String(value || '').trim();
+  const isoDate = date.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoDate) {
+    return `${isoDate[1]}-${String(isoDate[2]).padStart(2, '0')}-${String(isoDate[3]).padStart(2, '0')}`;
+  }
+  const localizedDate = date.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})/);
+  if (localizedDate) {
+    return `${localizedDate[3]}-${String(localizedDate[2]).padStart(2, '0')}-${String(localizedDate[1]).padStart(2, '0')}`;
+  }
+  return null;
+}
+
+function normalizeLessonSubject(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function attachTerminarzToTimetable(timetable, events = []) {
+  if (!Array.isArray(timetable) || !Array.isArray(events) || !events.length) return timetable;
+
+  const attached = timetable.map(day => ({
+    ...day,
+    lessons: (day.lessons || []).map(lesson => ({ ...lesson, terminarz: [] })),
+    ...(Array.isArray(day.nextLessons)
+      ? { nextLessons: day.nextLessons.map(lesson => ({ ...lesson, terminarz: [] })) }
+      : {})
+  }));
+  const attachToLessons = (lessons, date, event) => {
+    if (!date || !Array.isArray(lessons) || !event) return;
+    const lessonNumber = Number(event.lessonNumber);
+    let matches = [];
+    if (Number.isInteger(lessonNumber) && lessonNumber > 0) {
+      matches = lessons.filter(lesson => Number(lesson.number) === lessonNumber);
+    } else {
+      const eventSubject = normalizeLessonSubject(event.subject || event.lesson);
+      if (eventSubject) {
+        matches = lessons.filter(lesson => normalizeLessonSubject(lesson.name) === eventSubject);
+        if (matches.length !== 1) matches = [];
+      }
+    }
+    matches.forEach(lesson => lesson.terminarz.push(event));
+  };
+
+  attached.forEach(day => {
+    events.forEach(event => {
+      const eventDate = normalizeTerminarzDate(event.date || event.day);
+      if (!eventDate) return;
+      if (normalizeTerminarzDate(day.date) === eventDate) {
+        attachToLessons(day.lessons, eventDate, event);
+      }
+      if (normalizeTerminarzDate(day.nextDate) === eventDate) {
+        attachToLessons(day.nextLessons, eventDate, event);
+      }
+    });
+  });
+
+  return attached;
+}
+
+async function fetchTerminarzEvents(client, from, to, errors) {
+  const monthKeys = [...new Set([from.slice(0, 7), to.slice(0, 7)])];
+  const calendarMonths = await Promise.all(monthKeys.map(async monthKey => {
+    const [year, month] = monthKey.split('-').map(Number);
+    try {
+      const result = await client.calendar.getCalendar(month, year);
+      return Array.isArray(result) ? result : [];
+    } catch (error) {
+      errors.push({ resource: 'terminarz_calendar', message: error.message });
+      return [];
+    }
+  }));
+  const calendarEvents = calendarMonths.flat()
+    .filter(event => event && event.id > 0 && event.day >= from && event.day <= to);
+  const uniqueEvents = [...new Map(calendarEvents.map(event => [`${event.id}:${event.day}`, event])).values()];
+
+  return Promise.all(uniqueEvents.map(async event => {
+    try {
+      const detail = await client.calendar.getEvent(event.id);
+      return {
+        ...event,
+        ...(detail || {}),
+        id: event.id,
+        title: event.title || null,
+        date: normalizeTerminarzDate(detail && detail.date) || event.day
+      };
+    } catch (error) {
+      errors.push({ resource: 'terminarz_detail', id: event.id, message: error.message });
+      return null;
+    }
+  })).then(details => details.filter(Boolean));
+}
+
 function buildMorningSummary(person, timetableData, referenceDate = new Date()) {
   const name = (() => {
     if (!person) return 'Student';
@@ -624,7 +720,7 @@ async function fetchLibrusData({ login, password, resources = null, referenceDat
   const currentWeek = getWeekBounds(referenceDate, 0);
   const nextWeek = getWeekBounds(referenceDate, 1);
 
-  const [currentTimetableRaw, nextTimetableRaw, notificationCounts, accountInfo, announcements, rawGrades, inboxHeaders] = await Promise.all([
+  const [currentTimetableRaw, nextTimetableRaw, notificationCounts, accountInfo, announcements, rawGrades, inboxHeaders, terminarzEvents] = await Promise.all([
     shouldFetch('timetable') ? fetchResource('timetable', () => client.calendar.getTimetable(currentWeek.from, currentWeek.to), []) : [],
     shouldFetch('timetable') ? fetchResource('timetable_next', async () => {
       try {
@@ -637,7 +733,8 @@ async function fetchLibrusData({ login, password, resources = null, referenceDat
     fetchAll ? fetchResource('account', () => client.info.getAccountInfo(), null) : null,
     shouldFetch('announcements') ? fetchResource('announcements', () => client.inbox.listAnnouncements(), []) : [],
     shouldFetch('grades') ? fetchResource('grades', () => client.info.getGrades(), []) : [],
-    shouldFetch('messages') ? fetchResource('inbox', () => client.inbox.listInbox(5), []) : []
+    shouldFetch('messages') ? fetchResource('inbox', () => client.inbox.listInbox(5), []) : [],
+    shouldFetch('timetable') ? fetchTerminarzEvents(client, currentWeek.from, nextWeek.to, errors) : []
   ]);
 
   let timetable = currentTimetableRaw;
@@ -671,8 +768,14 @@ async function fetchLibrusData({ login, password, resources = null, referenceDat
     .filter(([, count]) => Number(count) > 0)
     .map(([category, count]) => ({ id: category, category, count: Number(count), title: `${category}: ${count}` }));
 
+  const normalizedTimetable = attachTerminarzToTimetable(
+    normalizeTimetableData(timetable, { referenceDate }),
+    terminarzEvents
+  );
+
   return {
     timetable,
+    terminarz: terminarzEvents,
     notifications,
     notificationCounts,
     messages,
@@ -680,7 +783,7 @@ async function fetchLibrusData({ login, password, resources = null, referenceDat
     announcements,
     grades,
     errors,
-    normalizedTimetable: normalizeTimetableData(timetable, { referenceDate })
+    normalizedTimetable
   };
 }
 
@@ -695,6 +798,9 @@ module.exports = {
   stripOneOffLessonChanges,
   normalizeSingleLesson,
   normalizeTimetableData,
+  normalizeTerminarzDate,
+  attachTerminarzToTimetable,
+  fetchTerminarzEvents,
   buildMorningSummary,
   buildSchoolDaySummary,
   summarizeLibrusNotifications,

@@ -739,7 +739,8 @@ function normalizeLessonItem(lesson, idx) {
     cancelled: Boolean(lesson && lesson.cancelled),
     flag: lesson && lesson.flag ? String(lesson.flag) : null,
     original: lesson && lesson.original ? lesson.original : null,
-    date: lesson && lesson.date ? String(lesson.date) : null
+    date: lesson && lesson.date ? String(lesson.date) : null,
+    ...(Array.isArray(lesson && lesson.terminarz) ? { terminarz: lesson.terminarz } : {})
   };
 }
 
@@ -2523,5 +2524,4 @@ try {
 } catch (e) {
   console.warn('[Calendar] Startup deduplication warning:', e.message);
 }
-
 

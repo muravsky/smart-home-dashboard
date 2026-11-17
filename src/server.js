@@ -713,7 +713,9 @@ app.post('/api/admin/librus/sync', async (req, res) => {
     }
 
     const data = await fetchLibrusData({ login, password });
-    const timetable = normalizeTimetableData(data.timetable);
+    const timetable = Array.isArray(data.normalizedTimetable)
+      ? data.normalizedTimetable
+      : normalizeTimetableData(data.timetable);
     const profile = profile_id ? getProfileById(profile_id) : null;
     const profileLanguage = profile && profile.language ? profile.language : 'en';
     const created = upsertLibrusSchedule({
@@ -1544,11 +1546,17 @@ async function syncConfiguredLibrusProfiles(syncKeys = ['librus_sync_timetable',
   for (const profile of candidates) {
     try {
       const data = await fetchLibrusData({ login: profile.librus_login, password: profile.librus_password, resources: syncKeys.map(key => key.replace('librus_sync_', '')) });
-      const timetable = normalizeTimetableData(data.timetable);
+      const timetable = Array.isArray(data.normalizedTimetable)
+        ? data.normalizedTimetable
+        : normalizeTimetableData(data.timetable);
       const existingData = getLibrusData(profile.id);
       const sections = new Set(syncKeys);
       const dueResources = new Set();
-      if (sections.has('librus_sync_timetable')) dueResources.add('timetable');
+      if (sections.has('librus_sync_timetable')) {
+        dueResources.add('timetable');
+        dueResources.add('terminarz_calendar');
+        dueResources.add('terminarz_detail');
+      }
       if (sections.has('librus_sync_grades')) { dueResources.add('grades'); dueResources.add('grade_detail'); }
       if (sections.has('librus_sync_notifications')) dueResources.add('notification_counts');
       if (sections.has('librus_sync_messages')) { dueResources.add('inbox'); dueResources.add('message_detail'); }
