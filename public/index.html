@@ -2059,6 +2059,12 @@
                           <div v-if="lesson.replacementTeacher || lesson.teacher" class="text-[10px] text-violet-300">{{ lesson.replacementTeacher || lesson.teacher }}</div>
                           <div v-if="lesson.original" class="text-[10px] text-neutral-400">Changed from: {{ lesson.original.subject || lesson.original.name || lesson.original.title || lesson.original }}</div>
                           <div v-if="lesson.flag" class="mt-1 inline-flex max-w-full items-center gap-1 rounded border border-amber-300/50 bg-amber-900/50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-100">⚠ {{ lesson.flag }}</div>
+                          <div v-if="hasTerminarzInfo(lesson)" class="mt-1 space-y-0.5 text-left">
+                            <div v-for="(detail, detailIdx) in lesson.terminarz" :key="detail.id || detailIdx" class="text-[10px] leading-tight text-sky-200">
+                              <span class="font-semibold">{{ detail.title || detail.type || detail.subject || 'Terminarz information' }}</span>
+                              <span v-if="detail.description" class="text-sky-100/80"> — {{ detail.description }}</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
                       <div class="text-right flex items-center gap-1.5">
@@ -2104,6 +2110,12 @@
                           <div v-if="getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher || getLessonForSlot(dayRow.lessons, slot.key).teacher" class="text-[8px] text-violet-300">{{ getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher || getLessonForSlot(dayRow.lessons, slot.key).teacher }}</div>
                           <div v-if="getLessonForSlot(dayRow.lessons, slot.key).original" class="text-[8px] text-neutral-400">From: {{ getLessonForSlot(dayRow.lessons, slot.key).original.subject || getLessonForSlot(dayRow.lessons, slot.key).original.name || getLessonForSlot(dayRow.lessons, slot.key).original.title || getLessonForSlot(dayRow.lessons, slot.key).original }}</div>
                           <div v-if="getLessonForSlot(dayRow.lessons, slot.key).flag" class="text-[8px] font-semibold text-amber-100">⚠ {{ getLessonForSlot(dayRow.lessons, slot.key).flag }}</div>
+                          <div v-if="hasTerminarzInfo(getLessonForSlot(dayRow.lessons, slot.key))" class="space-y-0.5 text-left">
+                            <div v-for="(detail, detailIdx) in getLessonForSlot(dayRow.lessons, slot.key).terminarz" :key="detail.id || detailIdx" class="text-[8px] leading-tight text-sky-200 break-words">
+                              <span class="font-semibold">{{ detail.title || detail.type || detail.subject || 'Terminarz information' }}</span>
+                              <span v-if="detail.description" class="text-sky-100/80"> — {{ detail.description }}</span>
+                            </div>
+                          </div>
                           <div class="text-[8px] text-neutral-400">{{ getLessonForSlot(dayRow.lessons, slot.key).room }}</div>
                         </div>
                         <div v-else class="text-[8px] text-neutral-600">—</div>
@@ -2175,7 +2187,10 @@
               <div v-if="!getNormalizedGrades(w).length" class="text-xs font-mono text-neutral-600 py-6 text-center my-auto">No grades synced for this pupil.</div>
               <div v-else-if="getGradeViewMode(w) === 'subjects'" class="space-y-2 overflow-y-auto pr-1 flex-1">
                 <div v-for="group in getGradesBySubject(w)" :key="group.subject" class="flex items-start justify-between gap-2 border-b border-neutral-900/60 pb-1.5">
-                  <span class="font-semibold text-white text-[11px]">{{ group.subject }}</span>
+                  <div>
+                    <div class="font-semibold text-white text-[11px]">{{ group.subject }}</div>
+                    <div class="text-[9px] font-mono text-yellow-100/70">Avg: {{ group.average === null ? '—' : group.average.toFixed(2) }}</div>
+                  </div>
                   <div class="flex flex-wrap justify-end gap-1">
                     <span v-for="grade in group.grades" :key="grade.key" class="text-yellow-300 font-mono font-bold text-[11px]" :title="grade.date || ''">{{ grade.value }}</span>
                   </div>
@@ -4488,7 +4503,13 @@
           });
           return [...groups.entries()]
             .sort(([left], [right]) => left.localeCompare(right))
-            .map(([subject, grades]) => ({ subject, grades }));
+            .map(([subject, grades]) => ({
+              subject,
+              grades,
+              average: window.KioskEnhancements && typeof window.KioskEnhancements.calculateGradeAverage === 'function'
+                ? window.KioskEnhancements.calculateGradeAverage(grades)
+                : null
+            }));
         }
 
         function getNotificationItems(widget) {
@@ -5027,10 +5048,10 @@
             try { cfg = JSON.parse(cfg); } catch (e) { cfg = {}; }
           }
           let source = [];
-          if (cfg && Array.isArray(cfg.schedule) && cfg.schedule.length) {
-            source = cfg.schedule;
-          } else if (selectedProfileSchedule.value && Array.isArray(selectedProfileSchedule.value.schedule) && selectedProfileSchedule.value.schedule.length) {
+          if (selectedProfileSchedule.value && Array.isArray(selectedProfileSchedule.value.schedule) && selectedProfileSchedule.value.schedule.length) {
             source = selectedProfileSchedule.value.schedule;
+          } else if (cfg && Array.isArray(cfg.schedule) && cfg.schedule.length) {
+            source = cfg.schedule;
           }
           const today = now.value;
           const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];

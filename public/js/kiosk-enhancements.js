@@ -50,6 +50,22 @@
     return Array.from(groupsMap.values()).sort((a, b) => a.order - b.order);
   }
 
+  function parseNumericGrade(value) {
+    const match = String(value ?? '').trim().match(/^(\d+(?:[.,]\d+)?)\s*([+-])?$/);
+    if (!match) return null;
+    const numericValue = Number(match[1].replace(',', '.'));
+    if (!Number.isFinite(numericValue)) return null;
+    return numericValue + (match[2] === '+' ? 0.5 : match[2] === '-' ? -0.5 : 0);
+  }
+
+  function calculateGradeAverage(grades = []) {
+    const values = grades
+      .map((grade) => parseNumericGrade(grade && grade.value))
+      .filter((value) => value !== null);
+    if (values.length === 0) return null;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  }
+
   const WakeLockManager = {
     sentinel: null,
     desiredActive: true,
@@ -154,6 +170,8 @@
     AISLE_META,
     inferShoppingCategory,
     groupShoppingItemsByAisle,
+    parseNumericGrade,
+    calculateGradeAverage,
     WakeLockManager,
     registerServiceWorker,
     applyDashboardDelta

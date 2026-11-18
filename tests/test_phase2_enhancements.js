@@ -15,6 +15,8 @@ process.env.ADMIN_PASS = 'test_admin_secret';
 const dbModule = require('../src/db');
 const { createMaintenanceService } = require('../src/services/maintenance');
 const { app, server } = require('../src/server');
+require('../public/js/kiosk-enhancements');
+const { parseNumericGrade, calculateGradeAverage } = globalThis.KioskEnhancements;
 
 async function runPhase2EnhancementsTests() {
   const testPort = 3988;
@@ -69,6 +71,18 @@ async function runPhase2EnhancementsTests() {
   }
 
   try {
+    console.log('\n=== 0. Numeric Grade Averages ===');
+    assert(parseNumericGrade('5') === 5, 'Parses a plain numeric grade');
+    assert(parseNumericGrade('5+') === 5.5, 'Adds 0.5 for a plus grade');
+    assert(parseNumericGrade('4-') === 3.5, 'Subtracts 0.5 for a minus grade');
+    assert(parseNumericGrade('4,5') === 4.5, 'Parses decimal-comma grades');
+    assert(parseNumericGrade('absent') === null, 'Ignores nonnumeric grade values');
+    assert(
+      calculateGradeAverage([{ value: '5' }, { value: '4+' }, { value: 'absent' }]) === 4.75,
+      'Calculates the average using numeric grades only'
+    );
+    assert(calculateGradeAverage([{ value: 'absent' }]) === null, 'Returns no average when there are no numeric grades');
+
     console.log('\n=== 1. AES-256-GCM Encryption at Rest for librus_password ===');
     const profRes = await makeRequest('/api/admin/profiles', 'POST', {
       name: 'Leo Student',
