@@ -2083,6 +2083,7 @@
                       :key="lesson.start + '-' + lIdx"
                       class="flex items-center justify-between gap-2 p-2 rounded-lg border text-xs"
                       :class="[lesson.cancelled ? 'border-red-500/80 bg-red-950/35 shadow-[inset_3px_0_0_0_#ef4444]' : (lesson.moved || lesson.replacement || lesson.replacementTeacher || lesson.flag) ? 'border-amber-400/70 bg-amber-950/30 shadow-[inset_3px_0_0_0_#f59e0b]' : 'border-neutral-800 bg-neutral-900/60', hasTerminarzInfo(lesson) ? 'cursor-pointer hover:border-sky-400/70 focus:outline-none focus:ring-1 focus:ring-sky-400' : '']"
+                      :data-lesson-info-trigger="hasTerminarzInfo(lesson) ? '' : null"
                       @click="openLessonDetails(lesson, dayRow, $event)"
                     >
                       <div class="flex items-center gap-2.5">
@@ -2139,7 +2140,7 @@
                         <div v-if="dayRow.displayDate" class="text-[8px] font-mono text-neutral-400">{{ dayRow.displayDate }}</div>
                       </td>
                       <td v-for="slot in getSchoolScheduleColumns(w)" :key="slot.key + '-' + dayRow.day" class="px-1.5 py-2 border-t border-l border-neutral-800 align-top text-center min-w-[90px]">
-                        <div v-if="getLessonForSlot(dayRow.lessons, slot.key)" class="space-y-1 text-left rounded-md p-1.5 border" :class="[getLessonForSlot(dayRow.lessons, slot.key).cancelled ? 'border-red-500/80 bg-red-950/40' : (getLessonForSlot(dayRow.lessons, slot.key).moved || getLessonForSlot(dayRow.lessons, slot.key).replacement || getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher || getLessonForSlot(dayRow.lessons, slot.key).flag) ? 'border-amber-400/70 bg-amber-950/40' : 'border-neutral-800 bg-neutral-900/60', hasTerminarzInfo(getLessonForSlot(dayRow.lessons, slot.key)) ? 'cursor-pointer hover:border-sky-400/70 focus:outline-none focus:ring-1 focus:ring-sky-400' : '']" @click="openLessonDetails(getLessonForSlot(dayRow.lessons, slot.key), dayRow, $event)">
+                        <div v-if="getLessonForSlot(dayRow.lessons, slot.key)" class="space-y-1 text-left rounded-md p-1.5 border" :class="[getLessonForSlot(dayRow.lessons, slot.key).cancelled ? 'border-red-500/80 bg-red-950/40' : (getLessonForSlot(dayRow.lessons, slot.key).moved || getLessonForSlot(dayRow.lessons, slot.key).replacement || getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher || getLessonForSlot(dayRow.lessons, slot.key).flag) ? 'border-amber-400/70 bg-amber-950/40' : 'border-neutral-800 bg-neutral-900/60', hasTerminarzInfo(getLessonForSlot(dayRow.lessons, slot.key)) ? 'cursor-pointer hover:border-sky-400/70 focus:outline-none focus:ring-1 focus:ring-sky-400' : '']" :data-lesson-info-trigger="hasTerminarzInfo(getLessonForSlot(dayRow.lessons, slot.key)) ? '' : null" @click="openLessonDetails(getLessonForSlot(dayRow.lessons, slot.key), dayRow, $event)">
                           <div v-if="getLessonForSlot(dayRow.lessons, slot.key).cancelled || getLessonForSlot(dayRow.lessons, slot.key).moved || getLessonForSlot(dayRow.lessons, slot.key).replacement || getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher" class="flex flex-wrap gap-1 text-[8px] font-mono">
                             <span v-if="getLessonForSlot(dayRow.lessons, slot.key).cancelled" class="px-1 rounded bg-red-900/70 text-red-200">CANCELLED</span>
                             <span v-if="getLessonForSlot(dayRow.lessons, slot.key).moved" class="px-1 rounded bg-sky-900/70 text-sky-200">MOVED</span>
@@ -2808,12 +2809,6 @@
     </div>
 
     <!-- LIBRUS TERMINARZ LESSON DETAILS -->
-    <div
-      v-if="selectedLessonInfo"
-      class="fixed inset-0 z-[69]"
-      aria-hidden="true"
-      @click="selectedLessonInfo = null"
-    ></div>
     <div
       v-if="selectedLessonInfo"
       class="lesson-info-popover fixed z-[70] bg-neutral-900 text-white border border-neutral-700 rounded-xl p-4 max-h-[70vh] overflow-y-auto shadow-2xl"
@@ -4940,6 +4935,12 @@
           };
         }
 
+        function handleLessonInfoOutsideClick(event) {
+          if (!selectedLessonInfo.value || !(event.target instanceof Element)) return;
+          if (event.target.closest('.lesson-info-popover, [data-lesson-info-trigger]')) return;
+          selectedLessonInfo.value = null;
+        }
+
         function getSchoolDaySummary(widget, options = {}) {
           const aiSummary = typeof librusData.value.summary === 'string' && librusData.value.summary.trim();
           if (aiSummary) return aiSummary;
@@ -6418,6 +6419,7 @@
         }
 
         onMounted(() => {
+          document.addEventListener('click', handleLessonInfoOutsideClick);
           const savedProf = localStorage.getItem('kiosk_profile_id');
           if (savedProf) selectedProfileId.value = parseInt(savedProf, 10);
 
@@ -6475,6 +6477,7 @@
         });
 
         onUnmounted(() => {
+          document.removeEventListener('click', handleLessonInfoOutsideClick);
           if (clockInterval) clearInterval(clockInterval);
           if (countdownTimer) clearInterval(countdownTimer);
           if (sleepTimer) clearTimeout(sleepTimer);
