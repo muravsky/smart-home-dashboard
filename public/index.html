@@ -2810,6 +2810,12 @@
     <!-- LIBRUS TERMINARZ LESSON DETAILS -->
     <div
       v-if="selectedLessonInfo"
+      class="fixed inset-0 z-[69]"
+      aria-hidden="true"
+      @click="selectedLessonInfo = null"
+    ></div>
+    <div
+      v-if="selectedLessonInfo"
       class="lesson-info-popover fixed z-[70] bg-neutral-900 text-white border border-neutral-700 rounded-xl p-4 max-h-[70vh] overflow-y-auto shadow-2xl"
       :style="{ top: selectedLessonInfo.position.top + 'px', left: selectedLessonInfo.position.left + 'px' }"
       role="dialog"
