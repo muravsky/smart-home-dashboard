@@ -4550,16 +4550,21 @@
               const value = grade.value ?? grade.grade ?? grade.mark ?? grade.score ?? '-';
               const date = grade.date || grade.assigned_at || grade.created_at || grade.timestamp || null;
               const comment = grade.comment || grade.description || grade.note || grade.teacher || null;
+              const normalizedValue = String(value).trim() || '-';
+              const rawInAverage = normalizeGradeAverageFlag(grade.inAverage ?? grade.doSredniej ?? grade.includeInAverage);
+              const isNumericGrade = window.KioskEnhancements
+                && typeof window.KioskEnhancements.parseNumericGrade === 'function'
+                && window.KioskEnhancements.parseNumericGrade(normalizedValue) !== null;
               return {
                 key: grade.id || `${subject}-${date || idx}`,
                 subject: String(subject).trim() || `Grade ${idx + 1}`,
-                value: String(value).trim() || '-',
+                value: normalizedValue,
                 date: date ? String(date).trim() : null,
                 comment: comment ? String(comment).trim() : null,
                 info: grade.info ? String(grade.info).trim() : null,
                 semester: grade.semester || null,
                 multiplier: grade.multiplier ?? grade.weight ?? null,
-                inAverage: normalizeGradeAverageFlag(grade.inAverage ?? grade.doSredniej ?? grade.includeInAverage)
+                inAverage: isNumericGrade ? rawInAverage : false
               };
             })
             .filter(item => item && item.subject)

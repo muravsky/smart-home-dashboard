@@ -684,28 +684,103 @@ function flattenLibrusGrades(rawGrades) {
   return flattened;
 }
 
-async function hydrateGradeDetails(client, grades, errors) {
-  const latest = grades.slice(-30);
-  return Promise.all(latest.map(async (grade) => {
-    if (!grade.id || (grade.date && grade.multiplier != null && grade.inAverage != null)) return grade;
-    try {
-      const detail = await client.info.getGrade(grade.id);
-      return {
-        ...grade,
-        value: detail.grade || grade.value,
-        date: detail.date || grade.date,
-        category: detail.category || null,
-        multiplier: detail.multiplier ?? grade.multiplier ?? null,
-        inAverage: detail.inAverage ?? grade.inAverage ?? null,
-        teacher: detail.teacher || null,
-        comment: detail.comment || grade.info || null,
-        lesson: detail.lesson || null
-      };
-    } catch (error) {
-      errors.push({ resource: 'grade_detail', id: grade.id, message: error.message });
-      return grade;
+function normalizeGradeDetailLabel(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[:?]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function parseGradeDetail(document) {
+  const rows = new Map();
+  document('.container-background table.decorated.medium.center tbody tr').each((_, row) => {
+    const cells = document(row).find('td');
+    if (cells.length < 2) return;
+    const label = normalizeGradeDetailLabel(document(cells[0]).text());
+    if (!label) return;
+    rows.set(label, document(cells[1]));
+  });
+
+  if (!rows.size) throw new Error('Librus grade detail did not contain any labeled fields.');
+
+  const findCell = (pattern) => {
+    for (const [label, cell] of rows) {
+      if (pattern.test(label)) return cell;
     }
-  }));
+    return null;
+  };
+  const readText = (pattern) => {
+    const cell = findCell(pattern);
+    return cell ? cell.text().trim() : null;
+  };
+
+  const averageCell = findCell(/do sredniej|wlicz.*sredniej|sredniej/);
+  let inAverage = null;
+  if (averageCell) {
+    const averageText = normalizeGradeDetailLabel(averageCell.text());
+    if (/^(tak|yes|true|1)$/.test(averageText)) inAverage = true;
+    else if (/^(nie|no|false|0)$/.test(averageText)) inAverage = false;
+    else {
+      const image = averageCell.find('img').first();
+      const imageStatus = normalizeGradeDetailLabel([
+        image.attr('src'),
+        image.attr('alt'),
+        image.attr('title')
+      ].filter(Boolean).join(' '));
+      if (/nieaktywne|inactive|disabled|false/.test(imageStatus)) inAverage = false;
+      else if (/aktywne|active|enabled|true/.test(imageStatus)) inAverage = true;
+    }
+  }
+
+  const rawMultiplier = readText(/^(waga|weight)$/);
+  const multiplierMatch = rawMultiplier && rawMultiplier.match(/^\s*(\d+(?:[.,]\d+)?)\s*$/);
+  const rawGrade = readText(/^(ocena|grade)$/);
+
+  return {
+    grade: rawGrade,
+    category: readText(/^(kategoria|category)$/),
+    date: readText(/^(data|date)$/),
+    teacher: readText(/^(nauczyciel|teacher)$/),
+    lesson: readText(/^(lekcja|lesson)$/),
+    inAverage,
+    multiplier: multiplierMatch ? Number(multiplierMatch[1].replace(',', '.')) : null,
+    comment: readText(/^(komentarz|comment|uwagi|info)$/)
+  };
+}
+
+async function hydrateGradeDetails(client, grades, errors) {
+  const concurrency = 5;
+  const hydrated = [...grades];
+  for (let offset = 0; offset < grades.length; offset += concurrency) {
+    const batch = grades.slice(offset, offset + concurrency);
+    const results = await Promise.all(batch.map(async (grade) => {
+      if (!grade.id || (grade.date && grade.multiplier != null && grade.inAverage != null)) return grade;
+      try {
+        const document = await client._request('get', `przegladaj_oceny/szczegoly/${encodeURIComponent(grade.id)}`);
+        const detail = parseGradeDetail(document);
+        return {
+          ...grade,
+          value: detail.grade || grade.value,
+          date: detail.date || grade.date,
+          category: detail.category || null,
+          multiplier: detail.multiplier ?? grade.multiplier ?? null,
+          inAverage: detail.inAverage ?? grade.inAverage ?? null,
+          teacher: detail.teacher || null,
+          comment: detail.comment || grade.info || null,
+          lesson: detail.lesson || null
+        };
+      } catch (error) {
+        errors.push({ resource: 'grade_detail', id: grade.id, message: error.message });
+        return grade;
+      }
+    }));
+    results.forEach((grade, index) => {
+      hydrated[offset + index] = grade;
+    });
+  }
+  return hydrated;
 }
 
 async function fetchLibrusData({ login, password, resources = null, referenceDate = new Date() }) {
@@ -817,6 +892,8 @@ module.exports = {
   buildSchoolDaySummary,
   summarizeLibrusNotifications,
   flattenLibrusGrades,
+  parseGradeDetail,
+  hydrateGradeDetails,
   fetchLibrusData,
   toSchedulePayload
 };
