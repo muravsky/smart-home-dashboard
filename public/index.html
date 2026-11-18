@@ -297,15 +297,26 @@
       color: #ddd6fe;
       background-color: rgba(109, 40, 217, 0.3);
     }
+    .grade-chip-weight-0 {
+      color: #d4d4d8;
+      background-color: rgba(63, 63, 70, 0.45);
+    }
     .grade-chip-excluded {
       color: #a3a3a3;
       background-color: rgba(82, 82, 82, 0.35);
+    }
+    .grade-chip-weight-unknown {
+      color: #d4d4d8;
+      background-color: rgba(63, 63, 70, 0.35);
+      outline: 1px dotted rgba(212, 212, 216, 0.65);
     }
     .theme-white .grade-chip-weight-1 { color: #854d0e; background-color: #fef9c3; }
     .theme-white .grade-chip-weight-2 { color: #9a3412; background-color: #ffedd5; }
     .theme-white .grade-chip-weight-3 { color: #991b1b; background-color: #fee2e2; }
     .theme-white .grade-chip-weight-4 { color: #5b21b6; background-color: #ede9fe; }
+    .theme-white .grade-chip-weight-0 { color: #52525b; background-color: #e4e4e7; }
     .theme-white .grade-chip-excluded { color: #525252; background-color: #e5e7eb; }
+    .theme-white .grade-chip-weight-unknown { color: #3f3f46; background-color: #f4f4f5; outline-color: #71717a; }
     .lesson-info-popover {
       width: min(26rem, calc(100vw - 1.5rem));
     }
@@ -2267,7 +2278,7 @@
                     <div class="grade-average text-[9px] font-mono font-semibold">Avg: {{ group.average === null ? '—' : group.average.toFixed(2) }}</div>
                   </div>
                   <div class="flex flex-wrap justify-end gap-1">
-                    <span v-for="grade in group.grades" :key="grade.key" class="rounded px-1 font-mono font-bold text-[11px]" :class="getGradeChipClass(grade)" :title="getGradeTooltip(grade)">{{ grade.value }}</span>
+                    <span v-for="grade in group.grades" :key="grade.key" class="rounded px-1 font-mono font-bold text-[11px]" :class="getGradeChipClass(grade)" :title="getGradeTooltip(grade)">{{ grade.value }}<sup class="ml-0.5 text-[8px] opacity-70">×{{ grade.multiplier == null ? '?' : grade.multiplier }}</sup></span>
                   </div>
                 </div>
               </div>
@@ -2275,7 +2286,7 @@
                 <li v-for="grade in getGradesForTimeline(w)" :key="grade.key" class="border-b border-neutral-900/60 pb-1 text-[11px] text-neutral-200">
                   <div class="flex items-center justify-between gap-2">
                     <span class="font-semibold text-white">{{ grade.subject }}</span>
-                    <span class="rounded px-1 font-mono font-bold" :class="getGradeChipClass(grade)" :title="getGradeTooltip(grade)">{{ grade.value }}</span>
+                    <span class="rounded px-1 font-mono font-bold" :class="getGradeChipClass(grade)" :title="getGradeTooltip(grade)">{{ grade.value }}<sup class="ml-0.5 text-[8px] opacity-70">×{{ grade.multiplier == null ? '?' : grade.multiplier }}</sup></span>
                   </div>
                   <div v-if="grade.comment || grade.info || grade.date" class="text-[10px] text-neutral-400 mt-0.5">{{ grade.date || '' }}{{ grade.date && (grade.comment || grade.info) ? ' • ' : '' }}{{ grade.comment || grade.info || '' }}</div>
                 </li>
@@ -2287,6 +2298,8 @@
                 <span class="grade-chip-weight-2 rounded px-1">×2</span>
                 <span class="grade-chip-weight-3 rounded px-1">×3</span>
                 <span class="grade-chip-weight-4 rounded px-1">×4+</span>
+                <span class="grade-chip-weight-0 rounded px-1">×0</span>
+                <span class="grade-chip-weight-unknown rounded px-1">×? not loaded</span>
                 <span class="grade-chip-excluded rounded px-1">Not in avg</span>
               </div>
             </div>
@@ -4584,16 +4597,20 @@
 
         function getGradeChipClass(grade) {
           if (grade.inAverage === false) return 'grade-chip-excluded';
+          if (grade.multiplier == null || grade.multiplier === '') return 'grade-chip-weight-unknown';
           const multiplier = Number(grade.multiplier);
-          if (!Number.isFinite(multiplier) || multiplier <= 1) return 'grade-chip-weight-1';
+          if (!Number.isFinite(multiplier)) return 'grade-chip-weight-unknown';
+          if (multiplier === 0) return 'grade-chip-weight-0';
+          if (multiplier < 0) return 'grade-chip-weight-unknown';
+          if (multiplier <= 1) return 'grade-chip-weight-1';
           if (multiplier <= 2) return 'grade-chip-weight-2';
           if (multiplier <= 3) return 'grade-chip-weight-3';
           return 'grade-chip-weight-4';
         }
 
         function getGradeTooltip(grade) {
-          const multiplier = grade.multiplier == null || grade.multiplier === '' ? 1 : grade.multiplier;
-          const included = grade.inAverage === false ? 'nie' : 'tak';
+          const multiplier = grade.multiplier == null || grade.multiplier === '' ? '?' : grade.multiplier;
+          const included = grade.inAverage === false ? 'nie' : grade.inAverage === true ? 'tak' : 'nieznane';
           return `${grade.date || ''}${grade.date ? ' · ' : ''}Waga: ${multiplier} · Do średniej: ${included}`;
         }
 

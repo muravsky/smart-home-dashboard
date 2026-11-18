@@ -93,38 +93,57 @@ const flattenedWeightedGrade = flattenLibrusGrades([{
 assert.strictEqual(flattenedWeightedGrade[0].multiplier, 3, 'grade weight should be preserved when flattening Librus rows');
 assert.strictEqual(flattenedWeightedGrade[0].inAverage, false, 'average inclusion flag should be preserved when flattening Librus rows');
 const gradeDetailDocument = LibrusApi._loadDocument(`
-  <div class="container-background">
-    <table class="decorated medium center"><tbody>
-      <tr><td>Ocena:</td><td>4-</td></tr>
-      <tr><td>Kategoria:</td><td>Sprawdzian</td></tr>
-      <tr><td>Do średniej:</td><td>Tak</td></tr>
-      <tr><td>Waga:</td><td>2</td></tr>
-      <tr><td>Data:</td><td>18.11.2026</td></tr>
-    </tbody></table>
-  </div>
+  <table class="decorated medium center"><tbody><tr><td colspan="2"><table><tbody>
+    <tr><td>Ocena:</td><td>4-</td></tr>
+    <tr><td>Kategoria:</td><td>Sprawdzian</td></tr>
+    <tr><td>Data:</td><td>18.11.2026</td></tr>
+    <tr><td>Nauczyciel:</td><td>Test Teacher</td></tr>
+    <tr><td>Lekcja:</td><td>Matematyka</td></tr>
+    <tr><td>Licz do średniej:</td><td><img src="/images/aktywne.png"></td></tr>
+    <tr><td>Waga:</td><td>2</td></tr>
+    <tr><td>Dodał:</td><td>Test User</td></tr>
+    <tr><td>Komentarz:</td><td>Test</td></tr>
+  </tbody></table></td></tr></tbody></table>
 `);
 assert.deepStrictEqual(parseGradeDetail(gradeDetailDocument), {
   grade: '4-',
   category: 'Sprawdzian',
   date: '18.11.2026',
-  teacher: null,
-  lesson: null,
+  teacher: 'Test Teacher',
+  lesson: 'Matematyka',
   inAverage: true,
   multiplier: 2,
-  comment: null
+  comment: 'Test'
 }, 'grade detail fields should be matched by labels rather than table position');
 const excludedGradeDocument = LibrusApi._loadDocument(`
-  <div class="container-background">
-    <table class="decorated medium center"><tbody>
-      <tr><td>Ocena:</td><td>np</td></tr>
-      <tr><td>Do średniej:</td><td><img src="/images/nieaktywne.png" alt="Nie"></td></tr>
-      <tr><td>Waga:</td><td>3</td></tr>
-    </tbody></table>
-  </div>
+  <table class="decorated medium center"><tbody><tr><td colspan="2"><table><tbody>
+    <tr><td>Ocena:</td><td>np</td></tr>
+    <tr><td>Kategoria:</td><td>Not applicable</td></tr>
+    <tr><td>Data:</td><td>18.11.2026</td></tr>
+    <tr><td>Nauczyciel:</td><td>Test Teacher</td></tr>
+    <tr><td>Lekcja:</td><td>Matematyka</td></tr>
+    <tr><td>Licz do średniej:</td><td><img src="/images/nieaktywne.png" alt="Nie"></td></tr>
+    <tr><td>Waga:</td><td>3</td></tr>
+    <tr><td>Dodał:</td><td>Test User</td></tr>
+    <tr><td>Komentarz:</td><td>Test</td></tr>
+  </tbody></table></td></tr></tbody></table>
 `);
 const excludedGradeDetail = parseGradeDetail(excludedGradeDocument);
 assert.strictEqual(excludedGradeDetail.inAverage, false, 'inactive average marker should be read from its own field');
 assert.strictEqual(excludedGradeDetail.multiplier, 3, 'weight should be read from its labeled row');
+const zeroWeightDocument = LibrusApi._loadDocument(`
+  <table class="decorated medium center"><thead><tr>${'<th>Field</th>'.repeat(8)}</tr></thead><tbody><tr><td colspan="2"><table><tbody>
+    <tr><td>Ocena:</td><td>5</td></tr>
+    <tr><td>Kategoria:</td><td>Sprawdzian</td></tr>
+    <tr><td>Data:</td><td>18.11.2026</td></tr>
+    <tr><td>Nauczyciel:</td><td>Test Teacher</td></tr>
+    <tr><td>Lekcja:</td><td>Matematyka</td></tr>
+    <tr><td>Licz do średniej:</td><td><img src="/images/aktywne.png"></td></tr>
+    <tr><td>Dodał:</td><td>Test User</td></tr>
+    <tr><td>Komentarz:</td><td>Test</td></tr>
+  </tbody></table></td></tr></tbody></table>
+`);
+assert.strictEqual(parseGradeDetail(zeroWeightDocument).multiplier, 0, 'eight-column Librus details indicate weight zero');
 
 const hourBasedTimetable = {
   hours: ['08:00-08:45', '09:00-09:45', '10:00-10:45'],

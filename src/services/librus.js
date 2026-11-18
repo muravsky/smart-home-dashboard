@@ -694,36 +694,53 @@ function normalizeGradeDetailLabel(value) {
 }
 
 function parseGradeDetail(document) {
-  const rows = new Map();
-  document('.container-background table.decorated.medium.center tbody tr').each((_, row) => {
-    const cells = document(row).find('td');
+  const table = document('table.decorated.medium.center');
+  if (!table.length) throw new Error('Librus grade detail table was not found.');
+  const labeledRows = new Map();
+  table.find('tr').each((_, row) => {
+    const cells = document(row).children('td, th');
     if (cells.length < 2) return;
     const label = normalizeGradeDetailLabel(document(cells[0]).text());
-    if (!label) return;
-    rows.set(label, document(cells[1]));
+    if (label) labeledRows.set(label, document(cells[1]));
   });
-
-  if (!rows.size) throw new Error('Librus grade detail did not contain any labeled fields.');
-
-  const findCell = (pattern) => {
-    for (const [label, cell] of rows) {
+  const findLabeledCell = (pattern) => {
+    for (const [label, cell] of labeledRows) {
       if (pattern.test(label)) return cell;
     }
     return null;
   };
-  const readText = (pattern) => {
-    const cell = findCell(pattern);
+  const readLabeledValue = (pattern) => {
+    const cell = findLabeledCell(pattern);
     return cell ? cell.text().trim() : null;
   };
+  const keys = ['grade', 'category', 'date', 'teacher', 'lesson', 'inAverage', 'multiplier', 'user', 'comment'];
+  const headerCount = table.find('th').length;
+  if (headerCount === 7) {
+    keys.splice(5, 2);
+  } else if (headerCount === 8) {
+    keys.splice(6, 1);
+  }
+  const valueCells = table.find('tr td:nth-child(2)');
+  if (!valueCells.length) throw new Error('Librus grade detail did not contain grade values.');
+  const rawValues = [];
+  const averageImageSources = [];
+  const averageImageAlts = [];
+  valueCells.each((_, cell) => {
+    const valueCell = document(cell);
+    rawValues.push(valueCell.text().trim());
+    averageImageSources.push(valueCell.find('img').first().attr('src') || '');
+    averageImageAlts.push(valueCell.find('img').first().attr('alt') || '');
+  });
+  const values = Object.fromEntries(keys.map((key, index) => [key, rawValues[index] || '']));
 
-  const averageCell = findCell(/do sredniej|wlicz.*sredniej|sredniej/);
   let inAverage = null;
-  if (averageCell) {
-    const averageText = normalizeGradeDetailLabel(averageCell.text());
+  const labeledAverageCell = findLabeledCell(/licz.*sredniej|do sredniej|wlicz.*sredniej/);
+  if (labeledAverageCell) {
+    const averageText = normalizeGradeDetailLabel(labeledAverageCell.text());
     if (/^(tak|yes|true|1)$/.test(averageText)) inAverage = true;
     else if (/^(nie|no|false|0)$/.test(averageText)) inAverage = false;
     else {
-      const image = averageCell.find('img').first();
+      const image = labeledAverageCell.find('img').first();
       const imageStatus = normalizeGradeDetailLabel([
         image.attr('src'),
         image.attr('alt'),
@@ -732,21 +749,30 @@ function parseGradeDetail(document) {
       if (/nieaktywne|inactive|disabled|false/.test(imageStatus)) inAverage = false;
       else if (/aktywne|active|enabled|true/.test(imageStatus)) inAverage = true;
     }
+  } else if (keys.includes('inAverage')) {
+    const averageIndex = keys.indexOf('inAverage');
+    const averageText = String(rawValues[averageIndex] || '').toLowerCase();
+    if (/^(tak|yes|true|1)$/.test(averageText)) inAverage = true;
+    else if (/^(nie|no|false|0)$/.test(averageText)) inAverage = false;
+    else {
+      const imageStatus = `${averageImageSources[averageIndex]} ${averageImageAlts[averageIndex]}`.toLowerCase();
+      if (/nieaktywne|inactive|disabled|false/.test(imageStatus)) inAverage = false;
+      else if (/aktywne|active|enabled|true/.test(imageStatus)) inAverage = true;
+    }
   }
 
-  const rawMultiplier = readText(/^(waga|weight)$/);
+  const rawMultiplier = readLabeledValue(/^(waga|weight)$/) || values.multiplier;
   const multiplierMatch = rawMultiplier && rawMultiplier.match(/^\s*(\d+(?:[.,]\d+)?)\s*$/);
-  const rawGrade = readText(/^(ocena|grade)$/);
 
   return {
-    grade: rawGrade,
-    category: readText(/^(kategoria|category)$/),
-    date: readText(/^(data|date)$/),
-    teacher: readText(/^(nauczyciel|teacher)$/),
-    lesson: readText(/^(lekcja|lesson)$/),
+    grade: readLabeledValue(/^(ocena|grade)$/) || values.grade || null,
+    category: readLabeledValue(/^(kategoria|category)$/) || values.category || null,
+    date: readLabeledValue(/^(data|date)$/) || values.date || null,
+    teacher: readLabeledValue(/^(nauczyciel|teacher)$/) || values.teacher || null,
+    lesson: readLabeledValue(/^(lekcja|lesson)$/) || values.lesson || null,
     inAverage,
-    multiplier: multiplierMatch ? Number(multiplierMatch[1].replace(',', '.')) : null,
-    comment: readText(/^(komentarz|comment|uwagi|info)$/)
+    multiplier: headerCount === 8 ? 0 : multiplierMatch ? Number(multiplierMatch[1].replace(',', '.')) : null,
+    comment: readLabeledValue(/^(komentarz|comment|uwagi|info)$/) || values.comment || null
   };
 }
 

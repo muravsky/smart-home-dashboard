@@ -78,18 +78,30 @@ async function runPhase2EnhancementsTests() {
     assert(parseNumericGrade('4,5') === 4.5, 'Parses decimal-comma grades');
     assert(parseNumericGrade('absent') === null, 'Ignores nonnumeric grade values');
     assert(
-      calculateGradeAverage([{ value: '5' }, { value: '4+' }, { value: 'absent' }]) === 4.75,
-      'Calculates the average using numeric grades only'
+      calculateGradeAverage([
+        { value: '5', multiplier: 1, inAverage: true },
+        { value: '4+', multiplier: 1, inAverage: true },
+        { value: 'absent', multiplier: 1, inAverage: true }
+      ]) === 4.75,
+      'Calculates the average using numeric grades explicitly marked for inclusion'
     );
     assert(
       calculateGradeAverage([
         { value: '5', multiplier: '3', inAverage: true },
-        { value: '3', weight: 1 },
+        { value: '3', weight: 1, inAverage: true },
         { value: '1', multiplier: 5, inAverage: false }
       ]) === 4.5,
       'Uses grade multipliers and excludes grades marked out of the average'
     );
     assert(calculateGradeAverage([{ value: 'absent' }]) === null, 'Returns no average when there are no numeric grades');
+    assert(
+      calculateGradeAverage([{ value: '5', multiplier: 1 }, { value: '3', multiplier: 1, inAverage: true }]) === 3,
+      'Does not assume grades without an inclusion flag belong in the average'
+    );
+    assert(
+      calculateGradeAverage([{ value: '5', inAverage: true }, { value: '3', multiplier: 1, inAverage: true }]) === 3,
+      'Does not assume a default weight when the multiplier is missing'
+    );
 
     console.log('\n=== 1. AES-256-GCM Encryption at Rest for librus_password ===');
     const profRes = await makeRequest('/api/admin/profiles', 'POST', {
