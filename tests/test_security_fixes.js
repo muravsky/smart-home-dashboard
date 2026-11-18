@@ -50,6 +50,9 @@ async function runSecurityTests() {
     const redeemNoToken = await request(port, '/api/rewards/redeem', 'POST', { profile_id: 1, reward_id: 1 });
     assert.strictEqual(redeemNoToken.statusCode, 403, 'POST /api/rewards/redeem without token must return 403');
 
+    const librusSyncNoToken = await request(port, '/api/librus/sync', 'POST', { profile_id: 1 });
+    assert.strictEqual(librusSyncNoToken.statusCode, 403, 'POST /api/librus/sync without token must return 403');
+
     const settingsNoToken = await request(port, '/api/settings');
     assert.strictEqual(settingsNoToken.statusCode, 403, 'GET /api/settings without token must return 403');
 

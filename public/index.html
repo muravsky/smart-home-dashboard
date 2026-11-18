@@ -253,6 +253,37 @@
     .theme-white .text-yellow-200 {
       color: #78350f !important;
     }
+    .theme-white .grade-average {
+      color: #92400e !important;
+    }
+    .theme-white .terminarz-inline-text {
+      color: #075985 !important;
+    }
+    .theme-white .terminarz-inline-description {
+      color: #0c4a6e !important;
+    }
+    .theme-white .terminarz-info-button {
+      color: #0369a1 !important;
+      border-color: #0284c7 !important;
+      background-color: #e0f2fe !important;
+    }
+    .theme-white .lesson-info-popover {
+      background-color: #ffffff !important;
+      border-color: #cbd5e1 !important;
+      color: #0f172a !important;
+    }
+    .theme-white .lesson-info-popover .lesson-info-muted {
+      color: #475569 !important;
+    }
+    .theme-white .lesson-info-popover .lesson-info-title {
+      color: #075985 !important;
+    }
+    .grade-average {
+      color: #fde68a;
+    }
+    .lesson-info-popover {
+      width: min(26rem, calc(100vw - 1.5rem));
+    }
     .theme-white .bg-yellow-950\/20 {
       background-color: #fefce8 !important;
     }
@@ -2015,7 +2046,12 @@
                   </div>
                 </div>
                 <div class="flex items-center gap-2">
-                  <button @click.stop="refreshDashboardData" class="text-[9px] font-mono uppercase tracking-widest text-violet-200 hover:text-white border border-violet-800/70 rounded px-1.5 py-0.5">Refresh</button>
+                  <button
+                    type="button"
+                    @click.stop="syncLibrusTimetable(w)"
+                    :disabled="librusSyncing[String(w.id)]"
+                    class="text-[9px] font-mono uppercase tracking-widest text-violet-200 hover:text-white border border-violet-800/70 rounded px-1.5 py-0.5 disabled:opacity-50"
+                  >{{ librusSyncing[String(w.id)] ? 'Syncing…' : 'Sync timetable' }}</button>
                   <span v-if="selectedProfile" class="text-[10px] font-mono px-2 py-0.5 rounded-full" :style="{ backgroundColor: selectedProfile.color + '22', color: selectedProfile.color }">
                     {{ selectedProfile.name }}
                   </span>
@@ -2023,6 +2059,9 @@
                 </div>
               </div>
 
+              <div v-if="librusSyncMessages[String(w.id)]" class="text-[10px] font-mono" :class="librusSyncMessages[String(w.id)].ok ? (activeTheme === 'white' ? 'text-emerald-700' : 'text-emerald-300') : (activeTheme === 'white' ? 'text-red-700' : 'text-red-300')">
+                {{ librusSyncMessages[String(w.id)].message }}
+              </div>
               <div v-if="getDisplayedScheduleRows(w).length === 0" class="flex items-center justify-center rounded-xl border border-dashed border-neutral-700 bg-neutral-950/40 text-[11px] text-neutral-500 min-h-[120px]">
                 No timetable synced yet.
               </div>
@@ -2044,11 +2083,7 @@
                       :key="lesson.start + '-' + lIdx"
                       class="flex items-center justify-between gap-2 p-2 rounded-lg border text-xs"
                       :class="[lesson.cancelled ? 'border-red-500/80 bg-red-950/35 shadow-[inset_3px_0_0_0_#ef4444]' : (lesson.moved || lesson.replacement || lesson.replacementTeacher || lesson.flag) ? 'border-amber-400/70 bg-amber-950/30 shadow-[inset_3px_0_0_0_#f59e0b]' : 'border-neutral-800 bg-neutral-900/60', hasTerminarzInfo(lesson) ? 'cursor-pointer hover:border-sky-400/70 focus:outline-none focus:ring-1 focus:ring-sky-400' : '']"
-                      :role="hasTerminarzInfo(lesson) ? 'button' : null"
-                      :tabindex="hasTerminarzInfo(lesson) ? 0 : null"
-                      @click="openLessonDetails(lesson, dayRow)"
-                      @keydown.enter.stop="openLessonDetails(lesson, dayRow)"
-                      @keydown.space.prevent.stop="openLessonDetails(lesson, dayRow)"
+                      @click="openLessonDetails(lesson, dayRow, $event)"
                     >
                       <div class="flex items-center gap-2.5">
                         <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-violet-950/40 text-violet-300 border border-violet-800/40 font-bold whitespace-nowrap">
@@ -2060,15 +2095,22 @@
                           <div v-if="lesson.original" class="text-[10px] text-neutral-400">Changed from: {{ lesson.original.subject || lesson.original.name || lesson.original.title || lesson.original }}</div>
                           <div v-if="lesson.flag" class="mt-1 inline-flex max-w-full items-center gap-1 rounded border border-amber-300/50 bg-amber-900/50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-100">⚠ {{ lesson.flag }}</div>
                           <div v-if="hasTerminarzInfo(lesson)" class="mt-1 space-y-0.5 text-left">
-                            <div v-for="(detail, detailIdx) in lesson.terminarz" :key="detail.id || detailIdx" class="text-[10px] leading-tight text-sky-200">
+                            <div v-for="(detail, detailIdx) in lesson.terminarz" :key="detail.id || detailIdx" class="terminarz-inline-text text-[10px] leading-tight text-sky-200">
                               <span class="font-semibold">{{ detail.title || detail.type || detail.subject || 'Terminarz information' }}</span>
-                              <span v-if="detail.description" class="text-sky-100/80"> — {{ detail.description }}</span>
+                              <span v-if="detail.description" class="terminarz-inline-description"> — {{ detail.description }}</span>
                             </div>
                           </div>
                         </div>
                       </div>
                       <div class="text-right flex items-center gap-1.5">
-                        <span v-if="hasTerminarzInfo(lesson)" class="text-sky-300 text-base leading-none" title="Terminarz details available" aria-label="Terminarz details available">ⓘ</span>
+                        <button
+                          v-if="hasTerminarzInfo(lesson)"
+                          type="button"
+                          class="terminarz-info-button rounded-full border border-sky-400 bg-sky-950/40 text-sky-300 w-6 h-6 inline-flex items-center justify-center text-sm leading-none"
+                          title="Terminarz details available"
+                          aria-label="Open lesson details"
+                          @click.stop="openLessonDetails(lesson, dayRow, $event)"
+                        >ⓘ</button>
                         <span v-if="lesson.cancelled" class="px-1.5 py-0.5 rounded bg-red-900/70 text-red-200 text-[9px] font-mono">CANCELLED</span>
                         <span v-if="lesson.moved" class="px-1.5 py-0.5 rounded bg-sky-900/70 text-sky-200 text-[9px] font-mono">MOVED</span>
                         <span v-if="(lesson.replacement || lesson.replacementTeacher) && !lesson.moved" class="px-1.5 py-0.5 rounded bg-amber-900/70 text-amber-200 text-[9px] font-mono">REPLACEMENT</span>
@@ -2097,7 +2139,7 @@
                         <div v-if="dayRow.displayDate" class="text-[8px] font-mono text-neutral-400">{{ dayRow.displayDate }}</div>
                       </td>
                       <td v-for="slot in getSchoolScheduleColumns(w)" :key="slot.key + '-' + dayRow.day" class="px-1.5 py-2 border-t border-l border-neutral-800 align-top text-center min-w-[90px]">
-                        <div v-if="getLessonForSlot(dayRow.lessons, slot.key)" class="space-y-1 text-left rounded-md p-1.5 border" :class="[getLessonForSlot(dayRow.lessons, slot.key).cancelled ? 'border-red-500/80 bg-red-950/40' : (getLessonForSlot(dayRow.lessons, slot.key).moved || getLessonForSlot(dayRow.lessons, slot.key).replacement || getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher || getLessonForSlot(dayRow.lessons, slot.key).flag) ? 'border-amber-400/70 bg-amber-950/40' : 'border-neutral-800 bg-neutral-900/60', hasTerminarzInfo(getLessonForSlot(dayRow.lessons, slot.key)) ? 'cursor-pointer hover:border-sky-400/70 focus:outline-none focus:ring-1 focus:ring-sky-400' : '']" :role="hasTerminarzInfo(getLessonForSlot(dayRow.lessons, slot.key)) ? 'button' : null" :tabindex="hasTerminarzInfo(getLessonForSlot(dayRow.lessons, slot.key)) ? 0 : null" @click="openLessonDetails(getLessonForSlot(dayRow.lessons, slot.key), dayRow)" @keydown.enter.stop="openLessonDetails(getLessonForSlot(dayRow.lessons, slot.key), dayRow)" @keydown.space.prevent.stop="openLessonDetails(getLessonForSlot(dayRow.lessons, slot.key), dayRow)">
+                        <div v-if="getLessonForSlot(dayRow.lessons, slot.key)" class="space-y-1 text-left rounded-md p-1.5 border" :class="[getLessonForSlot(dayRow.lessons, slot.key).cancelled ? 'border-red-500/80 bg-red-950/40' : (getLessonForSlot(dayRow.lessons, slot.key).moved || getLessonForSlot(dayRow.lessons, slot.key).replacement || getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher || getLessonForSlot(dayRow.lessons, slot.key).flag) ? 'border-amber-400/70 bg-amber-950/40' : 'border-neutral-800 bg-neutral-900/60', hasTerminarzInfo(getLessonForSlot(dayRow.lessons, slot.key)) ? 'cursor-pointer hover:border-sky-400/70 focus:outline-none focus:ring-1 focus:ring-sky-400' : '']" @click="openLessonDetails(getLessonForSlot(dayRow.lessons, slot.key), dayRow, $event)">
                           <div v-if="getLessonForSlot(dayRow.lessons, slot.key).cancelled || getLessonForSlot(dayRow.lessons, slot.key).moved || getLessonForSlot(dayRow.lessons, slot.key).replacement || getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher" class="flex flex-wrap gap-1 text-[8px] font-mono">
                             <span v-if="getLessonForSlot(dayRow.lessons, slot.key).cancelled" class="px-1 rounded bg-red-900/70 text-red-200">CANCELLED</span>
                             <span v-if="getLessonForSlot(dayRow.lessons, slot.key).moved" class="px-1 rounded bg-sky-900/70 text-sky-200">MOVED</span>
@@ -2105,15 +2147,22 @@
                           </div>
                           <div class="flex items-start justify-between gap-1">
                             <div class="font-bold text-white text-[10px] leading-tight" :class="getLessonForSlot(dayRow.lessons, slot.key).cancelled ? 'line-through text-neutral-400' : ''">{{ getLessonForSlot(dayRow.lessons, slot.key).name }}</div>
-                            <span v-if="hasTerminarzInfo(getLessonForSlot(dayRow.lessons, slot.key))" class="text-sky-300 text-xs leading-none" title="Terminarz details available" aria-label="Terminarz details available">ⓘ</span>
+                            <button
+                              v-if="hasTerminarzInfo(getLessonForSlot(dayRow.lessons, slot.key))"
+                              type="button"
+                              class="terminarz-info-button rounded-full border border-sky-400 bg-sky-950/40 text-sky-300 w-5 h-5 inline-flex items-center justify-center text-xs leading-none shrink-0"
+                              title="Terminarz details available"
+                              aria-label="Open lesson details"
+                              @click.stop="openLessonDetails(getLessonForSlot(dayRow.lessons, slot.key), dayRow, $event)"
+                            >ⓘ</button>
                           </div>
                           <div v-if="getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher || getLessonForSlot(dayRow.lessons, slot.key).teacher" class="text-[8px] text-violet-300">{{ getLessonForSlot(dayRow.lessons, slot.key).replacementTeacher || getLessonForSlot(dayRow.lessons, slot.key).teacher }}</div>
                           <div v-if="getLessonForSlot(dayRow.lessons, slot.key).original" class="text-[8px] text-neutral-400">From: {{ getLessonForSlot(dayRow.lessons, slot.key).original.subject || getLessonForSlot(dayRow.lessons, slot.key).original.name || getLessonForSlot(dayRow.lessons, slot.key).original.title || getLessonForSlot(dayRow.lessons, slot.key).original }}</div>
                           <div v-if="getLessonForSlot(dayRow.lessons, slot.key).flag" class="text-[8px] font-semibold text-amber-100">⚠ {{ getLessonForSlot(dayRow.lessons, slot.key).flag }}</div>
                           <div v-if="hasTerminarzInfo(getLessonForSlot(dayRow.lessons, slot.key))" class="space-y-0.5 text-left">
-                            <div v-for="(detail, detailIdx) in getLessonForSlot(dayRow.lessons, slot.key).terminarz" :key="detail.id || detailIdx" class="text-[8px] leading-tight text-sky-200 break-words">
+                            <div v-for="(detail, detailIdx) in getLessonForSlot(dayRow.lessons, slot.key).terminarz" :key="detail.id || detailIdx" class="terminarz-inline-text text-[8px] leading-tight text-sky-200 break-words">
                               <span class="font-semibold">{{ detail.title || detail.type || detail.subject || 'Terminarz information' }}</span>
-                              <span v-if="detail.description" class="text-sky-100/80"> — {{ detail.description }}</span>
+                              <span v-if="detail.description" class="terminarz-inline-description"> — {{ detail.description }}</span>
                             </div>
                           </div>
                           <div class="text-[8px] text-neutral-400">{{ getLessonForSlot(dayRow.lessons, slot.key).room }}</div>
@@ -2189,7 +2238,7 @@
                 <div v-for="group in getGradesBySubject(w)" :key="group.subject" class="flex items-start justify-between gap-2 border-b border-neutral-900/60 pb-1.5">
                   <div>
                     <div class="font-semibold text-white text-[11px]">{{ group.subject }}</div>
-                    <div class="text-[9px] font-mono text-yellow-100/70">Avg: {{ group.average === null ? '—' : group.average.toFixed(2) }}</div>
+                    <div class="grade-average text-[9px] font-mono font-semibold">Avg: {{ group.average === null ? '—' : group.average.toFixed(2) }}</div>
                   </div>
                   <div class="flex flex-wrap justify-end gap-1">
                     <span v-for="grade in group.grades" :key="grade.key" class="text-yellow-300 font-mono font-bold text-[11px]" :title="grade.date || ''">{{ grade.value }}</span>
@@ -2761,18 +2810,17 @@
     <!-- LIBRUS TERMINARZ LESSON DETAILS -->
     <div
       v-if="selectedLessonInfo"
-      class="fixed inset-0 z-[70] bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+      class="lesson-info-popover fixed z-[70] bg-neutral-900 text-white border border-neutral-700 rounded-xl p-4 max-h-[70vh] overflow-y-auto shadow-2xl"
+      :style="{ top: selectedLessonInfo.position.top + 'px', left: selectedLessonInfo.position.left + 'px' }"
       role="dialog"
-      aria-modal="true"
+      aria-modal="false"
       aria-labelledby="lesson-info-title"
-      @click.self="selectedLessonInfo = null"
       @keydown.esc="selectedLessonInfo = null"
     >
-      <div class="bg-neutral-900 border border-neutral-700 rounded-2xl p-5 max-w-lg w-full max-h-[85vh] overflow-y-auto shadow-2xl">
         <div class="flex items-start justify-between gap-4 mb-4">
           <div>
             <h2 id="lesson-info-title" class="text-lg font-mono font-bold text-white">{{ selectedLessonInfo.name }}</h2>
-            <p class="text-xs font-mono text-neutral-400 mt-1">
+            <p class="lesson-info-muted text-xs font-mono text-neutral-400 mt-1">
               {{ selectedLessonInfo.date }}<span v-if="selectedLessonInfo.details.length > 1"> · {{ selectedLessonInfo.details.length }} Terminarz items</span>
             </p>
           </div>
@@ -2780,8 +2828,8 @@
         </div>
         <div class="space-y-3">
           <section v-for="(detail, index) in selectedLessonInfo.details" :key="detail.id || index" class="rounded-xl border border-neutral-800 bg-neutral-950/70 p-3">
-            <h3 class="font-semibold text-sm text-sky-200">{{ detail.title || detail.type || detail.subject || 'Terminarz information' }}</h3>
-            <div class="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[11px] text-neutral-400">
+            <h3 class="lesson-info-title font-semibold text-sm text-sky-200">{{ detail.title || detail.type || detail.subject || 'Terminarz information' }}</h3>
+            <div class="lesson-info-muted flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[11px] text-neutral-400">
               <span v-if="detail.subject">Subject: {{ detail.subject }}</span>
               <span v-if="detail.type">Type: {{ detail.type }}</span>
               <span v-if="detail.lessonNumber">Lesson: {{ detail.lessonNumber }}</span>
@@ -2793,7 +2841,6 @@
             <p v-if="detail.added" class="mt-3 text-[10px] text-neutral-500">Added: {{ detail.added }}</p>
           </section>
         </div>
-      </div>
     </div>
 
     <!-- ADMIN PASSWORD / TOUCH PIN AUTH MODAL FOR EDIT MODE -->
@@ -3347,6 +3394,8 @@
         const noteModalContent = ref('');
         const selectedDishModal = ref(null);
         const selectedLessonInfo = ref(null);
+        const librusSyncing = ref({});
+        const librusSyncMessages = ref({});
         const mealSlotPicker = ref(null);
         const mealSlotTagFilter = ref('');
         const librusData = ref({
@@ -4069,8 +4118,8 @@
 
         async function refreshDashboardData() {
           try {
-            const res = await fetch('/api/admin/data');
-            if (!res.ok) return;
+            const res = await fetch('/api/dashboard');
+            if (!res.ok) throw new Error(`Dashboard refresh failed (${res.status})`);
             const data = await res.json();
             if (data.notes) notes.value = data.notes;
             if (data.tasks) tasks.value = data.tasks;
@@ -4087,6 +4136,40 @@
             if (data.layouts) layouts.value = data.layouts;
           } catch (err) {
             console.warn('Refresh failed', err);
+            throw err;
+          }
+        }
+
+        async function syncLibrusTimetable(widget) {
+          const key = widget ? String(widget.id) : 'default';
+          const profileId = getSchoolDataProfileId(widget);
+          const profile = profiles.value.find(item => Number(item.id) === Number(profileId));
+          librusSyncing.value = { ...librusSyncing.value, [key]: true };
+          librusSyncMessages.value = { ...librusSyncMessages.value, [key]: null };
+          try {
+            const response = await fetch('/api/librus/sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                profile_id: profileId,
+                profile_name: profile ? profile.name : null
+              })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || `Librus sync failed (${response.status})`);
+            await refreshDashboardData();
+            librusSyncMessages.value = {
+              ...librusSyncMessages.value,
+              [key]: { ok: true, message: 'Timetable synced.' }
+            };
+          } catch (error) {
+            console.error('Librus timetable sync failed', error);
+            librusSyncMessages.value = {
+              ...librusSyncMessages.value,
+              [key]: { ok: false, message: error.message || 'Librus sync failed.' }
+            };
+          } finally {
+            librusSyncing.value = { ...librusSyncing.value, [key]: false };
           }
         }
 
@@ -4831,12 +4914,23 @@
           return Boolean(lesson && Array.isArray(lesson.terminarz) && lesson.terminarz.length);
         }
 
-        function openLessonDetails(lesson, dayRow) {
+        function openLessonDetails(lesson, dayRow, event) {
           if (!hasTerminarzInfo(lesson)) return;
+          const anchor = event && event.currentTarget && event.currentTarget.getBoundingClientRect
+            ? event.currentTarget.getBoundingClientRect()
+            : null;
+          const popoverWidth = Math.min(416, window.innerWidth - 24);
+          const popoverHeight = Math.min(window.innerHeight * 0.7, 420);
+          let left = anchor ? anchor.left : (window.innerWidth - popoverWidth) / 2;
+          let top = anchor ? anchor.bottom + 8 : (window.innerHeight - popoverHeight) / 2;
+          if (top + popoverHeight > window.innerHeight - 12 && anchor) top = anchor.top - popoverHeight - 8;
+          left = Math.max(12, Math.min(left, window.innerWidth - popoverWidth - 12));
+          top = Math.max(12, Math.min(top, window.innerHeight - popoverHeight - 12));
           selectedLessonInfo.value = {
             name: lesson.name || lesson.subject || 'Lesson details',
             date: (dayRow && (dayRow.displayDate || dayRow.date)) || lesson.date || '',
-            details: lesson.terminarz
+            details: lesson.terminarz,
+            position: { top, left }
           };
         }
 
@@ -6433,6 +6527,7 @@
           librusData,
           effectiveLanguage,
           settings,
+          refreshDashboardData,
           isNightModeActive,
           activeScreensaverMode,
           isPurePhotoSlideshow,
@@ -6524,6 +6619,9 @@
           hasTerminarzInfo,
           openLessonDetails,
           selectedLessonInfo,
+          librusSyncing,
+          librusSyncMessages,
+          syncLibrusTimetable,
           getLocalizedWidgetLabel,
           getNormalizedGrades,
           getSchoolDataProfileId,

@@ -746,7 +746,7 @@ app.get('/api/admin/librus/status', (req, res) => {
   res.json({ configured, profileCount, globalConfigured, status: configured ? 'ready' : 'missing_credentials' });
 });
 
-app.post('/api/admin/librus/sync', async (req, res) => {
+async function handleLibrusSync(req, res) {
   try {
     const {
       login: incomingLogin,
@@ -847,7 +847,10 @@ app.post('/api/admin/librus/sync', async (req, res) => {
     });
     res.status(500).json({ error: error.message || 'Librus sync failed' });
   }
-});
+}
+
+app.post('/api/admin/librus/sync', handleLibrusSync);
+app.post('/api/librus/sync', requireDashboardToken, handleLibrusSync);
 
 app.post('/api/admin/schedules', (req, res) => {
   const { profile_id, name, schedule } = req.body;
