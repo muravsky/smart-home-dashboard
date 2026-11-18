@@ -81,6 +81,14 @@ async function runPhase2EnhancementsTests() {
       calculateGradeAverage([{ value: '5' }, { value: '4+' }, { value: 'absent' }]) === 4.75,
       'Calculates the average using numeric grades only'
     );
+    assert(
+      calculateGradeAverage([
+        { value: '5', multiplier: '3', inAverage: true },
+        { value: '3', weight: 1 },
+        { value: '1', multiplier: 5, inAverage: false }
+      ]) === 4.5,
+      'Uses grade multipliers and excludes grades marked out of the average'
+    );
     assert(calculateGradeAverage([{ value: 'absent' }]) === null, 'Returns no average when there are no numeric grades');
 
     console.log('\n=== 1. AES-256-GCM Encryption at Rest for librus_password ===');

@@ -73,7 +73,22 @@ const flattenedGrades = flattenLibrusGrades([{
   name: 'Mathematics',
   semester: [{ grades: [{ id: 431, value: '5', info: 'Quiz' }] }]
 }]);
-assert.deepStrictEqual(flattenedGrades, [{ id: 431, subject: 'Mathematics', semester: 1, value: '5', info: 'Quiz', date: null }], 'nested Librus semester grades should flatten into usable grade rows');
+assert.deepStrictEqual(flattenedGrades, [{
+  id: 431,
+  subject: 'Mathematics',
+  semester: 1,
+  value: '5',
+  info: 'Quiz',
+  date: null,
+  multiplier: null,
+  inAverage: null
+}], 'nested Librus semester grades should flatten into usable grade rows');
+const flattenedWeightedGrade = flattenLibrusGrades([{
+  name: 'Mathematics',
+  semester: [{ grades: [{ id: 432, value: '4', weight: 3, doSredniej: false }] }]
+}]);
+assert.strictEqual(flattenedWeightedGrade[0].multiplier, 3, 'grade weight should be preserved when flattening Librus rows');
+assert.strictEqual(flattenedWeightedGrade[0].inAverage, false, 'average inclusion flag should be preserved when flattening Librus rows');
 
 const hourBasedTimetable = {
   hours: ['08:00-08:45', '09:00-09:45', '10:00-10:45'],

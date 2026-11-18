@@ -59,11 +59,19 @@
   }
 
   function calculateGradeAverage(grades = []) {
-    const values = grades
-      .map((grade) => parseNumericGrade(grade && grade.value))
-      .filter((value) => value !== null);
-    if (values.length === 0) return null;
-    return values.reduce((sum, value) => sum + value, 0) / values.length;
+    let weightedTotal = 0;
+    let totalWeight = 0;
+    grades.forEach((grade) => {
+      if (!grade || grade.inAverage === false) return;
+      const value = parseNumericGrade(grade.value);
+      if (value === null) return;
+      const rawWeight = grade.multiplier ?? grade.weight;
+      const weight = rawWeight == null || rawWeight === '' ? 1 : Number(rawWeight);
+      if (!Number.isFinite(weight) || weight <= 0) return;
+      weightedTotal += value * weight;
+      totalWeight += weight;
+    });
+    return totalWeight === 0 ? null : weightedTotal / totalWeight;
   }
 
   const WakeLockManager = {

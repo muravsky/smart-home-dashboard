@@ -663,7 +663,9 @@ function flattenLibrusGrades(rawGrades) {
           semester: semesterIndex + 1,
           value: grade.value || grade.grade || '-',
           info: grade.info || '',
-          date: grade.date || null
+          date: grade.date || null,
+          multiplier: grade.multiplier ?? grade.weight ?? null,
+          inAverage: grade.inAverage ?? grade.doSredniej ?? null
         });
       });
     });
@@ -673,7 +675,9 @@ function flattenLibrusGrades(rawGrades) {
         subject: subjectRow.subject || subjectRow.name || 'School subject',
         value: subjectRow.value || subjectRow.grade,
         date: subjectRow.date || null,
-        info: subjectRow.info || subjectRow.comment || ''
+        info: subjectRow.info || subjectRow.comment || '',
+        multiplier: subjectRow.multiplier ?? subjectRow.weight ?? null,
+        inAverage: subjectRow.inAverage ?? subjectRow.doSredniej ?? null
       });
     }
   }
@@ -683,7 +687,7 @@ function flattenLibrusGrades(rawGrades) {
 async function hydrateGradeDetails(client, grades, errors) {
   const latest = grades.slice(-30);
   return Promise.all(latest.map(async (grade) => {
-    if (!grade.id || grade.date) return grade;
+    if (!grade.id || (grade.date && grade.multiplier != null && grade.inAverage != null)) return grade;
     try {
       const detail = await client.info.getGrade(grade.id);
       return {
@@ -691,6 +695,8 @@ async function hydrateGradeDetails(client, grades, errors) {
         value: detail.grade || grade.value,
         date: detail.date || grade.date,
         category: detail.category || null,
+        multiplier: detail.multiplier ?? grade.multiplier ?? null,
+        inAverage: detail.inAverage ?? grade.inAverage ?? null,
         teacher: detail.teacher || null,
         comment: detail.comment || grade.info || null,
         lesson: detail.lesson || null
