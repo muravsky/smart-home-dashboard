@@ -57,6 +57,18 @@ assert.strictEqual(terminarzSchedule[0].lessons[0].terminarz[0].id, 502, 'subjec
 assert.strictEqual(terminarzSchedule[0].lessons[1].terminarz[0].id, 501, 'Terminarz details should attach using the date and lesson number');
 assert.strictEqual(terminarzSchedule[0].lessons[1].terminarz[0].description, 'Bring the workbook', 'lesson details should survive normalization');
 
+const subjectOverridesLessonNumber = attachTerminarzToTimetable(
+  normalizeTimetableData({
+    table: { Monday: [{ subject: 'Mathematics' }, { subject: 'History' }, { subject: 'Art' }] }
+  }, {
+    referenceDate: new Date('2026-11-17T12:00:00'),
+    weekDates: { Monday: '2026-11-16' }
+  }),
+  [{ id: 503, date: '2026-11-16', lessonNumber: '2', subject: 'Art', description: 'Match by subject, not stale slot number' }]
+);
+assert.strictEqual(subjectOverridesLessonNumber[0].lessons[1].terminarz.length, 0, 'conflicting lesson number should not attach an event to the wrong subject');
+assert.strictEqual(subjectOverridesLessonNumber[0].lessons[2].terminarz[0].id, 503, 'unique subject match should take precedence over a conflicting lesson number');
+
 const flattenedGrades = flattenLibrusGrades([{
   name: 'Mathematics',
   semester: [{ grades: [{ id: 431, value: '5', info: 'Quiz' }] }]

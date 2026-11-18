@@ -337,16 +337,22 @@ function attachTerminarzToTimetable(timetable, events = []) {
   const attachToLessons = (lessons, date, event) => {
     if (!date || !Array.isArray(lessons) || !event) return;
     const lessonNumber = Number(event.lessonNumber);
-    let matches = [];
-    if (Number.isInteger(lessonNumber) && lessonNumber > 0) {
-      matches = lessons.filter(lesson => Number(lesson.number) === lessonNumber);
-    } else {
-      const eventSubject = normalizeLessonSubject(event.subject || event.lesson);
-      if (eventSubject) {
-        matches = lessons.filter(lesson => normalizeLessonSubject(lesson.name) === eventSubject);
-        if (matches.length !== 1) matches = [];
-      }
+    const eventSubject = normalizeLessonSubject(event.subject || event.lesson);
+    let subjectMatches = [];
+    if (eventSubject) {
+      subjectMatches = lessons.filter(lesson => {
+        const subjects = [lesson.name, lesson.original && (lesson.original.subject || lesson.original.name || lesson.original.title || lesson.original)]
+          .map(normalizeLessonSubject)
+          .filter(Boolean);
+        return subjects.includes(eventSubject);
+      });
     }
+
+    const matches = subjectMatches.length === 1
+      ? subjectMatches
+      : Number.isInteger(lessonNumber) && lessonNumber > 0
+        ? lessons.filter(lesson => Number(lesson.number) === lessonNumber)
+        : [];
     matches.forEach(lesson => lesson.terminarz.push(event));
   };
 
