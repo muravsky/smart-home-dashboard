@@ -95,8 +95,8 @@ async function runPhase2EnhancementsTests() {
     );
     assert(calculateGradeAverage([{ value: 'absent' }]) === null, 'Returns no average when there are no numeric grades');
     assert(
-      calculateGradeAverage([{ value: '5', multiplier: 1 }, { value: '3', multiplier: 1, inAverage: true }]) === 3,
-      'Does not assume grades without an inclusion flag belong in the average'
+      calculateGradeAverage([{ value: '5' }, { value: '3', multiplier: 1, inAverage: true }]) === 4,
+      'Includes numeric grades with missing average flags for backward compatibility'
     );
     assert(
       calculateGradeAverage([{ value: '5', inAverage: true }, { value: '3', multiplier: 1, inAverage: true }]) === 4,

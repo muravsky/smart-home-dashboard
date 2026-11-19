@@ -62,7 +62,7 @@
     let weightedTotal = 0;
     let totalWeight = 0;
     grades.forEach((grade) => {
-      if (!grade || grade.inAverage !== true) return;
+      if (!grade || grade.inAverage === false) return;
       const value = parseNumericGrade(grade.value);
       if (value === null) return;
       const rawWeight = grade.multiplier ?? grade.weight;
