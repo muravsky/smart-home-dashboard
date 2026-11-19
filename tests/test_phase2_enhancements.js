@@ -99,8 +99,8 @@ async function runPhase2EnhancementsTests() {
       'Does not assume grades without an inclusion flag belong in the average'
     );
     assert(
-      calculateGradeAverage([{ value: '5', inAverage: true }, { value: '3', multiplier: 1, inAverage: true }]) === 3,
-      'Does not assume a default weight when the multiplier is missing'
+      calculateGradeAverage([{ value: '5', inAverage: true }, { value: '3', multiplier: 1, inAverage: true }]) === 4,
+      'Assumes weight one when a numeric grade has no multiplier'
     );
 
     console.log('\n=== 1. AES-256-GCM Encryption at Rest for librus_password ===');

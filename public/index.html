@@ -4587,8 +4587,7 @@
 
         function getGradeChipClass(grade) {
           if (grade.inAverage === false) return 'grade-chip-excluded';
-          if (grade.multiplier == null || grade.multiplier === '') return 'grade-chip-weight-unknown';
-          const multiplier = Number(grade.multiplier);
+          const multiplier = grade.multiplier == null || grade.multiplier === '' ? 1 : Number(grade.multiplier);
           if (!Number.isFinite(multiplier)) return 'grade-chip-weight-unknown';
           if (multiplier === 0) return 'grade-chip-weight-0';
           if (multiplier < 0) return 'grade-chip-weight-unknown';
@@ -4599,7 +4598,7 @@
         }
 
         function getGradeTooltip(grade) {
-          const multiplier = grade.multiplier == null || grade.multiplier === '' ? '?' : grade.multiplier;
+          const multiplier = grade.multiplier == null || grade.multiplier === '' ? 1 : grade.multiplier;
           const included = grade.inAverage === false ? 'nie' : grade.inAverage === true ? 'tak' : 'nieznane';
           return `${grade.date || ''}${grade.date ? ' · ' : ''}Waga: ${multiplier} · Do średniej: ${included}`;
         }

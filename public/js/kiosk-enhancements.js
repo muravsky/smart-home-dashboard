@@ -66,8 +66,7 @@
       const value = parseNumericGrade(grade.value);
       if (value === null) return;
       const rawWeight = grade.multiplier ?? grade.weight;
-      if (rawWeight == null || rawWeight === '') return;
-      const weight = Number(rawWeight);
+      const weight = rawWeight == null || rawWeight === '' ? 1 : Number(rawWeight);
       if (!Number.isFinite(weight) || weight <= 0) return;
       weightedTotal += value * weight;
       totalWeight += weight;
